@@ -10,8 +10,34 @@ public sealed class StaleFrameGate
 {
     private uint? _newestAcceptedFrameId;
 
-    /// <summary>Frames discarded for being stale, duplicate, or malformed.</summary>
+    /// <summary>
+    /// Frames discarded for being stale, duplicate, or malformed, for the
+    /// lifetime of this gate instance. This is a cumulative, session-wide
+    /// counter: it is what the console surfaces as "dropped frames" for a
+    /// client, and it is intentionally NOT cleared by <see cref="Reset"/> —
+    /// an operator watching a client that keeps needing resets (e.g. because
+    /// the master keeps restarting broadcasts, or the client keeps
+    /// reconnecting) needs the running total to stay visible, not silently
+    /// zero itself out on every reset.
+    /// </summary>
     public int DroppedFrameCount { get; private set; }
+
+    /// <summary>
+    /// Returns the gate to its initial sequencing state: there is no newest
+    /// frame id yet, so the next call to <see cref="TryAccept(uint)"/> (or
+    /// the payload overload) accepts whatever id it is given, and gating
+    /// resumes from there. Call this whenever the underlying frame sequence
+    /// itself has restarted — most notably when the client reconnects to a
+    /// freshly (re)started <c>BroadcastSession</c>, whose frame counter
+    /// begins again at 0. Without this, a gate left over from a prior
+    /// broadcast would reject every frame of the new one forever, since none
+    /// of them are numerically newer than the last frame of the old one.
+    /// Does not clear <see cref="DroppedFrameCount"/> — see its remarks.
+    /// </summary>
+    public void Reset()
+    {
+        _newestAcceptedFrameId = null;
+    }
 
     public bool TryAccept(uint frameId)
     {

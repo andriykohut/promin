@@ -24,7 +24,20 @@ public readonly record struct VideoFrameEnvelope(uint FrameId, bool IsKeyframe)
         return buffer;
     }
 
-    public static VideoFrameEnvelope ReadFrom(ReadOnlySpan<byte> source) => new(
-        FrameId: BinaryPrimitives.ReadUInt32BigEndian(source),
-        IsKeyframe: source[4] != 0);
+    /// <exception cref="ArgumentException">
+    /// <paramref name="source"/> is shorter than <see cref="Size"/> bytes.
+    /// </exception>
+    public static VideoFrameEnvelope ReadFrom(ReadOnlySpan<byte> source)
+    {
+        if (source.Length < Size)
+        {
+            throw new ArgumentException(
+                $"Envelope requires at least {Size} bytes, but only {source.Length} were provided.",
+                nameof(source));
+        }
+
+        return new(
+            FrameId: BinaryPrimitives.ReadUInt32BigEndian(source),
+            IsKeyframe: source[4] != 0);
+    }
 }

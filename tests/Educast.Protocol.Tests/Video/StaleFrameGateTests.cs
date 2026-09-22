@@ -161,4 +161,57 @@ public class StaleFrameGateTests
         Assert.Equal(1u, envelope.FrameId);
         Assert.True(frameBytes.IsEmpty);
     }
+
+    [Fact]
+    public void Reset_AllowsAFrameIdLowerThanThePreviouslyAcceptedNewest_ToBeAccepted()
+    {
+        // Models a master restart: the new BroadcastSession's frame counter
+        // starts again at 0, which is far lower than whatever this gate last
+        // saw from the prior broadcast. Without Reset, this would stay
+        // rejected forever and freeze the client on its last rendered frame.
+        var gate = new StaleFrameGate();
+        gate.TryAccept(500);
+
+        gate.Reset();
+
+        Assert.True(gate.TryAccept(0));
+    }
+
+    [Fact]
+    public void Reset_ResumesGating_RatherThanLeavingTheGatePermanentlyOpen()
+    {
+        // Catches an implementation where Reset() (or a missing Reset) ends
+        // up disabling staleness checks altogether instead of merely
+        // restarting the sequence: after Reset and one accepted frame, an
+        // older-or-equal id must still be rejected.
+        var gate = new StaleFrameGate();
+        gate.TryAccept(500);
+        gate.Reset();
+
+        Assert.True(gate.TryAccept(0));
+        Assert.False(gate.TryAccept(0)); // equal to new newest -> still rejected
+        Assert.True(gate.TryAccept(1));  // strictly newer -> still accepted
+    }
+
+    [Fact]
+    public void Reset_DoesNotClearDroppedFrameCount()
+    {
+        // Pins the deliberate decision that DroppedFrameCount is cumulative
+        // for the lifetime of the gate, not per-broadcast: an operator
+        // watching a client that keeps needing resets (repeated master
+        // restarts, repeated reconnects) needs the running total to stay
+        // visible rather than silently zeroing on every reset.
+        var gate = new StaleFrameGate();
+        gate.TryAccept(5);
+        gate.TryAccept(4); // stale, counted
+
+        gate.Reset();
+
+        Assert.Equal(1, gate.DroppedFrameCount);
+
+        gate.TryAccept(0);
+        gate.TryAccept(0); // duplicate after reset, also counted
+
+        Assert.Equal(2, gate.DroppedFrameCount);
+    }
 }
