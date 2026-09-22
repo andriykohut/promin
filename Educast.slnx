@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Educast.Agent/Educast.Agent.csproj" />
+    <Project Path="src/Educast.Master/Educast.Master.csproj">
+      <Platform Project="x86" />
+    </Project>
+    <Project Path="src/Educast.MediaPipeline/Educast.MediaPipeline.csproj" />
+    <Project Path="src/Educast.Protocol/Educast.Protocol.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Educast.MediaPipeline.Tests/Educast.MediaPipeline.Tests.csproj" />
+    <Project Path="tests/Educast.Protocol.Tests/Educast.Protocol.Tests.csproj" />
+  </Folder>
+</Solution>

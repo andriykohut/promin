@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Educast.Master (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "Educast.Master (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
