@@ -1,0 +1,7 @@
+docs/superpowers/
+.superpowers/
+
+# .NET
+bin/
+obj/
+*.user
