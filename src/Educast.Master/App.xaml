@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Application
-    x:Class="Educast_Master.App"
+    x:Class="Educast.Master.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:Educast_Master">
+    xmlns:local="using:Educast.Master">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>

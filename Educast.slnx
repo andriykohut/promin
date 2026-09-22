@@ -2,7 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Educast.Agent/Educast.Agent.csproj" />
     <Project Path="src/Educast.Master/Educast.Master.csproj">
-      <Platform Project="x86" />
+      <Platform Project="x64" />
     </Project>
     <Project Path="src/Educast.MediaPipeline/Educast.MediaPipeline.csproj" />
     <Project Path="src/Educast.Protocol/Educast.Protocol.csproj" />
