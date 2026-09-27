@@ -9,7 +9,7 @@ public class ControlMessageCodecTests
     [Fact]
     public void EncodeThenDecode_RoundTripsPairChallengeRequest()
     {
-        var original = new PairChallengeRequest(Nonce: [1, 2, 3, 4]);
+        var original = new PairChallengeRequest(MasterNonce: [1, 2, 3, 4]);
 
         var encoded = ControlMessageCodec.Encode(original);
         var buffer = new ReadOnlySequence<byte>(encoded);
@@ -19,7 +19,7 @@ public class ControlMessageCodecTests
         Assert.True(decoded);
         Assert.Equal(encoded.Length, consumed);
         var result = Assert.IsType<PairChallengeRequest>(message);
-        Assert.Equal(original.Nonce, result.Nonce);
+        Assert.Equal(original.MasterNonce, result.MasterNonce);
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public class ControlMessageCodecTests
         // Create a large nonce that leaves room for JSON overhead (base64 encoding).
         // A 40 KB nonce + JSON overhead fits within 64 KB MaxFrameSize.
         var largeNonce = new byte[40 * 1024];
-        var message = new PairChallengeRequest(Nonce: largeNonce);
+        var message = new PairChallengeRequest(MasterNonce: largeNonce);
 
         var encoded = ControlMessageCodec.Encode(message);
         Assert.True(encoded.Length <= ControlMessageCodec.MaxFrameSize,
@@ -201,7 +201,7 @@ public class ControlMessageCodecTests
 
         // Create a message with a very large nonce
         var hugeNonce = new byte[ControlMessageCodec.MaxFrameSize];
-        var message = new PairChallengeRequest(Nonce: hugeNonce);
+        var message = new PairChallengeRequest(MasterNonce: hugeNonce);
 
         // The serialization will include JSON overhead (the byte[] becomes base64),
         // so this should exceed MaxFrameSize.

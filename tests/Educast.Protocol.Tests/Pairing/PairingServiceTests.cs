@@ -4,24 +4,31 @@ using Educast.Protocol.Tests.TestDoubles;
 
 namespace Educast.Protocol.Tests.Pairing;
 
+/// <summary>
+/// The mutual four-message handshake:
+/// <code>
+/// master -> PairChallengeRequest(masterNonce)
+/// agent  -> PairChallengeResponse(agentProof, agentNonce)
+/// master -> PairAck(masterProof)
+/// agent  -> verifies masterProof
+/// </code>
+/// Roles are fixed by the transport: the master opens the control stream, so the master speaks
+/// first and the agent waits to receive.
+/// </summary>
 public class PairingServiceTests
 {
-    // Roles, per the corrected design: the verifier opens the exchange by sending the
-    // challenge first (it must, because on real QUIC the side that opens the control
-    // stream has to write before the peer can see the stream at all). The prover waits
-    // to receive the challenge, then answers it. The master is always the verifier; the
-    // agent is always the prover.
+    private static readonly TimeSpan NoHang = TimeSpan.FromSeconds(5);
 
     [Fact]
     public async Task AuthenticateBothSides_SucceedWhenPresharedKeysMatch()
     {
-        var (verifierChannel, proverChannel) = InMemoryControlChannel.CreatePair();
+        var (masterChannel, agentChannel) = InMemoryControlChannel.CreatePair();
         var service = new PairingService();
         byte[] key = [4, 2, 4, 2];
 
-        var verifierTask = service.AuthenticateAsVerifierAsync(verifierChannel, key, CancellationToken.None);
-        var proverTask = service.AuthenticateAsProverAsync(proverChannel, key, CancellationToken.None);
-        var results = await Task.WhenAll(verifierTask, proverTask);
+        var masterTask = service.AuthenticateAsMasterAsync(masterChannel, key, CancellationToken.None);
+        var agentTask = service.AuthenticateAsAgentAsync(agentChannel, key, CancellationToken.None);
+        var results = await Task.WhenAll(masterTask, agentTask);
 
         Assert.All(results, succeeded => Assert.True(succeeded));
     }
@@ -29,82 +36,219 @@ public class PairingServiceTests
     [Fact]
     public async Task AuthenticateBothSides_FailWhenPresharedKeysDiffer()
     {
-        var (verifierChannel, proverChannel) = InMemoryControlChannel.CreatePair();
+        var (masterChannel, agentChannel) = InMemoryControlChannel.CreatePair();
         var service = new PairingService();
 
-        var verifierTask = service.AuthenticateAsVerifierAsync(verifierChannel, [1, 1, 1, 1], CancellationToken.None);
-        var proverTask = service.AuthenticateAsProverAsync(proverChannel, [2, 2, 2, 2], CancellationToken.None);
-        var results = await Task.WhenAll(verifierTask, proverTask);
+        var masterTask = service.AuthenticateAsMasterAsync(masterChannel, [1, 1, 1, 1], CancellationToken.None);
+        var agentTask = service.AuthenticateAsAgentAsync(agentChannel, [2, 2, 2, 2], CancellationToken.None);
+        var results = await Task.WhenAll(masterTask, agentTask);
 
         Assert.All(results, succeeded => Assert.False(succeeded));
     }
 
-    [Fact]
-    public async Task AuthenticateAsProver_FailsCleanly_WhenFirstMessageIsNotAChallenge()
+    /// <summary>
+    /// The oracle, made concrete. A rogue master sends a nonce of its choosing, harvests the
+    /// agent's answer, and claims success without ever proving the pre-shared key. The agent must
+    /// refuse — this is the test the one-directional handshake fails, and its <c>false</c> is what
+    /// keeps the rogue's certificate from being pinned.
+    /// </summary>
+    [Theory]
+    [InlineData("none")]
+    [InlineData("garbage")]
+    [InlineData("reflected")]
+    public async Task AuthenticateAsAgent_Fails_WhenTheMasterNeverProvesTheKey(string forgery)
     {
-        var (peerChannel, proverChannel) = InMemoryControlChannel.CreatePair();
-        var service = new PairingService();
+        var (roguePeer, agentChannel) = InMemoryControlChannel.CreatePair();
+        byte[] key = [7, 7, 7, 7];
 
-        // A hostile or corrupt peer sends something other than a PairChallengeRequest
-        // as the first message. The prover must return false, not throw or hang.
-        await peerChannel.SendAsync(new PairAck(Success: true), CancellationToken.None);
+        var agentTask = new PairingService().AuthenticateAsAgentAsync(agentChannel, key, CancellationToken.None);
 
-        var proverTask = service.AuthenticateAsProverAsync(proverChannel, [1, 2, 3, 4], CancellationToken.None);
-        var completed = await Task.WhenAny(proverTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        // A nonce the rogue chose, not one it was given.
+        byte[] chosenNonce = [.. Enumerable.Repeat((byte)0xAB, PairingCrypto.NonceLength)];
+        await roguePeer.SendAsync(new PairChallengeRequest(chosenNonce), CancellationToken.None);
 
-        Assert.Same(proverTask, completed);
-        Assert.False(await proverTask);
+        var reply = Assert.IsType<PairChallengeResponse>(
+            await roguePeer.ReceiveAsync(CancellationToken.None));
+
+        byte[]? forgedProof = forgery switch
+        {
+            "none" => null,
+            "garbage" => new byte[PairingCrypto.ProofLength],
+            // The reflection attempt: hand the agent's own proof back as the master's.
+            "reflected" => reply.AgentProof,
+            _ => throw new ArgumentOutOfRangeException(nameof(forgery)),
+        };
+        await roguePeer.SendAsync(new PairAck(Success: true, forgedProof), CancellationToken.None);
+
+        Assert.False(await WithinDeadlineAsync(agentTask));
+    }
+
+    /// <summary>
+    /// A rogue that does know the agent's proof still cannot pair: the master's proof is a
+    /// different value under a different label, and only the pre-shared key produces it.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateAsAgent_Succeeds_OnlyForAProofComputedWithTheKey()
+    {
+        var (masterChannel, agentChannel) = InMemoryControlChannel.CreatePair();
+        byte[] key = [7, 7, 7, 7];
+
+        var agentTask = new PairingService().AuthenticateAsAgentAsync(agentChannel, key, CancellationToken.None);
+
+        byte[] masterNonce = PairingCrypto.CreateNonce();
+        await masterChannel.SendAsync(new PairChallengeRequest(masterNonce), CancellationToken.None);
+        var reply = Assert.IsType<PairChallengeResponse>(
+            await masterChannel.ReceiveAsync(CancellationToken.None));
+
+        // The agent's proof must itself be the specified value over both nonces.
+        Assert.True(PairingCrypto.VerifyAgentProof(key, masterNonce, reply.AgentNonce, reply.AgentProof));
+
+        await masterChannel.SendAsync(
+            new PairAck(Success: true, PairingCrypto.ComputeMasterProof(key, masterNonce, reply.AgentNonce)),
+            CancellationToken.None);
+
+        Assert.True(await WithinDeadlineAsync(agentTask));
+    }
+
+    /// <summary>
+    /// A malformed nonce is peer-controlled input: a clean false, never an exception, and never a
+    /// proof computed over it.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateAsAgent_Fails_WhenTheMasterNonceIsTheWrongLength()
+    {
+        var (peerChannel, agentChannel) = InMemoryControlChannel.CreatePair();
+
+        var agentTask = new PairingService().AuthenticateAsAgentAsync(
+            agentChannel, [1, 2, 3, 4], CancellationToken.None);
+        await peerChannel.SendAsync(new PairChallengeRequest([1, 2, 3]), CancellationToken.None);
+
+        Assert.False(await WithinDeadlineAsync(agentTask));
+        Assert.False(Assert.IsType<PairAck>(await peerChannel.ReceiveAsync(CancellationToken.None)).Success);
     }
 
     [Fact]
-    public async Task AuthenticateAsVerifier_FailsAndSendsNegativeAck_WhenReplyIsNotAChallengeResponse()
+    public async Task AuthenticateAsMaster_Fails_WhenTheAgentNonceIsTheWrongLength()
     {
-        var (verifierChannel, peerChannel) = InMemoryControlChannel.CreatePair();
-        var service = new PairingService();
+        var (masterChannel, peerChannel) = InMemoryControlChannel.CreatePair();
+        byte[] key = [1, 2, 3, 4];
 
-        var verifierTask = service.AuthenticateAsVerifierAsync(verifierChannel, [1, 2, 3, 4], CancellationToken.None);
+        var masterTask = new PairingService().AuthenticateAsMasterAsync(
+            masterChannel, key, CancellationToken.None);
 
-        // Drain the challenge the verifier sends first, then reply with an unexpected
-        // message type instead of a PairChallengeResponse.
-        var challenge = await peerChannel.ReceiveAsync(CancellationToken.None);
-        Assert.IsType<PairChallengeRequest>(challenge);
-        await peerChannel.SendAsync(new PairAck(Success: true), CancellationToken.None);
+        var challenge = Assert.IsType<PairChallengeRequest>(
+            await peerChannel.ReceiveAsync(CancellationToken.None));
+        byte[] shortNonce = [1, 2, 3];
+        await peerChannel.SendAsync(
+            new PairChallengeResponse(PairingCrypto.ComputeAgentProof(key, challenge.MasterNonce, shortNonce), shortNonce),
+            CancellationToken.None);
 
-        var completed = await Task.WhenAny(verifierTask, Task.Delay(TimeSpan.FromSeconds(5)));
-        Assert.Same(verifierTask, completed);
-        Assert.False(await verifierTask);
+        Assert.False(await WithinDeadlineAsync(masterTask));
+        Assert.False(Assert.IsType<PairAck>(await peerChannel.ReceiveAsync(CancellationToken.None)).Success);
+    }
 
-        var ack = await peerChannel.ReceiveAsync(CancellationToken.None);
-        var pairAck = Assert.IsType<PairAck>(ack);
-        Assert.False(pairAck.Success);
+    /// <summary>
+    /// The agent must SIGNAL a peer it is giving up on. Returning silently leaves the master
+    /// blocked on a receive until its deadline expires, which is the Task 3 review requirement
+    /// this pins.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateAsAgent_SignalsThePeer_WhenTheFirstMessageIsNotAChallenge()
+    {
+        var (peerChannel, agentChannel) = InMemoryControlChannel.CreatePair();
+
+        await peerChannel.SendAsync(new StopBroadcast(), CancellationToken.None);
+        var agentTask = new PairingService().AuthenticateAsAgentAsync(
+            agentChannel, [1, 2, 3, 4], CancellationToken.None);
+
+        Assert.False(await WithinDeadlineAsync(agentTask));
+
+        // The peer is told, rather than left waiting.
+        var signal = Assert.IsType<PairAck>(await peerChannel.ReceiveAsync(CancellationToken.None));
+        Assert.False(signal.Success);
+        Assert.Null(signal.MasterProof);
+    }
+
+    /// <summary>
+    /// The mirror of the above: a master that gives up tells the agent, so the agent is not left
+    /// blocked waiting for an acknowledgement that will never come.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateAsMaster_FailsAndSignals_WhenTheReplyIsNotAChallengeResponse()
+    {
+        var (masterChannel, peerChannel) = InMemoryControlChannel.CreatePair();
+
+        var masterTask = new PairingService().AuthenticateAsMasterAsync(
+            masterChannel, [1, 2, 3, 4], CancellationToken.None);
+
+        Assert.IsType<PairChallengeRequest>(await peerChannel.ReceiveAsync(CancellationToken.None));
+        await peerChannel.SendAsync(new BroadcastReady(), CancellationToken.None);
+
+        Assert.False(await WithinDeadlineAsync(masterTask));
+
+        var signal = Assert.IsType<PairAck>(await peerChannel.ReceiveAsync(CancellationToken.None));
+        Assert.False(signal.Success);
+        Assert.Null(signal.MasterProof);
+    }
+
+    /// <summary>A forged agent proof is refused, and the agent is told so.</summary>
+    [Fact]
+    public async Task AuthenticateAsMaster_Fails_WhenTheAgentProofIsForged()
+    {
+        var (masterChannel, peerChannel) = InMemoryControlChannel.CreatePair();
+
+        var masterTask = new PairingService().AuthenticateAsMasterAsync(
+            masterChannel, [1, 2, 3, 4], CancellationToken.None);
+
+        Assert.IsType<PairChallengeRequest>(await peerChannel.ReceiveAsync(CancellationToken.None));
+        await peerChannel.SendAsync(
+            new PairChallengeResponse(new byte[PairingCrypto.ProofLength], PairingCrypto.CreateNonce()),
+            CancellationToken.None);
+
+        Assert.False(await WithinDeadlineAsync(masterTask));
+        Assert.False(Assert.IsType<PairAck>(await peerChannel.ReceiveAsync(CancellationToken.None)).Success);
     }
 
     [Fact]
-    public async Task AuthenticateAsVerifier_SendsFreshNonceEachTime()
+    public async Task AuthenticateAsMaster_SendsFreshNonceEachTime()
     {
         var service = new PairingService();
         byte[] key = [7, 7, 7, 7];
 
-        var firstNonce = await RunVerifierAndCaptureNonceAsync(service, key);
-        var secondNonce = await RunVerifierAndCaptureNonceAsync(service, key);
+        var firstNonce = await RunMasterAndCaptureNonceAsync(service, key);
+        var secondNonce = await RunMasterAndCaptureNonceAsync(service, key);
 
-        Assert.False(firstNonce.SequenceEqual(secondNonce), "Verifier reused a nonce across handshakes.");
+        Assert.False(firstNonce.SequenceEqual(secondNonce), "the master reused a nonce across handshakes.");
     }
 
-    private static async Task<byte[]> RunVerifierAndCaptureNonceAsync(PairingService service, byte[] key)
+    private static async Task<byte[]> RunMasterAndCaptureNonceAsync(PairingService service, byte[] key)
     {
-        var (verifierChannel, peerChannel) = InMemoryControlChannel.CreatePair();
-        var verifierTask = service.AuthenticateAsVerifierAsync(verifierChannel, key, CancellationToken.None);
+        var (masterChannel, peerChannel) = InMemoryControlChannel.CreatePair();
+        var masterTask = service.AuthenticateAsMasterAsync(masterChannel, key, CancellationToken.None);
 
-        var challenge = await peerChannel.ReceiveAsync(CancellationToken.None);
-        var request = Assert.IsType<PairChallengeRequest>(challenge);
+        var challenge = Assert.IsType<PairChallengeRequest>(
+            await peerChannel.ReceiveAsync(CancellationToken.None));
 
-        var response = PairingCrypto.ComputeResponse(key, request.Nonce);
-        await peerChannel.SendAsync(new PairChallengeResponse(response), CancellationToken.None);
+        var agentNonce = PairingCrypto.CreateNonce();
+        await peerChannel.SendAsync(
+            new PairChallengeResponse(
+                PairingCrypto.ComputeAgentProof(key, challenge.MasterNonce, agentNonce), agentNonce),
+            CancellationToken.None);
 
-        var succeeded = await verifierTask;
-        Assert.True(succeeded);
+        Assert.True(await WithinDeadlineAsync(masterTask));
 
-        return request.Nonce;
+        var ack = Assert.IsType<PairAck>(await peerChannel.ReceiveAsync(CancellationToken.None));
+        Assert.True(ack.Success);
+        Assert.True(PairingCrypto.VerifyMasterProof(key, challenge.MasterNonce, agentNonce, ack.MasterProof));
+
+        return challenge.MasterNonce;
+    }
+
+    /// <summary>A handshake half that hangs is a failure, not a test that runs forever.</summary>
+    private static async Task<bool> WithinDeadlineAsync(Task<bool> half)
+    {
+        var completed = await Task.WhenAny(half, Task.Delay(NoHang));
+        Assert.Same(half, completed);
+        return await half;
     }
 }

@@ -1,55 +1,120 @@
-using System.Security.Cryptography;
 using Educast.Protocol.Messages;
 
 namespace Educast.Protocol.Pairing;
 
 /// <summary>
-/// Pre-shared-key challenge-response pairing, run once per device before certificate
-/// pinning takes over trust. Two roles:
-///
-/// - <b>Verifier</b>: generates the nonce and sends the challenge first. This must be the
-///   side that opened the underlying transport stream/connection — on real QUIC, an
-///   opened outbound stream is invisible to the peer until the opener writes to it, so
-///   the opener cannot wait to receive first without deadlocking. In this system, the
-///   master opens the control stream, so the master is always the verifier.
-/// - <b>Prover</b>: waits for the challenge, computes the HMAC response, and answers it.
-///   The agent is always the prover.
-///
-/// Neither side may throw on peer-controlled input: the peer is unauthenticated by
-/// definition at this point in the protocol and may be hostile or simply corrupt. Any
-/// unexpected message type or bad response is a clean `false`, never an exception.
+/// Mutual pre-shared-key pairing, run once per device before certificate pinning takes over
+/// trust. Four messages:
+/// <code>
+/// master -> PairChallengeRequest(masterNonce)
+/// agent  -> PairChallengeResponse(agentProof, agentNonce)
+/// master -> PairAck(masterProof)
+/// agent  -> verifies masterProof, and only then pins
+/// </code>
 /// </summary>
+/// <remarks>
+/// <b>Both</b> sides prove knowledge of the key. The earlier one-directional version had the
+/// agent answer a challenge and then trust whatever said "success": a rogue machine on the LAN
+/// could use an agent's pairing window as a chosen-nonce HMAC oracle against a human-typed key
+/// and then have itself pinned as a permanently trusted master. The proofs are domain-separated
+/// and each covers both nonces — see <see cref="PairingCrypto"/> for why.
+///
+/// <b>Roles are fixed by the transport, not by preference.</b> The master is the side that opens
+/// the control stream, and an outbound QUIC stream is invisible to the peer until its opener
+/// writes to it, so the master must speak first. The agent waits to receive.
+///
+/// <b>Neither side may throw on peer-controlled input.</b> The peer is unauthenticated by
+/// definition at this point and may be hostile or simply corrupt: an unexpected message type, a
+/// malformed nonce, a bad proof and a missing proof are all a clean <c>false</c>.
+///
+/// <b>Neither side may leave the peer blocked.</b> A side that gives up sends
+/// <see cref="PairAck.Rejected"/> first, so the peer fails immediately instead of sitting on a
+/// receive until its deadline expires. That notification is best-effort: if it cannot be
+/// delivered the result is still a clean <c>false</c>.
+/// </remarks>
 public sealed class PairingService
 {
-    public async Task<bool> AuthenticateAsVerifierAsync(IControlChannel channel, byte[] presharedKey, CancellationToken ct)
+    /// <summary>
+    /// Master side. Challenges the agent, verifies the agent's proof, and then proves the key
+    /// to the agent in turn. Returns true only once its own proof has been handed over — the
+    /// agent pins on that proof, so a master that could not deliver it has not paired.
+    /// </summary>
+    public async Task<bool> AuthenticateAsMasterAsync(
+        IControlChannel channel, byte[] presharedKey, CancellationToken ct)
     {
-        var nonce = RandomNumberGenerator.GetBytes(32);
-        await channel.SendAsync(new PairChallengeRequest(nonce), ct);
+        ArgumentNullException.ThrowIfNull(channel);
+        ArgumentNullException.ThrowIfNull(presharedKey);
 
-        var reply = await channel.ReceiveAsync(ct);
-        if (reply is not PairChallengeResponse response)
+        var masterNonce = PairingCrypto.CreateNonce();
+        await channel.SendAsync(new PairChallengeRequest(masterNonce), ct).ConfigureAwait(false);
+
+        var reply = await channel.ReceiveAsync(ct).ConfigureAwait(false);
+        if (reply is not PairChallengeResponse response
+            || !PairingCrypto.IsWellFormedNonce(response.AgentNonce)
+            || !PairingCrypto.VerifyAgentProof(
+                presharedKey, masterNonce, response.AgentNonce, response.AgentProof))
         {
-            await channel.SendAsync(new PairAck(Success: false), ct);
+            await NotifyRejectedAsync(channel, ct).ConfigureAwait(false);
             return false;
         }
 
-        var success = PairingCrypto.VerifyResponse(presharedKey, nonce, response.Hmac);
-        await channel.SendAsync(new PairAck(success), ct);
-        return success;
+        var masterProof = PairingCrypto.ComputeMasterProof(presharedKey, masterNonce, response.AgentNonce);
+        await channel.SendAsync(new PairAck(Success: true, masterProof), ct).ConfigureAwait(false);
+        return true;
     }
 
-    public async Task<bool> AuthenticateAsProverAsync(IControlChannel channel, byte[] presharedKey, CancellationToken ct)
+    /// <summary>
+    /// Agent side. Answers the challenge with a proof over both nonces, then requires the
+    /// master's own proof before reporting success. The caller pins on that success and on
+    /// nothing else.
+    /// </summary>
+    public async Task<bool> AuthenticateAsAgentAsync(
+        IControlChannel channel, byte[] presharedKey, CancellationToken ct)
     {
-        var challenge = await channel.ReceiveAsync(ct);
-        if (challenge is not PairChallengeRequest request)
+        ArgumentNullException.ThrowIfNull(channel);
+        ArgumentNullException.ThrowIfNull(presharedKey);
+
+        var challenge = await channel.ReceiveAsync(ct).ConfigureAwait(false);
+        if (challenge is not PairChallengeRequest request
+            || !PairingCrypto.IsWellFormedNonce(request.MasterNonce))
         {
+            // Signal rather than return silently: a master waiting on ReceiveAsync would
+            // otherwise block until its deadline expired.
+            await NotifyRejectedAsync(channel, ct).ConfigureAwait(false);
             return false;
         }
 
-        var response = PairingCrypto.ComputeResponse(presharedKey, request.Nonce);
-        await channel.SendAsync(new PairChallengeResponse(response), ct);
+        var agentNonce = PairingCrypto.CreateNonce();
+        var agentProof = PairingCrypto.ComputeAgentProof(presharedKey, request.MasterNonce, agentNonce);
+        await channel.SendAsync(new PairChallengeResponse(agentProof, agentNonce), ct).ConfigureAwait(false);
 
-        var ack = await channel.ReceiveAsync(ct);
-        return ack is PairAck { Success: true };
+        var ack = await channel.ReceiveAsync(ct).ConfigureAwait(false);
+
+        // Success alone is a claim; the proof is the only thing worth pinning on.
+        return ack is PairAck { Success: true } verdict
+            && PairingCrypto.VerifyMasterProof(
+                presharedKey, request.MasterNonce, agentNonce, verdict.MasterProof);
+    }
+
+    /// <summary>
+    /// Best-effort "I am giving up" so the peer does not sit blocked on a receive. A failure to
+    /// deliver it changes nothing: the pairing has already failed.
+    /// </summary>
+    private static async Task NotifyRejectedAsync(IControlChannel channel, CancellationToken ct)
+    {
+        try
+        {
+            await channel.SendAsync(PairAck.Rejected, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Out of time. Cancellation is the caller's to observe, never swallowed here.
+            throw;
+        }
+        catch (Exception)
+        {
+            // The channel is already gone. Nothing to tell the peer, and nothing to report:
+            // the caller is about to return a failed pairing regardless.
+        }
     }
 }

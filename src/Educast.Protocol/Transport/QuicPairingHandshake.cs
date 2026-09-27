@@ -35,7 +35,7 @@ public static class QuicPairingHandshake
         byte[] presharedKey,
         CancellationToken ct,
         TimeSpan? timeout = null) =>
-        RunAsync(new PairingService().AuthenticateAsVerifierAsync, control, presharedKey, timeout, ct);
+        RunAsync(new PairingService().AuthenticateAsMasterAsync, control, presharedKey, timeout, ct);
 
     /// <summary>Agent side: waits for the challenge, answers it, and awaits the acknowledgement.</summary>
     public static Task<bool> RunAsAgentAsync(
@@ -43,7 +43,7 @@ public static class QuicPairingHandshake
         byte[] presharedKey,
         CancellationToken ct,
         TimeSpan? timeout = null) =>
-        RunAsync(new PairingService().AuthenticateAsProverAsync, control, presharedKey, timeout, ct);
+        RunAsync(new PairingService().AuthenticateAsAgentAsync, control, presharedKey, timeout, ct);
 
     private static async Task<bool> RunAsync(
         Func<IControlChannel, byte[], CancellationToken, Task<bool>> role,
