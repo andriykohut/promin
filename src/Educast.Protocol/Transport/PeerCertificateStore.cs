@@ -47,7 +47,7 @@ public sealed class PeerCertificateStore
     /// Records the certificate a device authenticates with. Pinning the value a device already
     /// has is idempotent.
     /// </summary>
-    /// <exception cref="InvalidOperationException">
+    /// <exception cref="PinConflictException">
     /// A different certificate is already pinned for this device id, or this certificate is
     /// already pinned for a different device id. Either is an explicit <see cref="Unpin"/> away
     /// from being allowed, and neither may happen silently.
@@ -66,14 +66,14 @@ public sealed class PeerCertificateStore
                     return;
                 }
 
-                throw new InvalidOperationException(
+                throw new PinConflictException(
                     $"Device '{deviceId}' is already pinned to a different certificate. Unpin it " +
                     "explicitly before pairing it again — a pin is not replaced silently.");
             }
 
             if (_deviceIdsByThumbprint.TryGetValue(thumbprint, out var owner))
             {
-                throw new InvalidOperationException(
+                throw new PinConflictException(
                     $"That certificate is already pinned for device '{owner}'. One certificate " +
                     "identifies one device.");
             }

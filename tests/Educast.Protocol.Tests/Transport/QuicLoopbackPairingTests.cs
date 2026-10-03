@@ -5,9 +5,10 @@ using Educast.Protocol.Transport;
 namespace Educast.Protocol.Tests.Transport;
 
 /// <summary>
-/// Pairing and certificate pinning over a real QUIC connection. Every test carries a bounded
-/// deadline so a regression that reintroduces a handshake deadlock fails loudly instead of
-/// hanging the run.
+/// The handshake and certificate pinning over a real QUIC connection between two machines that
+/// are already paired. Every test carries a bounded deadline so a regression that reintroduces a
+/// handshake deadlock fails loudly instead of hanging the run. First contact — the pairing
+/// operation that creates the pins — is in <see cref="QuicPairingOperationTests"/>.
 /// </summary>
 public class QuicLoopbackPairingTests
 {
@@ -37,8 +38,8 @@ public class QuicLoopbackPairingTests
         var results = await Task.WhenAll(masterTask, agentTask);
 
         Assert.All(results, succeeded => Assert.True(succeeded));
-        Assert.Equal(QuicLoopbackHarness.AgentDeviceId, master.RemoteDeviceId);
-        Assert.Equal(QuicLoopbackHarness.MasterDeviceId, agent.RemoteDeviceId);
+        Assert.Equal(QuicLoopbackHarness.AgentDeviceId, master.PinnedDeviceId);
+        Assert.Equal(QuicLoopbackHarness.MasterDeviceId, agent.PinnedDeviceId);
     }
 
     /// <summary>Fails an implementation whose HMAC check always succeeds.</summary>
@@ -155,56 +156,5 @@ public class QuicLoopbackPairingTests
         Assert.True(
             failure is AuthenticationException or QuicException,
             $"expected the master to refuse an agent it has no pin for, got {failure}");
-    }
-
-    /// <summary>
-    /// The full first-contact flow: both sides trust on first use, pair with the pre-shared key,
-    /// pin what the peer actually presented, and a later strict connection then succeeds. Fails
-    /// an implementation that never surfaces the peer thumbprint, or that computes it with a
-    /// different hash than the store pins with.
-    /// </summary>
-    [Fact(Timeout = 30000)]
-    public async Task TrustOnFirstUse_PairsThenYieldsAPinThatStrictModeAccepts()
-    {
-        using var deadline = QuicLoopbackHarness.Deadline();
-        await using var harness = await QuicLoopbackHarness.StartAsync(
-            deadline.Token,
-            masterTrustMode: PeerTrustMode.TrustOnFirstUse,
-            agentTrustMode: PeerTrustMode.TrustOnFirstUse,
-            pinMasterOnAgent: false,
-            pinAgentOnMaster: false);
-
-        var (master, agent) = await harness.ConnectAsync(deadline.Token);
-
-        var (masterControl, agentPending) =
-            await QuicLoopbackHarness.OpenControlPairAsync(master, agent, deadline.Token);
-        await using (masterControl)
-        {
-            var masterTask = QuicPairingHandshake.RunAsMasterAsync(masterControl, PresharedKey, deadline.Token);
-            await using var agentControl = await agentPending;
-            var results = await Task.WhenAll(
-                masterTask,
-                QuicPairingHandshake.RunAsAgentAsync(agentControl, PresharedKey, deadline.Token));
-            Assert.All(results, succeeded => Assert.True(succeeded));
-        }
-
-        Assert.Equal(
-            PeerCertificateStore.ComputeThumbprint(harness.AgentCertificate),
-            master.RemoteCertificateThumbprint);
-        Assert.Equal(
-            PeerCertificateStore.ComputeThumbprint(harness.MasterCertificate),
-            agent.RemoteCertificateThumbprint);
-
-        // Pairing proved who the peer is; now pin it and prove strict mode accepts the pin.
-        harness.MasterTrust.Pin(QuicLoopbackHarness.AgentDeviceId, master.RemoteCertificateThumbprint!);
-        harness.AgentTrust.Pin(QuicLoopbackHarness.MasterDeviceId, agent.RemoteCertificateThumbprint!);
-
-        var acceptTask = harness.Listener.AcceptAsync(deadline.Token);
-        var strictConnector = new QuicMasterConnector(harness.MasterCertificate, harness.MasterTrust);
-        await using var strictMaster = await strictConnector.ConnectAsync(
-            harness.Endpoint, QuicLoopbackHarness.AgentDeviceId, deadline.Token);
-        await using var strictAgent = await acceptTask;
-
-        Assert.Equal(QuicLoopbackHarness.MasterDeviceId, strictAgent.RemoteDeviceId);
     }
 }

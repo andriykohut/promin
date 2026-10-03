@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Net;
 using System.Net.Quic;
-using System.Security.Cryptography;
+using System.Security.Authentication;
 using System.Threading.Channels;
 
 namespace Educast.Protocol.Transport;
@@ -54,29 +54,49 @@ public sealed class QuicChannel : IAsyncDisposable
     /// <summary>How many inbound video streams are being read into memory right now.</summary>
     internal int ActiveVideoDrains => Volatile.Read(ref _activeVideoDrains);
 
-    public QuicChannel(QuicConnection connection, string? remoteDeviceId = null)
+    /// <summary>
+    /// Channels are made by <see cref="QuicMasterConnector"/> and <see cref="QuicAgentListener"/>
+    /// only. <paramref name="pinnedDeviceId"/> is what they found by looking the presented
+    /// certificate up in their pins; it is not something a caller gets to assert.
+    /// </summary>
+    internal QuicChannel(QuicConnection connection, string? pinnedDeviceId)
     {
         ArgumentNullException.ThrowIfNull(connection);
         _connection = connection;
-        RemoteDeviceId = remoteDeviceId;
-        RemoteCertificateThumbprint = connection.RemoteCertificate is { } certificate
-            ? certificate.GetCertHashString(HashAlgorithmName.SHA256)
-            : null;
+        PinnedDeviceId = pinnedDeviceId;
+        if (connection.RemoteCertificate is { } certificate)
+        {
+            RemoteCertificateThumbprint = PeerCertificateStore.ComputeThumbprint(certificate);
+            RemoteCertificateSubjectName = CertificateIdentity.ReadDeviceId(certificate);
+        }
+
         _acceptLoop = RunAcceptLoopAsync(_acceptCts.Token);
     }
 
     /// <summary>
-    /// The device id this peer was pinned under, when the connection was established against an
-    /// existing pin. Null during trust-on-first-use pairing, where the peer identity is only
-    /// established by the pre-shared-key exchange that follows.
+    /// The device id whose pin the certificate the peer presented matches, as judged by this
+    /// side's own pins. It means the same thing on both sides: <b>this side has authenticated
+    /// the peer as that device.</b>
     /// </summary>
-    public string? RemoteDeviceId { get; }
+    /// <remarks>
+    /// What it does <b>not</b> mean is that the peer accepted this side. TLS 1.3 validates the
+    /// client certificate after the client's handshake has already completed, so a master the
+    /// agent refuses still gets a connected channel, with this property set, and is only told
+    /// when it uses the connection. A completed connection is therefore not a completed pairing
+    /// and not proof of acceptance: pairing is reported by <see cref="PairingOutcome"/>, and
+    /// acceptance by the first control message that comes back.
+    /// </remarks>
+    public string? PinnedDeviceId { get; }
+
+    /// <summary>SHA-256 thumbprint of the certificate the peer actually presented.</summary>
+    public string? RemoteCertificateThumbprint { get; }
 
     /// <summary>
-    /// SHA-256 thumbprint of the certificate the peer actually presented — what the caller pins
-    /// via <see cref="PeerCertificateStore.Pin"/> once pairing has proved who the peer is.
+    /// The subject name on the certificate the peer presented. Supplied by the peer and proof
+    /// of nothing: never use it to decide who the peer is — that is <see cref="PinnedDeviceId"/>.
+    /// It exists so a pairing operation knows what name to pin a newly proven master under.
     /// </summary>
-    public string? RemoteCertificateThumbprint { get; }
+    internal string? RemoteCertificateSubjectName { get; }
 
     public IPEndPoint RemoteEndPoint => _connection.RemoteEndPoint;
 
@@ -170,6 +190,13 @@ public sealed class QuicChannel : IAsyncDisposable
         catch (QuicException)
         {
             // the peer closed the connection
+        }
+        catch (AuthenticationException)
+        {
+            // The peer refused this side's certificate. TLS 1.3 validates the client certificate
+            // after the client's handshake has completed, so a master the agent rejects gets a
+            // channel first and this afterwards. The connection is gone; the owner finds out
+            // when it uses the channel. Letting this escape would make DisposeAsync throw it.
         }
         catch (ObjectDisposedException)
         {

@@ -20,6 +20,7 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
 
     private readonly List<IAsyncDisposable> _ownedAsync = [];
     private readonly List<IDisposable> _owned = [];
+    private readonly System.Runtime.CompilerServices.StrongBox<int> _rejectedHandshakes;
 
     private QuicLoopbackHarness(
         X509Certificate2 masterCertificate,
@@ -27,14 +28,14 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
         PeerCertificateStore masterTrust,
         PeerCertificateStore agentTrust,
         QuicAgentListener listener,
-        PeerTrustMode masterTrustMode)
+        System.Runtime.CompilerServices.StrongBox<int> rejectedHandshakes)
     {
+        _rejectedHandshakes = rejectedHandshakes;
         MasterCertificate = masterCertificate;
         AgentCertificate = agentCertificate;
         MasterTrust = masterTrust;
         AgentTrust = agentTrust;
         Listener = listener;
-        MasterTrustMode = masterTrustMode;
         _owned.Add(masterCertificate);
         _owned.Add(agentCertificate);
         _ownedAsync.Add(listener);
@@ -50,7 +51,13 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
     public PeerCertificateStore AgentTrust { get; }
 
     public QuicAgentListener Listener { get; }
-    public PeerTrustMode MasterTrustMode { get; }
+
+    /// <summary>
+    /// How many inbound handshakes the agent has refused — that is, peers turned away by TLS
+    /// itself. A stranger that was let through TLS and only dropped afterwards does not count,
+    /// which is exactly what lets a test tell the two apart.
+    /// </summary>
+    public int RejectedHandshakes => Volatile.Read(ref _rejectedHandshakes.Value);
 
     public IPEndPoint Endpoint => new(IPAddress.Loopback, Listener.LocalEndPoint.Port);
 
@@ -63,8 +70,6 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
 
     public static async Task<QuicLoopbackHarness> StartAsync(
         CancellationToken ct,
-        PeerTrustMode masterTrustMode = PeerTrustMode.RequirePinned,
-        PeerTrustMode agentTrustMode = PeerTrustMode.RequirePinned,
         bool pinMasterOnAgent = true,
         bool pinAgentOnMaster = true,
         Action<Exception>? connectionRejected = null)
@@ -86,12 +91,18 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
 
         // Port 0 so concurrent test runs never collide, loopback so no test run can trip a
         // Windows Firewall prompt. Production binds IPAddress.Any.
+        var rejectedHandshakes = new System.Runtime.CompilerServices.StrongBox<int>();
         var listener = new QuicAgentListener(
-            agentCertificate, agentTrust, port: 0, agentTrustMode, IPAddress.Loopback, connectionRejected);
+            agentCertificate, agentTrust, port: 0, IPAddress.Loopback,
+            rejected =>
+            {
+                Interlocked.Increment(ref rejectedHandshakes.Value);
+                connectionRejected?.Invoke(rejected);
+            });
         await listener.StartAsync(ct);
 
         return new QuicLoopbackHarness(
-            masterCertificate, agentCertificate, masterTrust, agentTrust, listener, masterTrustMode);
+            masterCertificate, agentCertificate, masterTrust, agentTrust, listener, rejectedHandshakes);
     }
 
     /// <summary>Dials the agent and returns both ends of the established connection.</summary>
@@ -100,7 +111,7 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
         string deviceId = AgentDeviceId)
     {
         var acceptTask = Listener.AcceptAsync(ct);
-        var connector = new QuicMasterConnector(MasterCertificate, MasterTrust, MasterTrustMode);
+        var connector = new QuicMasterConnector(MasterCertificate, MasterTrust);
         var master = await connector.ConnectAsync(Endpoint, deviceId, ct);
         var agent = await acceptTask;
 
@@ -112,9 +123,11 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
     /// <summary>
     /// Dials as the master but hands back the raw connection, so a test can write arbitrary
     /// bytes onto a control stream — the only way to reproduce a corrupt or fragmented frame
-    /// from a peer that is hostile or simply broken.
+    /// from a peer that is hostile or simply broken. Presents the master's certificate unless
+    /// another is given, which is how a test plays a machine the agent has never seen.
     /// </summary>
-    public async Task<QuicConnection> ConnectRawAsync(CancellationToken ct)
+    public async Task<QuicConnection> ConnectRawAsync(
+        CancellationToken ct, X509Certificate2? clientCertificate = null)
     {
         var options = new QuicClientConnectionOptions
         {
@@ -129,7 +142,7 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
             {
                 TargetHost = Endpoint.Address.ToString(),
                 ApplicationProtocols = [QuicTransportSettings.ApplicationProtocol],
-                ClientCertificates = [MasterCertificate],
+                ClientCertificates = [clientCertificate ?? MasterCertificate],
                 RemoteCertificateValidationCallback = (_, _, _, _) => true,
             },
         };
@@ -144,7 +157,7 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
     /// side is returned still pending on purpose: an outbound QUIC stream does not exist for
     /// the peer until its opener writes to it, so the accept only completes once the master
     /// sends its first control message. Awaiting both before the master speaks deadlocks, which
-    /// is the same hazard that fixes the master as the pairing verifier.
+    /// is the same hazard that makes the master the side that speaks first in pairing.
     /// </summary>
     public static async Task<(QuicControlChannel Master, Task<QuicControlChannel> AgentPending)> OpenControlPairAsync(
         QuicChannel master, QuicChannel agent, CancellationToken ct)
@@ -184,6 +197,24 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
     }
 
     public static byte[] RandomBytes(int count) => RandomNumberGenerator.GetBytes(count);
+
+    /// <summary>
+    /// The exact bytes this store would persist — its whole trust state. Two snapshots that are
+    /// equal mean nothing was pinned, unpinned or changed in between.
+    /// </summary>
+    public static byte[] PersistedBytes(PeerCertificateStore store)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"educast-snapshot-{Guid.NewGuid():N}.json");
+        try
+        {
+            store.Save(path);
+            return File.ReadAllBytes(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {

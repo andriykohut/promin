@@ -79,7 +79,7 @@ public class PeerCertificateStoreTests
         var store = new PeerCertificateStore();
         store.Pin("agent-1", "OLD");
 
-        var refusal = Assert.Throws<InvalidOperationException>(() => store.Pin("agent-1", "NEW"));
+        var refusal = Assert.Throws<PinConflictException>(() => store.Pin("agent-1", "NEW"));
 
         Assert.Contains("already pinned", refusal.Message);
         Assert.True(store.TryGetPinnedThumbprint("agent-1", out var thumbprint));
@@ -107,7 +107,7 @@ public class PeerCertificateStoreTests
         var store = new PeerCertificateStore();
         store.Pin("agent-1", "AABBCC");
 
-        Assert.Throws<InvalidOperationException>(() => store.Pin("agent-2", "aabbcc"));
+        Assert.Throws<PinConflictException>(() => store.Pin("agent-2", "aabbcc"));
 
         Assert.False(store.TryGetPinnedThumbprint("agent-2", out _));
         Assert.True(store.TryGetDeviceIdForThumbprint("AABBCC", out var owner));

@@ -104,21 +104,3 @@ public static class QuicTransportSettings
         }
     }
 }
-
-/// <summary>How a peer's certificate is judged during the TLS handshake.</summary>
-public enum PeerTrustMode
-{
-    /// <summary>
-    /// Normal operation: the peer's certificate must match a pin already held for it.
-    /// An unknown or re-keyed peer is refused at the TLS layer and never reaches the protocol.
-    /// </summary>
-    RequirePinned,
-
-    /// <summary>
-    /// Pairing mode only: accept the certificate the peer presents so the pre-shared-key
-    /// exchange can run over it, then pin it (<see cref="QuicChannel.RemoteCertificateThumbprint"/>)
-    /// if and only if pairing succeeded. This is the "first use" of trust-on-first-use and must
-    /// never be left on outside an operator-initiated pairing window.
-    /// </summary>
-    TrustOnFirstUse,
-}
