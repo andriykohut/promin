@@ -87,7 +87,8 @@ public readonly record struct DiscoveryAnnouncement(
     /// <paramref name="result"/>, for anything that is not a well-formed announcement: over
     /// <see cref="MaxDatagramBytes"/> bytes, not JSON, the wrong shape, a device id that is not
     /// exactly 32 lowercase hex characters, a port outside 1-65535, or a thumbprint that is not
-    /// 40 or 64 hex characters. Never throws on any input.
+    /// 40 or 64 hex characters. The thumbprint is returned in upper case, whatever case was sent,
+    /// so two announcements from one device are equal. Never throws on any input.
     /// </summary>
     public static bool TryDecode(ReadOnlySpan<byte> bytes, out DiscoveryAnnouncement result)
     {
@@ -120,7 +121,7 @@ public readonly record struct DiscoveryAnnouncement(
             }
 
             result = new DiscoveryAnnouncement(
-                deviceId, CleanDisplayName(displayName, deviceId), quicPort, thumbprint);
+                deviceId, CleanDisplayName(displayName, deviceId), quicPort, thumbprint.ToUpperInvariant());
             return true;
         }
         catch (JsonException)

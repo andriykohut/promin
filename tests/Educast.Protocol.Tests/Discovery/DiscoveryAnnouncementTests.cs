@@ -41,6 +41,20 @@ public class DiscoveryAnnouncementTests
     }
 
     [Fact]
+    public void TryDecode_NormalisesTheThumbprintToUpperCase_SoOneDevicesAnnouncementsAreEqual()
+    {
+        var lower = DiscoveryAnnouncement.TryDecode(
+            Datagram(ValidId, "PC-04", "17843", ValidThumbprint.ToLowerInvariant()), out var fromLower);
+        var upper = DiscoveryAnnouncement.TryDecode(
+            Datagram(ValidId, "PC-04", "17843", ValidThumbprint), out var fromUpper);
+
+        Assert.True(lower);
+        Assert.True(upper);
+        Assert.Equal(ValidThumbprint, fromLower.CertificateThumbprint);
+        Assert.Equal(fromUpper, fromLower);
+    }
+
+    [Fact]
     public void TryDecode_ReturnsFalse_ForGarbageBytes()
     {
         var decoded = DiscoveryAnnouncement.TryDecode([1, 2, 3], out var result);
