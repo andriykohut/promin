@@ -14,8 +14,22 @@ namespace Educast.Protocol.Broadcast;
 /// Backpressure is per client. Each client has a small bounded queue of whole frames and its own send loop.
 /// When the queue is full the oldest frame is dropped and the frame still in flight is aborted: it is older
 /// than everything behind it, so finishing it would only push the client further behind. Each frame's send
-/// also has a deadline of <c>max(200 ms, 2 x frameIntervalMs)</c>; on expiry the frame is aborted and
-/// counted as dropped, and the client carries on with the next one. A deadline is not a disconnect.
+/// also has a deadline of <c>max(200 ms, 2 x frameIntervalMs)</c> (a keyframe, the largest frame, gets
+/// <c>max(that, keyframeIntervalMs / 2)</c>); on expiry the frame is aborted and counted as dropped, and the
+/// client carries on with the next one. A deadline is not a disconnect.
+/// </para>
+/// <para>
+/// A frame the session cancelled (deadline or eviction) is a drop however the sink then behaves: it may
+/// return normally, throw <see cref="OperationCanceledException"/> or throw anything else, and the session
+/// cannot know the frame arrived. Only a send that fails when the session had not cancelled it is a
+/// disconnect.
+/// </para>
+/// <para>
+/// A client that lost a frame cannot decode the deltas that follow it. Its keyframe gate closes: it is sent
+/// nothing, and holds its last good picture, until the next keyframe the session produces anyway. No
+/// keyframe is ever forced because of a drop, since that would make one bad PC cost the other nine a full
+/// frame each. Deltas withheld from a gated client are neither offered nor dropped; deltas that were already
+/// queued behind the lost frame are discarded unsent and do count as dropped.
 /// </para>
 /// <para>
 /// The capture loop hands frames to clients with a non-blocking <c>TryWrite</c> and never awaits a sink.
@@ -28,14 +42,9 @@ namespace Educast.Protocol.Broadcast;
 /// </remarks>
 public sealed class BroadcastSession
 {
-    // How long Stop/RemoveClient wait for a loop to finish after cancelling it. A sink that honours its
-    // cancellation token finishes at once; this only bounds the damage from one that does not.
+    // How long Stop/RemoveClient wait, in total, for the loops to finish after cancelling them. A sink that
+    // honours its cancellation token finishes at once; this only bounds the damage from one that does not.
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(2);
-
-    // True while the current thread is inside an event handler of some session. A handler runs on the very
-    // task Stop/RemoveClient would otherwise wait for, so it must not wait for it.
-    [ThreadStatic]
-    private static bool t_inEventHandler;
 
     private sealed class ClientState
     {
@@ -44,8 +53,8 @@ public sealed class BroadcastSession
             Sink = sink;
 
             // DropOldest plus the itemDropped callback gives exact drop accounting for free. The callback
-            // runs on the capture thread that enqueued the newer frame, so it stays a counter increment and
-            // an asynchronous cancellation.
+            // runs on the capture thread that enqueued the newer frame, so it stays a counter increment, a
+            // flag and an asynchronous cancellation.
             Queue = Channel.CreateBounded<byte[]>(
                 new BoundedChannelOptions(queueCapacity)
                 {
@@ -55,6 +64,7 @@ public sealed class BroadcastSession
                 _ =>
                 {
                     Interlocked.Increment(ref DroppedFrameCount);
+                    CloseKeyframeGate();
 
                     // The frame in flight is older than everything queued behind it: finishing it would only
                     // push this client further behind.
@@ -70,13 +80,28 @@ public sealed class BroadcastSession
 
         public Task SendLoop { get; set; } = Task.CompletedTask;
 
-        // A decoder cannot start from anything but a keyframe, so a client is not offered frames until the
-        // first keyframe. Only the capture loop reads or writes this.
-        public bool AwaitingKeyframe { get; set; } = true;
+        // A decoder cannot start from anything but a keyframe, so a client is not offered frames until a
+        // keyframe has been queued for it, and not again after it loses a frame. Opened by the capture loop;
+        // closed by whoever drops a frame.
+        private int _keyframeGateOpen;
+
+        // Counts closings of the gate. The send loop compares it with what it last saw to learn that frames
+        // queued before a loss are now undecodable, however the gate itself has been reopened since.
+        public int DropEpoch;
 
         public CancellationTokenSource? InFlightFrameCts;
         public int DroppedFrameCount;
         public int FramesOffered;
+
+        public bool KeyframeGateOpen => Volatile.Read(ref _keyframeGateOpen) != 0;
+
+        public void OpenKeyframeGate() => Volatile.Write(ref _keyframeGateOpen, 1);
+
+        public void CloseKeyframeGate()
+        {
+            Interlocked.Increment(ref DropEpoch);
+            Volatile.Write(ref _keyframeGateOpen, 0);
+        }
 
         /// <summary>
         /// Abandons the frame stream currently being written to this client. Cancelled asynchronously: the
@@ -97,14 +122,7 @@ public sealed class BroadcastSession
 
         public void Retire()
         {
-            try
-            {
-                Cts.Cancel();
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-
+            Cts.Cancel();
             Queue.Writer.TryComplete();
         }
     }
@@ -114,6 +132,7 @@ public sealed class BroadcastSession
     private readonly int _perClientQueueCapacity;
     private readonly TimeSpan _keyframeInterval;
     private readonly TimeSpan _sendDeadline;
+    private readonly TimeSpan _keyframeSendDeadline;
     private readonly TimeProvider _timeProvider;
 
     private readonly ConcurrentDictionary<string, ClientState> _clients = new();
@@ -145,6 +164,11 @@ public sealed class BroadcastSession
         _perClientQueueCapacity = perClientQueueCapacity;
         _keyframeInterval = TimeSpan.FromMilliseconds(keyframeIntervalMs);
         _sendDeadline = TimeSpan.FromMilliseconds(Math.Max(200L, 2L * frameIntervalMs));
+
+        // A keyframe is the largest frame and the one a client most needs. The client it goes to has nothing
+        // queued behind it (its gate is shut until the keyframe is queued), so waiting longer costs no one
+        // anything.
+        _keyframeSendDeadline = TimeSpan.FromTicks(Math.Max(_sendDeadline.Ticks, _keyframeInterval.Ticks / 2));
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -156,7 +180,8 @@ public sealed class BroadcastSession
 
     /// <summary>
     /// Raised once when the frame source throws. The session has stopped (as after <see cref="Stop"/>) when
-    /// this is raised; <see cref="Start"/> may be called again.
+    /// this is raised; <see cref="Start"/> may be called again. Not raised for a failure that happens while
+    /// <see cref="Stop"/> is already in progress.
     /// </summary>
     public event Action<Exception>? SourceFailed;
 
@@ -207,15 +232,18 @@ public sealed class BroadcastSession
     }
 
     /// <summary>
-    /// Frames that were offered to this client but never arrived: evicted from its queue, aborted while being
-    /// sent, or cancelled at their send deadline. 0 for an unknown client.
+    /// Frames that were queued for this client but never arrived: evicted from its queue, aborted while being
+    /// sent, cancelled at their send deadline, or discarded unsent because an earlier frame was lost. Deltas
+    /// withheld from a client whose keyframe gate is shut were never queued, so they are not counted. 0 for an
+    /// unknown client.
     /// </summary>
     public int DroppedFrameCountFor(string deviceId) =>
         _clients.TryGetValue(deviceId, out var state) ? Volatile.Read(ref state.DroppedFrameCount) : 0;
 
     /// <summary>
     /// How many frames were queued for this client since it was added, whether they were later sent or
-    /// dropped. 0 for an unknown client.
+    /// dropped. Frames withheld because the client is waiting for a keyframe were never queued and are not
+    /// counted. 0 for an unknown client.
     /// </summary>
     public int FramesOfferedTo(string deviceId) =>
         _clients.TryGetValue(deviceId, out var state) ? Volatile.Read(ref state.FramesOffered) : 0;
@@ -247,7 +275,8 @@ public sealed class BroadcastSession
 
     /// <summary>
     /// Stops the broadcast and removes every client. Returns once the capture loop and the send loops have
-    /// ended (a sink that ignores its cancellation token is waited for at most two seconds).
+    /// ended, waiting for all of them together for at most two seconds (a sink or source that ignores
+    /// cancellation is what could use that up).
     /// </summary>
     public void Stop() => StopCore(waitForCaptureLoop: true, onlyIfRunning: null);
 
@@ -255,7 +284,8 @@ public sealed class BroadcastSession
     /// When given, do nothing unless that loop is still the session's current one: a loop that failed late must
     /// not stop a broadcast that was stopped and started again in the meantime.
     /// </param>
-    private void StopCore(bool waitForCaptureLoop, CancellationTokenSource? onlyIfRunning)
+    /// <returns>Whether this call stopped the session.</returns>
+    private bool StopCore(bool waitForCaptureLoop, CancellationTokenSource? onlyIfRunning)
     {
         CancellationTokenSource? cts;
         Task? loop;
@@ -264,7 +294,7 @@ public sealed class BroadcastSession
         {
             if (onlyIfRunning is not null && !ReferenceEquals(_captureCts, onlyIfRunning))
             {
-                return;
+                return false;
             }
 
             cts = _captureCts;
@@ -281,12 +311,10 @@ public sealed class BroadcastSession
             client.Retire();
         }
 
-        if (waitForCaptureLoop)
-        {
-            WaitBounded(loop);
-        }
-
-        WaitBounded(clients.Select(c => c.SendLoop));
+        // One budget for everything, not one per wait.
+        var waitingFor = clients.Select(c => c.SendLoop);
+        WaitBounded(waitForCaptureLoop && loop is not null ? waitingFor.Append(loop) : waitingFor);
+        return true;
     }
 
     private static void RetireAndDrain(IReadOnlyCollection<ClientState> clients)
@@ -299,48 +327,19 @@ public sealed class BroadcastSession
         WaitBounded(clients.Select(c => c.SendLoop));
     }
 
-    private static void WaitBounded(Task? task)
-    {
-        if (task is not null)
-        {
-            WaitBounded([task]);
-        }
-    }
-
     private static void WaitBounded(IEnumerable<Task> tasks)
     {
-        if (t_inEventHandler)
-        {
-            return;
-        }
-
         try
         {
             Task.WaitAll(tasks.ToArray(), DrainTimeout);
         }
         catch (AggregateException)
         {
-            // A handler of ours threw on that task; nothing here to wait for any more.
+            // A handler of ours threw on one of those tasks; there is nothing left to wait for on it.
         }
     }
 
-    private static void Raise<T>(Action<T>? handler, T argument)
-    {
-        if (handler is null)
-        {
-            return;
-        }
-
-        t_inEventHandler = true;
-        try
-        {
-            handler(argument);
-        }
-        finally
-        {
-            t_inEventHandler = false;
-        }
-    }
+    private static void Raise<T>(Action<T>? handler, T argument) => handler?.Invoke(argument);
 
     // ---- capture loop ----------------------------------------------------------------------------------
 
@@ -364,15 +363,19 @@ public sealed class BroadcastSession
         {
             // Stop: the only normal way out of this loop.
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             failure = ex;
         }
-
-        if (failure is not null)
+        catch (Exception)
         {
-            // The session behaves as stopped before anyone is told it has failed.
-            StopCore(waitForCaptureLoop: false, onlyIfRunning: loopCts);
+            // The source failed while Stop was already in progress: a deliberate stop is not a failure.
+        }
+
+        // The session behaves as stopped before anyone is told it has failed; and it is not reported at all
+        // if this loop is no longer the session's current one (stopped, or stopped and started again).
+        if (failure is not null && StopCore(waitForCaptureLoop: false, onlyIfRunning: loopCts))
+        {
             Raise(SourceFailed, failure);
         }
     }
@@ -418,17 +421,20 @@ public sealed class BroadcastSession
 
         foreach (var client in _clients.Values)
         {
-            if (client.AwaitingKeyframe)
+            // A client waiting for a keyframe is sent nothing else: not counted as offered, not as dropped.
+            if (!client.KeyframeGateOpen && !frame.IsKeyframe)
             {
-                if (!frame.IsKeyframe)
-                {
-                    continue;
-                }
-
-                client.AwaitingKeyframe = false;
+                continue;
             }
 
             Offer(client, payload);
+
+            // After the write, not before: queueing this keyframe may evict an older frame, and that eviction
+            // closes the gate, but a keyframe starts a new chain, so the loss does not matter to what follows.
+            if (frame.IsKeyframe)
+            {
+                client.OpenKeyframeGate();
+            }
         }
     }
 
@@ -450,37 +456,86 @@ public sealed class BroadcastSession
     {
         var ct = state.Cts.Token;
         var disconnected = false;
+        var seenDropEpoch = 0;
+        var needKeyframe = false;
         try
         {
             await foreach (var frame in state.Queue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
-                using var deadline = new CancellationTokenSource(_sendDeadline, _timeProvider);
+                // ReadAllAsync keeps yielding what is already queued after cancellation; a removed client's
+                // sink must not be called again.
+                ct.ThrowIfCancellationRequested();
+
+                // A frame was lost since the last one looked: everything still queued behind it was encoded
+                // against a picture this client does not have, so it waits for the next keyframe.
+                var epoch = Volatile.Read(ref state.DropEpoch);
+                if (epoch != seenDropEpoch)
+                {
+                    seenDropEpoch = epoch;
+                    needKeyframe = true;
+                }
+
+                var isKeyframe = VideoFrameEnvelope.ReadFrom(frame).IsKeyframe;
+                if (needKeyframe)
+                {
+                    if (!isKeyframe)
+                    {
+                        // Queued for this client, never sent: dropped.
+                        Interlocked.Increment(ref state.DroppedFrameCount);
+                        continue;
+                    }
+
+                    needKeyframe = false;
+                }
+
+                using var deadline = new CancellationTokenSource(isKeyframe ? _keyframeSendDeadline : _sendDeadline, _timeProvider);
                 using var frameCts = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
                 Interlocked.Exchange(ref state.InFlightFrameCts, frameCts);
+
+                Exception? sendFailure = null;
                 try
                 {
                     await state.Sink.SendFrameAsync(frame, frameCts.Token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested && frameCts.IsCancellationRequested)
+                catch (Exception ex)
                 {
-                    // This frame's stream was aborted: its deadline passed, or the client fell behind and a
-                    // newer frame displaced it. Either way it never arrived. Carry on with the next frame.
-                    Interlocked.Increment(ref state.DroppedFrameCount);
+                    sendFailure = ex;
                 }
                 finally
                 {
                     Interlocked.CompareExchange(ref state.InFlightFrameCts, null, frameCts);
+                }
+
+                // What happened to the frame is decided by what the session did, not by what the sink threw:
+                // a real transport can return normally, or throw something other than
+                // OperationCanceledException, after its stream has been aborted.
+                if (ct.IsCancellationRequested)
+                {
+                    // RemoveClient or Stop; the next read ends the loop.
+                    continue;
+                }
+
+                if (frameCts.IsCancellationRequested)
+                {
+                    // The session abandoned this frame (its deadline passed, or the client fell behind and a
+                    // newer frame displaced it). The session cannot know it arrived, so it is a drop, however
+                    // the send ended, and never a disconnect.
+                    Interlocked.Increment(ref state.DroppedFrameCount);
+                    state.CloseKeyframeGate();
+                    continue;
+                }
+
+                if (sendFailure is not null)
+                {
+                    // The sink failed and the session had not cancelled it: its connection dropped.
+                    disconnected = true;
+                    break;
                 }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // RemoveClient or Stop.
-        }
-        catch (Exception)
-        {
-            // The sink failed for a reason that is not ours (its connection dropped): this client is gone.
-            disconnected = true;
         }
 
         // Only report it if this is still the registered client: RemoveClient, Stop or a replacing AddClient
