@@ -30,7 +30,19 @@ public static class SelfSignedCertificateFactory
     /// <summary>How long a freshly created device certificate stays valid.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromDays(365 * 10);
 
-    public static X509Certificate2 Create(string subjectName)
+    public static X509Certificate2 Create(string subjectName) => Create(subjectName, out _);
+
+    /// <summary>
+    /// <see cref="Create(string)"/>, and also hands back the PKCS#12 image of the very same
+    /// certificate and key, for <see cref="DeviceIdentity"/> to keep. The returned certificate's
+    /// key is deliberately not exportable, so this is the only point at which the key can be
+    /// written out: while it is still the in-memory key <c>CreateSelfSigned</c> made. The bytes
+    /// contain the private key; the caller owns them and must put them nowhere but a private
+    /// directory. <see cref="X509CertificateLoader.LoadPkcs12(byte[], string?, X509KeyStorageFlags, Pkcs12LoaderLimits?)"/>
+    /// with <see cref="X509KeyStorageFlags.DefaultKeySet"/> turns them back into a certificate
+    /// exactly as this method does.
+    /// </summary>
+    internal static X509Certificate2 Create(string subjectName, out byte[] pkcs12)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(subjectName);
 
@@ -61,8 +73,9 @@ public static class SelfSignedCertificateFactory
         // the container is temporary and goes away with the certificate handle. Exportable is
         // deliberately absent too: the key never needs to leave the container it lands in.
         // (EphemeralKeySet is not an option: SChannel refuses such a credential, 0x8009030D.)
+        pkcs12 = certificate.Export(X509ContentType.Pfx);
         return X509CertificateLoader.LoadPkcs12(
-            certificate.Export(X509ContentType.Pfx),
+            pkcs12,
             password: null,
             keyStorageFlags: X509KeyStorageFlags.DefaultKeySet);
     }
