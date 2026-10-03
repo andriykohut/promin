@@ -111,7 +111,7 @@ public class QuicPairingHandshakeTests
         Assert.False(await agentTask);
 
         var aborted = await Assert.ThrowsAsync<QuicException>(
-            async () => await rawStream.ReadAsync(answer, deadline.Token));
+            async () => await rawStream.ReadAtLeastAsync(answer, 1, cancellationToken: deadline.Token));
         Assert.Equal(QuicError.StreamAborted, aborted.QuicError);
         Assert.Equal(QuicControlChannel.PairingFailedErrorCode, aborted.ApplicationErrorCode);
     }
