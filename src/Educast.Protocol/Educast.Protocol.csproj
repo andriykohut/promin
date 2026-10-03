@@ -13,4 +13,12 @@
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!--
+      The tests reach the transport's internals: PeerCertificateStore.Pin (which only the
+      pairing operation may call in production), the accept pump and the pairing trust window.
+    -->
+    <InternalsVisibleTo Include="Educast.Protocol.Tests" />
+  </ItemGroup>
+
 </Project>
