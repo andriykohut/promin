@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
-using System.Security.Authentication;
-using System.Security.Cryptography;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading.Channels;
 
 namespace Educast.Protocol.Transport;
 
@@ -19,16 +19,32 @@ namespace Educast.Protocol.Transport;
 /// protocol. In <see cref="PeerTrustMode.TrustOnFirstUse"/> — an operator-initiated pairing
 /// window only — the certificate is accepted so the pre-shared-key exchange can run over it,
 /// and the caller pins it afterwards if and only if pairing succeeded.
+///
+/// Connections are taken off the QUIC listener by a single background
+/// <see cref="QuicAcceptPump"/>, started by <see cref="StartAsync"/>; see that type for how
+/// refused peers, runs of failures and local faults are told apart.
 /// </remarks>
 public sealed class QuicAgentListener : IAsyncDisposable
 {
+    /// <summary>
+    /// Established connections waiting for <see cref="AcceptAsync"/>. Bounded: if the
+    /// application stops accepting, the pump waits rather than queueing without limit.
+    /// </summary>
+    private const int AcceptQueueCapacity = 16;
+
     private readonly X509Certificate2 _localCertificate;
     private readonly PeerCertificateStore _trustedMasters;
     private readonly int _port;
     private readonly PeerTrustMode _trustMode;
     private readonly IPAddress _bindAddress;
     private readonly Action<Exception>? _connectionRejected;
+    private readonly Channel<QuicChannel> _established = Channel.CreateBounded<QuicChannel>(
+        new BoundedChannelOptions(AcceptQueueCapacity) { FullMode = BoundedChannelFullMode.Wait });
+    private readonly CancellationTokenSource _pumpCts = new();
     private QuicListener? _listener;
+    private QuicAcceptPump? _pump;
+    private Task? _pumpTask;
+    private int _disposed;
 
     public QuicAgentListener(
         X509Certificate2 localCertificate,
@@ -55,6 +71,13 @@ public sealed class QuicAgentListener : IAsyncDisposable
     public IPEndPoint LocalEndPoint =>
         _listener?.LocalEndPoint ?? throw new InvalidOperationException("The listener has not been started.");
 
+    /// <summary>
+    /// Handshakes refused since the last connection that was accepted. Zero on a healthy
+    /// listener; a number that keeps climbing is a machine being dialled by something it does
+    /// not trust, and is what a diagnostics view would show.
+    /// </summary>
+    public int ConsecutiveAcceptFailures => _pump?.ConsecutiveFailures ?? 0;
+
     public async Task StartAsync(CancellationToken ct)
     {
         QuicTransportSettings.EnsureSupported();
@@ -71,22 +94,25 @@ public sealed class QuicAgentListener : IAsyncDisposable
             ConnectionOptionsCallback = (_, _, _) => ValueTask.FromResult(CreateConnectionOptions()),
         };
 
-        _listener = await QuicListener.ListenAsync(options, ct).ConfigureAwait(false);
+        var listener = await QuicListener.ListenAsync(options, ct).ConfigureAwait(false);
+        _listener = listener;
+        _pump = new QuicAcceptPump(listener.AcceptConnectionAsync, DeliverAsync, _connectionRejected);
+        _pumpTask = RunPumpAsync(_pump, _pumpCts.Token);
     }
 
     /// <summary>
-    /// Accepts the next master connection that completed its handshake. The returned channel
+    /// Returns the next master connection that completed its handshake. The returned channel
     /// already knows which pinned device id the peer certificate belongs to (null while
     /// pairing), and owns the connection.
     /// </summary>
     /// <remarks>
-    /// A peer whose certificate is refused does not fail quietly: .NET reports a failed
-    /// handshake by throwing out of <c>AcceptConnectionAsync</c>, so one stranger dialling the
-    /// port would otherwise kill the agent's accept loop and take the machine off the air until
-    /// it is restarted. Handshake failures are therefore absorbed here — reported through the
-    /// optional <c>connectionRejected</c> callback for the pairing UI to surface — and the
-    /// listener goes back to waiting. Only cancellation and listener shutdown escape.
+    /// A peer whose certificate is refused never appears here: the refusal is reported through
+    /// the optional <c>connectionRejected</c> callback and the listener carries on. What does
+    /// come out of this method, besides cancellation, is a fault of this machine's own — a
+    /// credential that will not load, for instance. That is thrown to every caller from then
+    /// on, because a listener in that state is broken, not busy.
     /// </remarks>
+    /// <exception cref="ObjectDisposedException">The listener was disposed.</exception>
     public async Task<QuicChannel> AcceptAsync(CancellationToken ct)
     {
         if (_listener is null)
@@ -94,35 +120,57 @@ public sealed class QuicAgentListener : IAsyncDisposable
             throw new InvalidOperationException("The listener has not been started.");
         }
 
-        while (true)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-
-            QuicConnection connection;
-            try
+            return await _established.Reader.ReadAsync(ct).ConfigureAwait(false);
+        }
+        catch (ChannelClosedException closed)
+        {
+            if (closed.InnerException is { } fault)
             {
-                connection = await _listener.AcceptConnectionAsync(ct).ConfigureAwait(false);
-            }
-            catch (AuthenticationException rejected)
-            {
-                _connectionRejected?.Invoke(rejected);
-                continue;
-            }
-            catch (QuicException rejected) when (rejected.QuicError != QuicError.OperationAborted)
-            {
-                _connectionRejected?.Invoke(rejected);
-                continue;
+                ExceptionDispatchInfo.Throw(fault);
             }
 
-            string? deviceId = null;
-            if (connection.RemoteCertificate is { } certificate)
-            {
-                _trustedMasters.TryGetDeviceIdForThumbprint(
-                    certificate.GetCertHashString(HashAlgorithmName.SHA256),
-                    out deviceId);
-            }
+            throw new ObjectDisposedException(nameof(QuicAgentListener));
+        }
+    }
 
-            return new QuicChannel(connection, deviceId);
+    private async Task RunPumpAsync(QuicAcceptPump pump, CancellationToken ct)
+    {
+        Exception? fault = null;
+        try
+        {
+            await pump.RunAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception failure)
+        {
+            // Not swallowed: handed to every AcceptAsync caller through the queue's completion.
+            fault = failure;
+        }
+        finally
+        {
+            _established.Writer.TryComplete(fault);
+        }
+    }
+
+    private async ValueTask DeliverAsync(QuicConnection connection, CancellationToken ct)
+    {
+        string? deviceId = null;
+        if (connection.RemoteCertificate is { } certificate)
+        {
+            _trustedMasters.TryGetDeviceIdForThumbprint(
+                PeerCertificateStore.ComputeThumbprint(certificate), out deviceId);
+        }
+
+        var channel = new QuicChannel(connection, deviceId);
+        try
+        {
+            await _established.Writer.WriteAsync(channel, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            await channel.DisposeAsync().ConfigureAwait(false);
+            throw;
         }
     }
 
@@ -165,16 +213,37 @@ public sealed class QuicAgentListener : IAsyncDisposable
             return true;
         }
 
-        var thumbprint = certificate.GetCertHashString(HashAlgorithmName.SHA256);
-        return _trustedMasters.TryGetDeviceIdForThumbprint(thumbprint, out _);
+        return _trustedMasters.TryGetDeviceIdForThumbprint(
+            PeerCertificateStore.ComputeThumbprint(certificate), out _);
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        // Stop the pump first, so the listener going away under it is a cancellation rather
+        // than a fault.
+        await _pumpCts.CancelAsync().ConfigureAwait(false);
+
         if (_listener is not null)
         {
             await _listener.DisposeAsync().ConfigureAwait(false);
-            _listener = null;
         }
+
+        if (_pumpTask is not null)
+        {
+            await _pumpTask.ConfigureAwait(false);
+        }
+
+        _established.Writer.TryComplete();
+        while (_established.Reader.TryRead(out var unclaimed))
+        {
+            await unclaimed.DisposeAsync().ConfigureAwait(false);
+        }
+
+        _pumpCts.Dispose();
     }
 }

@@ -66,7 +66,8 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
         PeerTrustMode masterTrustMode = PeerTrustMode.RequirePinned,
         PeerTrustMode agentTrustMode = PeerTrustMode.RequirePinned,
         bool pinMasterOnAgent = true,
-        bool pinAgentOnMaster = true)
+        bool pinAgentOnMaster = true,
+        Action<Exception>? connectionRejected = null)
     {
         var masterCertificate = SelfSignedCertificateFactory.Create(MasterDeviceId);
         var agentCertificate = SelfSignedCertificateFactory.Create(AgentDeviceId);
@@ -86,7 +87,7 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
         // Port 0 so concurrent test runs never collide, loopback so no test run can trip a
         // Windows Firewall prompt. Production binds IPAddress.Any.
         var listener = new QuicAgentListener(
-            agentCertificate, agentTrust, port: 0, agentTrustMode, IPAddress.Loopback);
+            agentCertificate, agentTrust, port: 0, agentTrustMode, IPAddress.Loopback, connectionRejected);
         await listener.StartAsync(ct);
 
         return new QuicLoopbackHarness(
