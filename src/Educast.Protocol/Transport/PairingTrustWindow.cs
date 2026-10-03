@@ -5,17 +5,17 @@ using System.Security.Cryptography.X509Certificates;
 namespace Educast.Protocol.Transport;
 
 /// <summary>
-/// The "first use" of trust-on-first-use, scoped to exactly one pairing operation.
+/// The "first use" of trust-on-first-use, scoped to exactly one pairing operation. It is the
+/// only thing that judges the certificate on a connection dialled in order to pair.
 /// </summary>
 /// <remarks>
 /// A peer that has never been paired has no pin, so its certificate has to be let through TLS
-/// once for the pre-shared-key handshake to run over it. That permission used to be a mode of
-/// the listener or connector object — on for as long as the object lived, for every connection
-/// including ordinary reconnects, with disposal as the only way to turn it off. It is now an
-/// object that one pairing operation creates, uses and closes:
+/// once for the pre-shared-key handshake to run over it. That permission is an object that one
+/// pairing operation creates, uses and closes:
 ///
 /// <b>Explicit.</b> Nothing admits an unpinned certificate unless a pairing operation made one
-/// of these. Ordinary connects and accepts never do.
+/// of these, and only connections dialled as pairing connections are judged by it. Ordinary
+/// connects and accepts never consult it.
 ///
 /// <b>Single-use.</b> It admits at most one certificate, once. The first certificate it is
 /// asked about consumes it, whether that certificate is admitted or refused, and whether the
@@ -24,13 +24,18 @@ namespace Educast.Protocol.Transport;
 /// <b>Bounded.</b> It stops admitting when its lifetime runs out, and when the operation that
 /// owns it closes it — whichever comes first.
 ///
-/// <b>It never re-keys.</b> It refuses a certificate for a device id that is already pinned to
-/// a different certificate, and a certificate that is already pinned for a different device.
-/// Re-pairing a machine that was reimaged is an explicit
-/// <see cref="PeerCertificateStore.Unpin"/> first.
+/// <b>It checks the name.</b> A certificate that names no device has nothing to be pinned
+/// under. On the master, which knows which device it dialled, a certificate naming any other
+/// device is refused before a single handshake message is exchanged.
 ///
-/// Callers consult the pins before the window, so a peer that is already pinned and matches
-/// never consumes it.
+/// <b>It never re-keys.</b> A device id that is already pinned to a <i>different</i>
+/// certificate is refused, and so is a certificate already pinned for a different device.
+/// Re-pairing a machine that was reimaged is an explicit <see cref="PeerCertificateStore.Unpin"/>
+/// first.
+///
+/// <b>It does re-pair.</b> A device id already pinned to <i>this same</i> certificate is
+/// admitted. Pairing the same two certificates again changes nothing that is trusted, and it is
+/// how a pairing that completed on one side only gets finished: by simply trying again.
 /// </remarks>
 internal sealed class PairingTrustWindow
 {
@@ -44,12 +49,14 @@ internal sealed class PairingTrustWindow
     private bool _consumed;
     private bool _closed;
     private string? _admittedThumbprint;
+    private string? _refusalReason;
 
     /// <param name="pins">The store this window must never contradict.</param>
     /// <param name="expectedDeviceId">
     /// The device the operation is pairing with, when it knows — the master always does, because
-    /// it dials a specific agent. Null on the agent, which learns who the master is from the
-    /// certificate; there the certificate's own subject name is the device id.
+    /// it dials a specific agent, and the certificate must then carry that name. Null on the
+    /// agent, which learns who the master is from the certificate; there the certificate's own
+    /// subject name is the device id.
     /// </param>
     /// <param name="lifetime">How long the window may admit a certificate.</param>
     public PairingTrustWindow(PeerCertificateStore pins, string? expectedDeviceId, TimeSpan lifetime)
@@ -60,14 +67,51 @@ internal sealed class PairingTrustWindow
         _pins = pins;
         _expectedDeviceId = expectedDeviceId;
         _lifetime = lifetime;
+
+        // On the master nobody awaits Claimed; a refusal recorded there must not surface later
+        // as an unobserved task exception.
+        _claimed.Task.ContinueWith(
+            static faulted => _ = faulted.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
-    /// <summary>Completes with the connection whose certificate this window admitted.</summary>
+    /// <summary>
+    /// Completes with the connection whose certificate this window admitted. Faults with
+    /// <see cref="PairingWindowSpentException"/> the moment the window is used up by a
+    /// certificate it refuses, so the operation waiting on it finds out at once instead of
+    /// waiting for a master that can no longer be let in.
+    /// </summary>
     public Task<QuicConnection> Claimed => _claimed.Task;
 
+    /// <summary>Why the one certificate this window was asked about was refused, if it was.</summary>
+    public string? RefusalReason
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _refusalReason;
+            }
+        }
+    }
+
+    /// <summary>True once a certificate has been admitted, whether or not its connection arrived.</summary>
+    public bool HasAdmitted
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _admittedThumbprint is not null;
+            }
+        }
+    }
+
     /// <summary>
-    /// The TLS decision for a certificate that matches no pin. True at most once in the life of
-    /// the window.
+    /// The TLS decision for a certificate presented on a pairing connection. True at most once
+    /// in the life of the window.
     /// </summary>
     public bool TryAdmit(X509Certificate? certificate)
     {
@@ -86,30 +130,49 @@ internal sealed class PairingTrustWindow
             // Consumed by the first certificate it is asked about, admitted or not.
             _consumed = true;
 
-            var deviceId = _expectedDeviceId ?? CertificateIdentity.ReadDeviceId(certificate);
-            if (deviceId is null)
+            var refusal = Judge(certificate, out var thumbprint);
+            if (refusal is not null)
             {
-                // Nothing to pin it under.
-                return false;
-            }
-
-            if (_pins.TryGetPinnedThumbprint(deviceId, out _))
-            {
-                // Already pinned — and to a different certificate, or the pin check that runs
-                // before this would have accepted it. A pairing window does not re-key.
-                return false;
-            }
-
-            var thumbprint = PeerCertificateStore.ComputeThumbprint(certificate);
-            if (_pins.TryGetDeviceIdForThumbprint(thumbprint, out _))
-            {
-                // This certificate already identifies a different device.
+                _refusalReason = refusal;
+                _claimed.TrySetException(new PairingWindowSpentException(refusal));
                 return false;
             }
 
             _admittedThumbprint = thumbprint;
             return true;
         }
+    }
+
+    /// <summary>Null to admit; otherwise the reason for refusing, in an operator's words.</summary>
+    private string? Judge(X509Certificate certificate, out string thumbprint)
+    {
+        thumbprint = PeerCertificateStore.ComputeThumbprint(certificate);
+
+        var named = CertificateIdentity.ReadDeviceId(certificate);
+        if (named is null)
+        {
+            return "its certificate names no device";
+        }
+
+        if (_expectedDeviceId is not null && !string.Equals(named, _expectedDeviceId, StringComparison.Ordinal))
+        {
+            return $"its certificate names '{named}', not '{_expectedDeviceId}'";
+        }
+
+        if (_pins.TryGetPinnedThumbprint(named, out var pinned))
+        {
+            // The same certificate again is a re-pair and changes nothing that is trusted.
+            return string.Equals(pinned, thumbprint, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : $"'{named}' is already paired with a different certificate; unpin it before pairing it again";
+        }
+
+        if (_pins.TryGetDeviceIdForThumbprint(thumbprint, out var owner))
+        {
+            return $"its certificate is already paired as '{owner}'";
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -143,6 +206,9 @@ internal sealed class PairingTrustWindow
         }
     }
 }
+
+/// <summary>A pairing window was used up by a certificate it refused.</summary>
+internal sealed class PairingWindowSpentException(string reason) : Exception(reason);
 
 /// <summary>Reads the device id a certificate carries.</summary>
 internal static class CertificateIdentity

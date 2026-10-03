@@ -22,6 +22,41 @@ public class ControlMessageCodecTests
         Assert.Equal(original.MasterNonce, result.MasterNonce);
     }
 
+    /// <summary>
+    /// Every message of the pairing exchange survives the wire, including the two that carry no
+    /// payload worth the name: the rejection (a PairAck with no proof) and the agent's explicit
+    /// confirmation. Fails a message type that was added without its type discriminator.
+    /// </summary>
+    [Fact]
+    public void EncodeThenDecode_RoundTripsEveryPairingMessage()
+    {
+        byte[] proof = [9, 8, 7];
+        byte[] nonce = [1, 2, 3];
+
+        var response = Assert.IsType<PairChallengeResponse>(RoundTrip(new PairChallengeResponse(proof, nonce)));
+        Assert.Equal(proof, response.AgentProof);
+        Assert.Equal(nonce, response.AgentNonce);
+
+        var ack = Assert.IsType<PairAck>(RoundTrip(new PairAck(Success: true, proof)));
+        Assert.True(ack.Success);
+        Assert.Equal(proof, ack.MasterProof);
+
+        var rejected = Assert.IsType<PairAck>(RoundTrip(PairAck.Rejected));
+        Assert.False(rejected.Success);
+        Assert.Null(rejected.MasterProof);
+
+        Assert.IsType<PairConfirm>(RoundTrip(new PairConfirm()));
+
+        static ControlMessage RoundTrip(ControlMessage message)
+        {
+            var encoded = ControlMessageCodec.Encode(message);
+            Assert.True(ControlMessageCodec.TryDecode(
+                new ReadOnlySequence<byte>(encoded), out var decoded, out var consumed));
+            Assert.Equal(encoded.Length, consumed);
+            return decoded!;
+        }
+    }
+
     [Fact]
     public void TryDecode_ReturnsFalse_WhenBufferHasIncompleteFrame()
     {

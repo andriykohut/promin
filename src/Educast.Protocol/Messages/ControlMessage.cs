@@ -6,6 +6,7 @@ namespace Educast.Protocol.Messages;
 [JsonDerivedType(typeof(PairChallengeRequest), "pairChallengeRequest")]
 [JsonDerivedType(typeof(PairChallengeResponse), "pairChallengeResponse")]
 [JsonDerivedType(typeof(PairAck), "pairAck")]
+[JsonDerivedType(typeof(PairConfirm), "pairConfirm")]
 [JsonDerivedType(typeof(StartBroadcast), "startBroadcast")]
 [JsonDerivedType(typeof(StopBroadcast), "stopBroadcast")]
 [JsonDerivedType(typeof(BroadcastReady), "broadcastReady")]
@@ -47,6 +48,19 @@ public sealed record PairAck(bool Success, byte[]? MasterProof = null) : Control
     /// <summary>The "pairing did not happen" signal. Carries no proof, by definition.</summary>
     public static PairAck Rejected { get; } = new(Success: false, MasterProof: null);
 }
+
+/// <summary>
+/// The agent's explicit "the pairing is recorded", sent after it has verified the master's
+/// proof and pinned the master's certificate. The master pins only when it has read this.
+/// </summary>
+/// <remarks>
+/// Success has to be something the agent says, not something the master infers. The stream
+/// closing, a wait running out, or the connection going away all happen for reasons that have
+/// nothing to do with acceptance — an agent that timed out closes its stream too — so none of
+/// them may be read as one. It carries no proof of its own: it travels on the TLS connection the
+/// handshake has just bound to both certificates.
+/// </remarks>
+public sealed record PairConfirm : ControlMessage;
 
 public sealed record StartBroadcast(int Width, int Height, int TargetFps) : ControlMessage;
 public sealed record StopBroadcast : ControlMessage;

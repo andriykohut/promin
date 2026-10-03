@@ -5,8 +5,9 @@ using Educast.Protocol.Transport;
 namespace Educast.Protocol.Tests.Transport;
 
 /// <summary>
-/// The permission to let one unpinned certificate through TLS. It is explicit, single-use,
-/// bounded, and never re-keys a device that is already pinned.
+/// The permission to let one certificate through TLS on a pairing connection. It is explicit,
+/// single-use, bounded, checks the name, never re-keys a device that is already pinned — and
+/// does let the same certificate pair again.
 /// </summary>
 public class PairingTrustWindowTests
 {
@@ -24,23 +25,35 @@ public class PairingTrustWindowTests
         var window = new PairingTrustWindow(new PeerCertificateStore(), "agent-1", Generous);
 
         Assert.True(window.TryAdmit(first));
+        Assert.True(window.HasAdmitted);
         Assert.False(window.TryAdmit(second));
         Assert.False(window.TryAdmit(first));
     }
 
-    /// <summary>The first certificate consumes the window even when it is the one refused.</summary>
+    /// <summary>
+    /// The first certificate consumes the window even when it is the one refused — and the
+    /// operation waiting on the window is told at once, with the reason, rather than left to
+    /// wait for a master it can no longer let in.
+    /// </summary>
     [Fact]
-    public void TryAdmit_IsConsumedByTheFirstCertificate_EvenWhenThatOneIsRefused()
+    public async Task TryAdmit_IsConsumedByTheFirstCertificate_EvenWhenThatOneIsRefused()
     {
         using var presented = SelfSignedCertificateFactory.Create("agent-1");
-        using var later = SelfSignedCertificateFactory.Create("agent-2");
+        using var later = SelfSignedCertificateFactory.Create("agent-1");
         var pins = new PeerCertificateStore();
         pins.Pin("agent-1", new string('A', 64));
         var window = new PairingTrustWindow(pins, "agent-1", Generous);
 
         Assert.False(window.TryAdmit(presented));
+        Assert.False(window.HasAdmitted);
+        Assert.Contains("unpin", window.RefusalReason);
+
+        // Now nothing stands in the way of the second certificate except the window being spent.
         pins.Unpin("agent-1");
         Assert.False(window.TryAdmit(later));
+
+        var spent = await Assert.ThrowsAsync<PairingWindowSpentException>(() => window.Claimed);
+        Assert.Equal(window.RefusalReason, spent.Message);
     }
 
     [Fact]
@@ -53,6 +66,10 @@ public class PairingTrustWindowTests
         await Task.Delay(200);
 
         Assert.False(window.TryAdmit(certificate));
+
+        // An expired window was not "spent" by anyone: nothing is reported as refused.
+        Assert.Null(window.RefusalReason);
+        Assert.False(window.Claimed.IsCompleted);
     }
 
     [Fact]
@@ -64,6 +81,7 @@ public class PairingTrustWindowTests
         window.Close();
 
         Assert.False(window.TryAdmit(certificate));
+        Assert.Null(window.RefusalReason);
     }
 
     [Fact]
@@ -77,10 +95,25 @@ public class PairingTrustWindowTests
     }
 
     /// <summary>
-    /// The connector binds the device id it is pairing: a device that is already pinned to a
-    /// different certificate is not re-keyed by a pairing window. Fails a window that ignores
-    /// the device id, which is how pairing one client could accept a forged certificate for
-    /// another that is already trusted.
+    /// The master checks the name it dialled: a certificate naming any other device is refused
+    /// before a handshake message is exchanged. Fails a window that binds the device id only by
+    /// looking at the pins, which lets whatever answers at an address be paired under whatever
+    /// name the operator typed.
+    /// </summary>
+    [Fact]
+    public void TryAdmit_OnTheMaster_Refuses_ACertificateThatNamesAnotherDevice()
+    {
+        using var presented = SelfSignedCertificateFactory.Create("agent-3");
+        var window = new PairingTrustWindow(new PeerCertificateStore(), "agent-7", Generous);
+
+        Assert.False(window.TryAdmit(presented));
+        Assert.Contains("'agent-3'", window.RefusalReason);
+        Assert.Contains("'agent-7'", window.RefusalReason);
+    }
+
+    /// <summary>
+    /// A device that is already pinned to a different certificate is not re-keyed by a pairing
+    /// window; the reason says to unpin, which here is the remedy.
     /// </summary>
     [Fact]
     public void TryAdmit_Refuses_ADeviceAlreadyPinnedToADifferentCertificate()
@@ -88,19 +121,39 @@ public class PairingTrustWindowTests
         using var presented = SelfSignedCertificateFactory.Create("agent-3");
         var pins = new PeerCertificateStore();
         pins.Pin("agent-3", new string('A', 64));
+        var window = new PairingTrustWindow(pins, "agent-3", Generous);
 
-        Assert.False(new PairingTrustWindow(pins, "agent-3", Generous).TryAdmit(presented));
+        Assert.False(window.TryAdmit(presented));
+        Assert.Contains("unpin", window.RefusalReason);
     }
 
-    /// <summary>One certificate identifies one device: agent-3's cannot be admitted as agent-7.</summary>
+    /// <summary>
+    /// The same certificate for the same device is not a re-key: it is a re-pair, and it is how
+    /// a pairing that only one side recorded gets finished. Fails a window that refuses every
+    /// device that is already pinned.
+    /// </summary>
     [Fact]
-    public void TryAdmit_Refuses_ACertificateAlreadyPinnedForAnotherDevice()
+    public void TryAdmit_Admits_TheSameCertificateForADeviceThatIsAlreadyPinnedToIt()
     {
         using var presented = SelfSignedCertificateFactory.Create("agent-3");
         var pins = new PeerCertificateStore();
         pins.Pin("agent-3", PeerCertificateStore.ComputeThumbprint(presented));
 
-        Assert.False(new PairingTrustWindow(pins, "agent-7", Generous).TryAdmit(presented));
+        Assert.True(new PairingTrustWindow(pins, "agent-3", Generous).TryAdmit(presented));
+        Assert.True(new PairingTrustWindow(pins, expectedDeviceId: null, Generous).TryAdmit(presented));
+    }
+
+    /// <summary>One certificate identifies one device: it cannot be paired under a second name.</summary>
+    [Fact]
+    public void TryAdmit_Refuses_ACertificateAlreadyPinnedForAnotherDevice()
+    {
+        using var presented = SelfSignedCertificateFactory.Create("agent-7");
+        var pins = new PeerCertificateStore();
+        pins.Pin("agent-3", PeerCertificateStore.ComputeThumbprint(presented));
+        var window = new PairingTrustWindow(pins, "agent-7", Generous);
+
+        Assert.False(window.TryAdmit(presented));
+        Assert.Contains("'agent-3'", window.RefusalReason);
     }
 
     /// <summary>
@@ -121,7 +174,7 @@ public class PairingTrustWindowTests
 
     /// <summary>A certificate that names no device has nothing to be pinned under.</summary>
     [Fact]
-    public void TryAdmit_OnTheAgent_Refuses_ACertificateThatNamesNoDevice()
+    public void TryAdmit_Refuses_ACertificateThatNamesNoDevice()
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest("O=Nameless", key, HashAlgorithmName.SHA256);

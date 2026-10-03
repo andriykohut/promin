@@ -25,6 +25,11 @@ namespace Educast.Protocol.Pairing;
 /// the same bytes. The transport passes a digest of the two certificates at the ends of its own
 /// TLS connection, which is what makes a relay in the middle fail.
 ///
+/// <b>These four messages establish that both sides know the key; they do not, by themselves,
+/// record anything.</b> Recording is the caller's step, and the transport follows it with a
+/// fifth message of its own — the agent's explicit <see cref="PairConfirm"/> — so that neither
+/// side ever has to infer from a closed stream or an expired wait that the other one finished.
+///
 /// <b>Roles are fixed by the transport, not by preference.</b> The master is the side that opens
 /// the control stream, and an outbound QUIC stream is invisible to the peer until its opener
 /// writes to it, so the master must speak first. The agent waits to receive.

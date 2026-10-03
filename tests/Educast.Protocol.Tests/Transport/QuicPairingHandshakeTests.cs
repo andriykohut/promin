@@ -54,25 +54,90 @@ public class QuicPairingHandshakeTests
             QuicPairingHandshake.RunAsAgentAsync(aborted, PresharedKey, Binding, CancellationToken.None));
     }
 
-    /// <summary>Everything the unauthenticated peer can cause is a failed pairing, never a throw.</summary>
+    /// <summary>
+    /// Everything the unauthenticated peer can cause is a failed pairing, never a throw — and
+    /// the result says which kind, so the operator can be told the truth about it.
+    /// </summary>
     [Fact]
     public async Task Handshake_ReportsAFailedPairing_ForEveryFailureThePeerCanCause()
     {
-        Exception[] peerCaused =
+        (Exception Failure, PairingHandshakeResult Expected)[] peerCaused =
         [
-            new ControlChannelClosedException("closed mid-handshake"),
-            new ControlMessageFormatException("corrupt frame"),
-            new QuicException(QuicError.ConnectionAborted, 0, "peer closed the connection"),
-            new QuicException(QuicError.StreamAborted, 3, "peer aborted the stream"),
-            new QuicException(QuicError.ConnectionIdle, null, "peer went away"),
+            (new ControlChannelClosedException("closed mid-handshake"), PairingHandshakeResult.PeerClosed),
+            (new ControlMessageFormatException("corrupt frame"), PairingHandshakeResult.CorruptFrame),
+            (new QuicException(QuicError.ConnectionAborted, 0, "peer closed the connection"),
+                PairingHandshakeResult.PeerClosed),
+            (new QuicException(QuicError.StreamAborted, 3, "peer aborted the stream"),
+                PairingHandshakeResult.PeerClosed),
+            (new QuicException(QuicError.ConnectionIdle, null, "peer went away"), PairingHandshakeResult.PeerClosed),
+
+            // The peer refusing this side's certificate: TLS 1.3 delivers that after the
+            // connection is up, on whatever operation happens to be in flight.
+            (new System.Security.Authentication.AuthenticationException("TLS alert: BadCertificate"),
+                PairingHandshakeResult.PeerRefused),
         ];
 
-        foreach (var failure in peerCaused)
+        foreach (var (failure, expected) in peerCaused)
         {
             var channel = new FaultingControlChannel(failure);
-            Assert.False(await QuicPairingHandshake.RunAsMasterAsync(channel, PresharedKey, Binding, CancellationToken.None));
-            Assert.False(await QuicPairingHandshake.RunAsAgentAsync(channel, PresharedKey, Binding, CancellationToken.None));
+            Assert.Equal(
+                expected,
+                await QuicPairingHandshake.RunAsMasterAsync(channel, PresharedKey, Binding, CancellationToken.None));
+            Assert.Equal(
+                expected,
+                await QuicPairingHandshake.RunAsAgentAsync(channel, PresharedKey, Binding, CancellationToken.None));
         }
+    }
+
+    /// <summary>
+    /// The handshake's own deadline, and the caller's. Neither may leave the stream to close in
+    /// good order, because the peer would read that as the handshake having finished. When the
+    /// caller's own token is the one that fires — which is what happens when an outer deadline
+    /// shares the budget and started first — the cancellation still propagates, and the stream
+    /// is still aborted on the way out. Fails an abort that only runs on the "returned false"
+    /// path.
+    /// </summary>
+    [Theory(Timeout = 30000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ATimedOutHandshake_AbortsTheControlStream_WhicheverDeadlineFired(bool callersTokenFires)
+    {
+        using var deadline = QuicLoopbackHarness.Deadline();
+        await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
+
+        var acceptTask = harness.Listener.AcceptAsync(deadline.Token);
+        var rawMaster = await harness.ConnectRawAsync(deadline.Token);
+        await using var agent = await acceptTask;
+
+        await using var rawStream = await rawMaster.OpenOutboundStreamAsync(
+            QuicStreamType.Bidirectional, deadline.Token);
+        await RawPairing.WriteAsync(rawStream, new PairChallengeRequest(PairingCrypto.CreateNonce()), deadline.Token);
+        await using var agentControl = await agent.AcceptControlChannelAsync(deadline.Token);
+
+        // The master answers nothing further, so the agent's handshake runs out of time.
+        using var callers = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        callers.CancelAfter(callersTokenFires ? TimeSpan.FromMilliseconds(500) : TimeSpan.FromSeconds(20));
+        var agentTask = QuicPairingHandshake.RunAsAgentAsync(
+            agentControl,
+            PresharedKey,
+            harness.Binding,
+            callers.Token,
+            callersTokenFires ? TimeSpan.FromSeconds(20) : TimeSpan.FromMilliseconds(500));
+
+        Assert.IsType<PairChallengeResponse>(await RawPairing.ReadAsync(rawStream, deadline.Token));
+
+        if (callersTokenFires)
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => agentTask);
+        }
+        else
+        {
+            Assert.Equal(PairingHandshakeResult.TimedOut, await agentTask);
+        }
+
+        var aborted = await Assert.ThrowsAsync<QuicException>(() => RawPairing.ReadAsync(rawStream, deadline.Token));
+        Assert.Equal(QuicError.StreamAborted, aborted.QuicError);
+        Assert.Equal(QuicControlChannel.PairingFailedErrorCode, aborted.ApplicationErrorCode);
     }
 
     /// <summary>

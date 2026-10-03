@@ -343,5 +343,9 @@ public sealed class QuicChannel : IAsyncDisposable
         {
             // already torn down by the peer
         }
+        catch (AuthenticationException)
+        {
+            // torn down by the peer refusing this side's certificate
+        }
     }
 }

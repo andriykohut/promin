@@ -52,6 +52,27 @@ public static class QuicTransportSettings
     public static TimeSpan DefaultPairingWindow { get; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
+    /// The longest pairing window a caller may ask for. A window has to be long enough for a
+    /// person to walk to the master and click Pair; it does not have to be open-ended, and one
+    /// that is forgotten must still close.
+    /// </summary>
+    public static TimeSpan MaxPairingWindow { get; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// The TLS server name a master sends when it dials in order to <i>pair</i>, as opposed to
+    /// connecting normally (which sends none). It is what lets the agent tell the two kinds of
+    /// connection apart before the handshake starts, and so give a pairing connection its own
+    /// rules: admitted only through an open pairing window, granted no video credit at all, and
+    /// routed to the pairing operation rather than to the application.
+    /// </summary>
+    /// <remarks>
+    /// The name is chosen by the peer and proves nothing — a stranger can send it. All it
+    /// selects is which set of rules judges the certificate that follows, and neither set
+    /// trusts a certificate on the strength of the name.
+    /// </remarks>
+    internal const string PairingServerName = "pairing.educast.invalid";
+
+    /// <summary>
     /// How many inbound handshakes — completed or refused — the listener holds until the accept
     /// loop takes them. Stated rather than inherited because the accept loop's spin guard is
     /// sized against it: a full backlog of refused dials is consumed in at most three guard

@@ -158,6 +158,11 @@ public sealed class QuicControlChannel : IControlChannel, IAsyncDisposable
         {
             // The connection is already gone; nothing left to shut down gracefully.
         }
+        catch (System.Security.Authentication.AuthenticationException)
+        {
+            // The peer refused this side's certificate, which TLS 1.3 reports after the fact and
+            // on whatever touches the connection next. There is nothing to shut down.
+        }
 
         _sendGate.Dispose();
         _receiveGate.Dispose();

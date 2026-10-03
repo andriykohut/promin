@@ -19,7 +19,7 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
     public const string MasterDeviceId = "master-1";
 
     /// <summary>The TLS server name a master uses when it dials in order to pair.</summary>
-    public static string? PairingServerName => null;
+    public const string PairingServerName = QuicTransportSettings.PairingServerName;
 
     private readonly List<IAsyncDisposable> _ownedAsync = [];
     private readonly List<IDisposable> _owned = [];
@@ -129,8 +129,12 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
     /// from a peer that is hostile or simply broken. Presents the master's certificate unless
     /// another is given, which is how a test plays a machine the agent has never seen.
     /// </summary>
+    /// <param name="pairing">
+    /// Dial as a pairing connection — sending the pairing server name, as
+    /// <see cref="QuicMasterConnector.PairAsync"/> does — rather than as an ordinary one.
+    /// </param>
     public async Task<QuicConnection> ConnectRawAsync(
-        CancellationToken ct, X509Certificate2? clientCertificate = null)
+        CancellationToken ct, X509Certificate2? clientCertificate = null, bool pairing = false)
     {
         var options = new QuicClientConnectionOptions
         {
@@ -143,7 +147,7 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
             MaxInboundUnidirectionalStreams = QuicTransportSettings.MasterMaxInboundUnidirectionalStreams,
             ClientAuthenticationOptions = new SslClientAuthenticationOptions
             {
-                TargetHost = Endpoint.Address.ToString(),
+                TargetHost = pairing ? PairingServerName : Endpoint.Address.ToString(),
                 ApplicationProtocols = [QuicTransportSettings.ApplicationProtocol],
                 ClientCertificates = [clientCertificate ?? MasterCertificate],
                 RemoteCertificateValidationCallback = (_, _, _, _) => true,
@@ -208,20 +212,22 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
     public byte[] Binding => CertificateBinding.Compute(MasterCertificate, AgentCertificate);
 
     /// <summary>The master's half of the handshake over an already-open control channel.</summary>
-    public Task<bool> HandshakeAsMasterAsync(
+    public async Task<bool> HandshakeAsMasterAsync(
         Educast.Protocol.Pairing.IControlChannel control,
         byte[] presharedKey,
         CancellationToken ct,
         TimeSpan? timeout = null) =>
-        QuicPairingHandshake.RunAsMasterAsync(control, presharedKey, Binding, ct, timeout);
+        await QuicPairingHandshake.RunAsMasterAsync(control, presharedKey, Binding, ct, timeout)
+            == PairingHandshakeResult.Paired;
 
     /// <summary>The agent's half of the handshake over an already-open control channel.</summary>
-    public Task<bool> HandshakeAsAgentAsync(
+    public async Task<bool> HandshakeAsAgentAsync(
         Educast.Protocol.Pairing.IControlChannel control,
         byte[] presharedKey,
         CancellationToken ct,
         TimeSpan? timeout = null) =>
-        QuicPairingHandshake.RunAsAgentAsync(control, presharedKey, Binding, ct, timeout);
+        await QuicPairingHandshake.RunAsAgentAsync(control, presharedKey, Binding, ct, timeout)
+            == PairingHandshakeResult.Paired;
 
     /// <summary>
     /// The exact bytes this store would persist — its whole trust state. Two snapshots that are

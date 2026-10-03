@@ -18,9 +18,10 @@ namespace Educast.Protocol.Transport;
 /// the pin held for the exact device id being dialled — a certificate pinned for one agent never
 /// authenticates another — and nothing about it ever trusts a certificate on first use.
 ///
-/// <see cref="PairAsync"/> is the only way an agent comes to be pinned. It lets one unpinned
-/// certificate through TLS for the one connection it makes, runs the mutual pre-shared-key
-/// handshake over it, and pins the certificate if and only if that succeeded.
+/// <see cref="PairAsync"/> is the only way an agent comes to be pinned. It dials the agent as a
+/// pairing connection, lets one certificate through TLS for that one connection, runs the mutual
+/// pre-shared-key handshake over it, and pins the certificate if and only if the agent
+/// explicitly confirmed.
 /// </remarks>
 public sealed class QuicMasterConnector
 {
@@ -52,22 +53,31 @@ public sealed class QuicMasterConnector
 
     /// <summary>
     /// Pairs with the agent at <paramref name="endpoint"/> as <paramref name="deviceId"/>: one
-    /// connection, the mutual pre-shared-key handshake, and — on success, and only on success —
-    /// a pin for the certificate the agent presented. The agent must have a pairing window open
-    /// (<see cref="QuicAgentListener.AcceptPairingAsync"/>).
+    /// connection, the mutual pre-shared-key handshake, and — once the agent has explicitly
+    /// confirmed, and only then — a pin for the certificate the agent presented. The agent must
+    /// have a pairing window open (<see cref="QuicAgentListener.AcceptPairingAsync"/>).
     /// </summary>
     /// <remarks>
+    /// <b>It does not throw for anything the agent or the network does.</b> An unreachable
+    /// address, a refused connection, a wrong key, a dropped link, a timeout: each comes back as
+    /// a <see cref="PairingOutcome"/> whose <see cref="PairingOutcome.Failure"/> says which and
+    /// whose pins are exactly as they were. What can come out as an exception is the caller's
+    /// own cancellation and programming errors — a bad argument, a disposed object.
+    ///
+    /// <b>The agent's certificate must name the device being paired</b>, and it is checked
+    /// before any handshake message is sent. A device already pinned to a different certificate
+    /// is refused rather than re-keyed; unpin it first. A device already pinned to this same
+    /// certificate may be paired again, which is how a pairing that only one side recorded is
+    /// finished.
+    ///
+    /// <b>Success is something the agent says.</b> The master pins on the agent's
+    /// <see cref="PairConfirm"/> and on nothing else. The stream closing, the wait running out
+    /// and the connection going away are never read as acceptance.
+    ///
     /// The whole operation runs under its own deadline (<paramref name="timeout"/>, default
     /// <see cref="QuicTransportSettings.PairingTimeout"/>) whatever token is passed, and the
-    /// permission to accept an unpinned certificate lives exactly as long as this call: it is
-    /// created here, used for this one connection, and closed before this method returns. It is
-    /// also bound to <paramref name="deviceId"/> — if that device is already pinned to a
-    /// different certificate, pairing is refused rather than re-keying it; unpin it first.
-    ///
-    /// A failure the agent or the network can cause comes back as an outcome with
-    /// <see cref="PairingOutcome.Paired"/> false, not as an exception, and leaves the pins
-    /// exactly as they were. The connection is closed either way; call
-    /// <see cref="ConnectAsync"/> afterwards.
+    /// permission to accept an unpinned certificate lives exactly as long as this call. The
+    /// connection is closed either way; call <see cref="ConnectAsync"/> afterwards.
     /// </remarks>
     public async Task<PairingOutcome> PairAsync(
         IPEndPoint endpoint,
@@ -87,66 +97,81 @@ public sealed class QuicMasterConnector
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(ct);
         operation.CancelAfter(budget);
 
+        var phase = PairingPhase.Reaching;
+        var paired = false;
         QuicChannel? channel = null;
+        QuicControlChannel? control = null;
         try
         {
             channel = await ConnectCoreAsync(endpoint, deviceId, window, operation.Token).ConfigureAwait(false);
+            phase = PairingPhase.Proving;
+
             if (channel.RemoteCertificate is not { } agentCertificate
                 || channel.RemoteCertificateThumbprint is not { } thumbprint)
             {
-                return PairingOutcome.Failed("The agent presented no certificate.");
+                return PairingOutcome.Failed(
+                    PairingFailure.PeerCertificateRefused, "The agent presented no certificate.");
             }
 
             // This side's own certificate, and the one that actually arrived on this connection.
             var binding = CertificateBinding.Compute(_localCertificate, agentCertificate);
 
-            var control = await channel.OpenControlChannelAsync(operation.Token).ConfigureAwait(false);
-            await using (control.ConfigureAwait(false))
+            control = await channel.OpenControlChannelAsync(operation.Token).ConfigureAwait(false);
+            var handshake = await QuicPairingHandshake
+                .RunAsMasterAsync(control, presharedKey, binding, operation.Token)
+                .ConfigureAwait(false);
+            if (handshake != PairingHandshakeResult.Paired)
             {
-                if (!await QuicPairingHandshake.RunAsMasterAsync(control, presharedKey, binding, operation.Token)
-                        .ConfigureAwait(false))
-                {
-                    return PairingOutcome.Failed(
-                        "The agent did not prove the pre-shared key. Check that a pairing window is open " +
-                        "on it and that the same key was entered on both machines.");
-                }
-
-                if (await AgentRefusedAsync(control, operation.Token, ct).ConfigureAwait(false))
-                {
-                    return PairingOutcome.Failed("The agent verified this master but refused to record the pairing.");
-                }
-
-                try
-                {
-                    _trustedAgents.Pin(deviceId, thumbprint);
-                }
-                catch (PinConflictException conflict)
-                {
-                    return PairingOutcome.Failed(conflict.Message);
-                }
-
-                return PairingOutcome.Succeeded(deviceId, thumbprint);
+                return DescribeHandshake(handshake);
             }
+
+            // The agent has proved the key and has this side's proof. It has not yet said that
+            // it recorded the pairing, and until it does this side records nothing either.
+            phase = PairingPhase.AwaitingConfirmation;
+            var reply = await control.ReceiveAsync(operation.Token).ConfigureAwait(false);
+            if (reply is not PairConfirm)
+            {
+                return PairingOutcome.Failed(
+                    PairingFailure.NotConfirmed,
+                    "The agent proved the pre-shared key but declined to record the pairing.");
+            }
+
+            try
+            {
+                _trustedAgents.Pin(deviceId, thumbprint);
+            }
+            catch (PinConflictException conflict)
+            {
+                return PairingOutcome.Failed(PairingFailure.PeerCertificateRefused, conflict.Message);
+            }
+
+            paired = true;
+            return PairingOutcome.Succeeded(deviceId, thumbprint);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return PairingOutcome.Failed($"Pairing did not complete within {budget.TotalSeconds:0.#} seconds.");
+            return DescribeTimeout(phase, endpoint, budget);
         }
-        catch (AuthenticationException)
+        catch (Exception failure)
+            when (failure is not OperationCanceledException && !PairingFaults.IsProgrammingError(failure))
         {
-            return PairingOutcome.Failed(
-                $"The certificate the agent presented was refused. If '{deviceId}' was re-installed, unpin it " +
-                "and pair again.");
-        }
-        catch (QuicException lost) when (lost.QuicError != QuicError.OperationAborted)
-        {
-            return PairingOutcome.Failed(
-                "The connection to the agent failed. Check that it is reachable and that a pairing window " +
-                $"is open on it. ({lost.Message})");
+            return DescribeFailure(phase, failure, window, endpoint);
         }
         finally
         {
             window.Close();
+
+            if (control is not null)
+            {
+                if (!paired)
+                {
+                    // Never a graceful close after a pairing that did not happen.
+                    control.Abort(QuicControlChannel.PairingFailedErrorCode);
+                }
+
+                await control.DisposeAsync().ConfigureAwait(false);
+            }
+
             if (channel is not null)
             {
                 await channel.DisposeAsync().ConfigureAwait(false);
@@ -154,48 +179,80 @@ public sealed class QuicMasterConnector
         }
     }
 
-    /// <summary>
-    /// Holds the connection open until the agent has finished with the proof it was just sent,
-    /// and reports whether it explicitly refused. The agent closes its side of the control
-    /// stream once it has pinned; if it could not pin it says so, or aborts the stream. Without
-    /// this wait the master would close the connection underneath a proof the agent had not
-    /// read yet.
-    /// </summary>
-    /// <remarks>
-    /// Only an explicit refusal counts as one. A wait that merely runs out, or a connection the
-    /// agent closed, does not: by this point the agent has proved the pre-shared key, which is
-    /// everything the master's own pin depends on.
-    /// </remarks>
-    private static async Task<bool> AgentRefusedAsync(
-        QuicControlChannel control, CancellationToken operation, CancellationToken caller)
+    private enum PairingPhase
     {
-        try
+        Reaching,
+        Proving,
+        AwaitingConfirmation,
+    }
+
+    private const string AgentRefusedConnection =
+        "The agent refused the connection. Either pairing is not open on that PC, or its pairing window " +
+        "has already been used — a window admits one machine. Open pairing on the PC and try again.";
+
+    private static PairingOutcome DescribeHandshake(PairingHandshakeResult handshake) => handshake switch
+    {
+        PairingHandshakeResult.KeyNotProven => PairingOutcome.Failed(
+            PairingFailure.KeyNotProven,
+            "The agent did not prove the pre-shared key. Either the keys entered on the two PCs differ, " +
+            "or something between them is intercepting the connection."),
+        PairingHandshakeResult.PeerRefused => PairingOutcome.Failed(
+            PairingFailure.RefusedByPeer, AgentRefusedConnection),
+        PairingHandshakeResult.TimedOut => PairingOutcome.Failed(
+            PairingFailure.TimedOut, "The agent accepted the connection but did not answer in time."),
+        PairingHandshakeResult.CorruptFrame => PairingOutcome.Failed(
+            PairingFailure.ConnectionLost, "The agent sent data that could not be understood."),
+        _ => PairingOutcome.Failed(
+            PairingFailure.ConnectionLost, "The agent closed the connection during pairing."),
+    };
+
+    private static PairingOutcome DescribeTimeout(PairingPhase phase, IPEndPoint endpoint, TimeSpan budget) =>
+        phase switch
         {
-            // Anything the agent says here is a refusal; on success it says nothing and closes.
-            await control.ReceiveAsync(operation).ConfigureAwait(false);
-            return true;
-        }
-        catch (ControlChannelClosedException)
+            PairingPhase.Reaching => PairingOutcome.Failed(
+                PairingFailure.AgentUnreachable,
+                $"Nothing at {endpoint} answered within {budget.TotalSeconds:0.#} seconds. Check that the PC " +
+                "is switched on, on this network, and running Educast."),
+            PairingPhase.AwaitingConfirmation => PairingOutcome.Failed(
+                PairingFailure.NotConfirmed,
+                "The agent proved the pre-shared key but did not confirm the pairing in time. It is safe " +
+                "to pair again."),
+            _ => PairingOutcome.Failed(
+                PairingFailure.TimedOut,
+                $"Pairing did not complete within {budget.TotalSeconds:0.#} seconds."),
+        };
+
+    private static PairingOutcome DescribeFailure(
+        PairingPhase phase, Exception failure, PairingTrustWindow window, IPEndPoint endpoint)
+    {
+        // This side's own verdict on the agent's certificate comes first: it is the one case in
+        // which the reason is known exactly, and the only one where unpinning is a remedy.
+        if (window.RefusalReason is { } refusal)
         {
-            return false;
+            return PairingOutcome.Failed(
+                PairingFailure.PeerCertificateRefused, $"The PC at {endpoint} was not accepted: {refusal}.");
         }
-        catch (OperationCanceledException) when (!caller.IsCancellationRequested)
+
+        if (failure is AuthenticationException)
         {
-            // The operation's own deadline, not the caller giving up (which propagates).
-            return false;
+            // A TLS alert from the other end. Nothing in it says more than "refused".
+            return PairingOutcome.Failed(PairingFailure.RefusedByPeer, AgentRefusedConnection);
         }
-        catch (ControlMessageFormatException)
+
+        return phase switch
         {
-            return true;
-        }
-        catch (QuicException aborted) when (aborted.QuicError == QuicError.StreamAborted)
-        {
-            return true;
-        }
-        catch (QuicException gone) when (gone.QuicError != QuicError.OperationAborted)
-        {
-            return false;
-        }
+            PairingPhase.Reaching => PairingOutcome.Failed(
+                PairingFailure.AgentUnreachable,
+                $"Could not reach an agent at {endpoint}. Check that the PC is switched on, on this network, " +
+                $"and running Educast. ({failure.Message})"),
+            PairingPhase.AwaitingConfirmation => PairingOutcome.Failed(
+                PairingFailure.NotConfirmed,
+                "The agent proved the pre-shared key but the connection ended before it confirmed the " +
+                "pairing. It is safe to pair again."),
+            _ => PairingOutcome.Failed(
+                PairingFailure.ConnectionLost,
+                $"The connection to the agent was lost during pairing. ({failure.Message})"),
+        };
     }
 
     private async Task<QuicChannel> ConnectCoreAsync(
@@ -227,19 +284,28 @@ public sealed class QuicMasterConnector
 
             ClientAuthenticationOptions = new SslClientAuthenticationOptions
             {
-                TargetHost = endpoint.Address.ToString(),
+                // The server name is how the agent knows, before the handshake, whether this is
+                // a pairing connection or an ordinary one. An ordinary connection sends none.
+                TargetHost = pairingWindow is null
+                    ? endpoint.Address.ToString()
+                    : QuicTransportSettings.PairingServerName,
                 ApplicationProtocols = [QuicTransportSettings.ApplicationProtocol],
                 ClientCertificates = [_localCertificate],
+
+                // Ordinary: the pin for the dialled device, and nothing else. Pairing: the
+                // window, which checks the name, the pins and its own single use.
                 RemoteCertificateValidationCallback = (_, certificate, _, _) =>
                     certificate is not null
-                    && (IsPinnedAs(deviceId, certificate) || (pairingWindow?.TryAdmit(certificate) ?? false)),
+                    && (pairingWindow is null
+                        ? IsPinnedAs(deviceId, certificate)
+                        : pairingWindow.TryAdmit(certificate)),
             },
         };
 
         var connection = await QuicConnection.ConnectAsync(options, ct).ConfigureAwait(false);
 
         // Judged from the certificate that was actually presented, not echoed from the argument:
-        // during pairing the device is not pinned yet, and the channel must not say it is.
+        // during a first pairing the device is not pinned yet, and the channel must not say it is.
         var pinnedDeviceId = connection.RemoteCertificate is { } presented && IsPinnedAs(deviceId, presented)
             ? deviceId
             : null;
