@@ -26,6 +26,9 @@ public sealed class QuicControlChannel : IControlChannel, IAsyncDisposable
     /// <summary>Application error code used when this stream is abandoned as corrupt.</summary>
     public const long CorruptFrameErrorCode = 0x2;
 
+    /// <summary>Application error code used when this stream is abandoned after a failed pairing.</summary>
+    public const long PairingFailedErrorCode = 0x3;
+
     private readonly QuicStream _stream;
     private readonly PipeReader _reader;
     private readonly SemaphoreSlim _sendGate = new(1, 1);
@@ -59,7 +62,13 @@ public sealed class QuicControlChannel : IControlChannel, IAsyncDisposable
     /// The peer's framing is corrupt. This stream has been aborted; the caller must tear down
     /// this connection only.
     /// </exception>
-    /// <exception cref="InvalidOperationException">The peer closed the stream mid-message.</exception>
+    /// <exception cref="ControlChannelClosedException">
+    /// The peer closed the stream cleanly before a whole message arrived.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">
+    /// This channel was already disposed — a lifecycle bug in the caller, deliberately not
+    /// reported as the peer having gone away.
+    /// </exception>
     public async Task<ControlMessage> ReceiveAsync(CancellationToken ct)
     {
         await _receiveGate.WaitAsync(ct).ConfigureAwait(false);
@@ -100,7 +109,7 @@ public sealed class QuicControlChannel : IControlChannel, IAsyncDisposable
 
                 if (result.IsCompleted)
                 {
-                    throw new InvalidOperationException(
+                    throw new ControlChannelClosedException(
                         "QUIC control stream closed before a full message arrived.");
                 }
             }
@@ -111,11 +120,19 @@ public sealed class QuicControlChannel : IControlChannel, IAsyncDisposable
         }
     }
 
-    private void AbortAsCorrupt()
+    private void AbortAsCorrupt() => Abort(CorruptFrameErrorCode);
+
+    /// <summary>
+    /// Abandons the stream in both directions, so the peer's pending read or write on it fails
+    /// at once with <paramref name="errorCode"/> instead of waiting on a stream nobody will use
+    /// again. The channel still has to be disposed afterwards. Safe to call on a stream that is
+    /// already gone.
+    /// </summary>
+    public void Abort(long errorCode)
     {
         try
         {
-            _stream.Abort(QuicAbortDirection.Both, CorruptFrameErrorCode);
+            _stream.Abort(QuicAbortDirection.Both, errorCode);
         }
         catch (ObjectDisposedException)
         {

@@ -170,7 +170,7 @@ public class QuicControlStreamTests
         await rawStream.WriteAsync(encoded.AsMemory(0, 6), completeWrites: true, deadline.Token);
 
         await using var agentControl = await agent.AcceptControlChannelAsync(deadline.Token);
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<ControlChannelClosedException>(
             () => agentControl.ReceiveAsync(deadline.Token));
     }
 }
