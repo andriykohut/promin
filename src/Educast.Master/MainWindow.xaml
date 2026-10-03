@@ -4,9 +4,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:local="using:Educast.Master"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    Title="Educast.Master"
+    Title="Educast"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
         <MicaBackdrop />
@@ -15,20 +14,26 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TitleBar x:Name="AppTitleBar" Title="Educast.Master">
+        <TitleBar x:Name="AppTitleBar" Title="Educast">
             <TitleBar.IconSource>
                 <ImageIconSource ImageSource="Assets/AppIcon.ico" />
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!--
-            The Frame hosts pages for your application content. Add your UI to
-            MainPage.xaml rather than here so you can use Page features such as
-            navigation events and the Loaded lifecycle.
-        -->
-        <Frame x:Name="RootFrame" Grid.Row="1" />
+        <!-- The one fault this PC can have of its own. Shows above both pages; never closable. -->
+        <InfoBar
+            Grid.Row="1"
+            Margin="24,0,24,6"
+            IsClosable="False"
+            IsOpen="{x:Bind Health.HasLocalFault, Mode=OneWay}"
+            Message="{x:Bind Health.LocalFault, Mode=OneWay}"
+            Severity="Error"
+            Title="{x:Bind LocalFaultTitle}" />
+
+        <Frame x:Name="RootFrame" Grid.Row="2" />
     </Grid>
 </Window>

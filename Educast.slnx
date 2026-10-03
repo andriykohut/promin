@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Educast.Agent/Educast.Agent.csproj" />
+    <Project Path="src/Educast.Master.Core/Educast.Master.Core.csproj" />
     <Project Path="src/Educast.Master/Educast.Master.csproj">
       <Platform Project="x64" />
     </Project>
@@ -8,6 +9,7 @@
     <Project Path="src/Educast.Protocol/Educast.Protocol.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Educast.Master.Core.Tests/Educast.Master.Core.Tests.csproj" />
     <Project Path="tests/Educast.MediaPipeline.Tests/Educast.MediaPipeline.Tests.csproj" />
     <Project Path="tests/Educast.Protocol.Tests/Educast.Protocol.Tests.csproj" />
   </Folder>

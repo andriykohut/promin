@@ -38,6 +38,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.6.1" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Educast.Master.Core\Educast.Master.Core.csproj" />
     <ProjectReference Include="..\Educast.Protocol\Educast.Protocol.csproj" />
     <ProjectReference Include="..\Educast.MediaPipeline\Educast.MediaPipeline.csproj" />
   </ItemGroup>
