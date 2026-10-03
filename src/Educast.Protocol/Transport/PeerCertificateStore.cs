@@ -139,34 +139,7 @@ public sealed class PeerCertificateStore
             snapshot = new Dictionary<string, string>(_pinnedThumbprints, StringComparer.Ordinal);
         }
 
-        var fullPath = Path.GetFullPath(path);
-        var directory = Path.GetDirectoryName(fullPath);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        var temporaryPath = $"{fullPath}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(snapshot));
-
-            if (File.Exists(fullPath))
-            {
-                File.Replace(temporaryPath, fullPath, destinationBackupFileName: null);
-            }
-            else
-            {
-                File.Move(temporaryPath, fullPath);
-            }
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath))
-            {
-                File.Delete(temporaryPath);
-            }
-        }
+        AtomicFile.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(snapshot));
     }
 
     /// <summary>

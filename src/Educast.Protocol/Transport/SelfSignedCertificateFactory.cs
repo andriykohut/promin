@@ -30,23 +30,45 @@ public static class SelfSignedCertificateFactory
     /// <summary>How long a freshly created device certificate stays valid.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromDays(365 * 10);
 
-    public static X509Certificate2 Create(string subjectName) => Create(subjectName, out _);
-
-    /// <summary>
-    /// <see cref="Create(string)"/>, and also hands back the PKCS#12 image of the very same
-    /// certificate and key, for <see cref="DeviceIdentity"/> to keep. The returned certificate's
-    /// key is deliberately not exportable, so this is the only point at which the key can be
-    /// written out: while it is still the in-memory key <c>CreateSelfSigned</c> made. The bytes
-    /// contain the private key; the caller owns them and must put them nowhere but a private
-    /// directory. <see cref="X509CertificateLoader.LoadPkcs12(byte[], string?, X509KeyStorageFlags, Pkcs12LoaderLimits?)"/>
-    /// with <see cref="X509KeyStorageFlags.DefaultKeySet"/> turns them back into a certificate
-    /// exactly as this method does.
-    /// </summary>
-    internal static X509Certificate2 Create(string subjectName, out byte[] pkcs12)
+    public static X509Certificate2 Create(string subjectName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(subjectName);
 
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var certificate = BuildSelfSigned(subjectName, key);
+
+        // SChannel (which msquic uses on Windows) will only accept a TLS credential whose
+        // private key lives in a key container, so the in-memory key from CreateSelfSigned
+        // has to be round-tripped through PKCS#12. PersistKeySet is deliberately absent:
+        // the container is temporary and goes away with the certificate handle. Exportable is
+        // deliberately absent too: the key never needs to leave the container it lands in.
+        // (EphemeralKeySet is not an option: SChannel refuses such a credential, 0x8009030D.)
+        return X509CertificateLoader.LoadPkcs12(
+            certificate.Export(X509ContentType.Pfx),
+            password: null,
+            keyStorageFlags: X509KeyStorageFlags.DefaultKeySet);
+    }
+
+    /// <summary>
+    /// The public part (DER, no private key) of a certificate with exactly the shape
+    /// <see cref="Create"/> gives, signed by <paramref name="key"/>. For a key that already lives
+    /// in a key store and never leaves it (see <see cref="DeviceIdentity"/>): the caller keeps the
+    /// bytes and binds the certificate to the key with
+    /// <see cref="X509Certificate2.CopyWithPrivateKey(ECDsa)"/>. The key must be on the NIST
+    /// P-256 curve.
+    /// </summary>
+    internal static byte[] CreatePublicCertificate(string subjectName, ECDsa key)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(subjectName);
+        ArgumentNullException.ThrowIfNull(key);
+
+        using var certificate = BuildSelfSigned(subjectName, key);
+        return certificate.Export(X509ContentType.Cert);
+    }
+
+    /// <summary>The one definition of what a device certificate looks like.</summary>
+    private static X509Certificate2 BuildSelfSigned(string subjectName, ECDsa key)
+    {
         var request = new CertificateRequest($"CN={subjectName}", key, HashAlgorithmName.SHA256);
 
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(
@@ -65,18 +87,6 @@ public static class SelfSignedCertificateFactory
         request.CertificateExtensions.Add(subjectAlternativeNames.Build());
 
         var now = DateTimeOffset.UtcNow;
-        using var certificate = request.CreateSelfSigned(now.AddMinutes(-5), now.Add(Lifetime));
-
-        // SChannel (which msquic uses on Windows) will only accept a TLS credential whose
-        // private key lives in a key container, so the in-memory key from CreateSelfSigned
-        // has to be round-tripped through PKCS#12. PersistKeySet is deliberately absent:
-        // the container is temporary and goes away with the certificate handle. Exportable is
-        // deliberately absent too: the key never needs to leave the container it lands in.
-        // (EphemeralKeySet is not an option: SChannel refuses such a credential, 0x8009030D.)
-        pkcs12 = certificate.Export(X509ContentType.Pfx);
-        return X509CertificateLoader.LoadPkcs12(
-            pkcs12,
-            password: null,
-            keyStorageFlags: X509KeyStorageFlags.DefaultKeySet);
+        return request.CreateSelfSigned(now.AddMinutes(-5), now.Add(Lifetime));
     }
 }

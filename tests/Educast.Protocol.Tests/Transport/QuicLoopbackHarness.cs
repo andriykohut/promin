@@ -75,10 +75,14 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
         CancellationToken ct,
         bool pinMasterOnAgent = true,
         bool pinAgentOnMaster = true,
-        Action<Exception>? connectionRejected = null)
+        Action<Exception>? connectionRejected = null,
+        Func<string, X509Certificate2>? createCertificate = null)
     {
-        var masterCertificate = SelfSignedCertificateFactory.Create(MasterDeviceId);
-        var agentCertificate = SelfSignedCertificateFactory.Create(AgentDeviceId);
+        // The harness owns (and disposes) whatever certificates it is given, so a test can run
+        // the transport on certificates made some other way than the factory's.
+        createCertificate ??= SelfSignedCertificateFactory.Create;
+        var masterCertificate = createCertificate(MasterDeviceId);
+        var agentCertificate = createCertificate(AgentDeviceId);
 
         var masterTrust = new PeerCertificateStore();
         if (pinAgentOnMaster)

@@ -5,7 +5,7 @@ namespace Educast.Protocol.Transport;
 
 /// <summary>
 /// Who this install is: a device id that is unique to it and never changes, and the certificate
-/// (with its private key) that proves it. Both are created on first run and reloaded ever after.
+/// whose private key proves it. Both are created on first run and found again ever after.
 /// </summary>
 /// <remarks>
 /// <b>The id.</b> 32 lowercase hex characters from <c>Guid.NewGuid().ToString("N")</c>. It is the
@@ -14,42 +14,60 @@ namespace Educast.Protocol.Transport;
 /// per install and not a machine name (two machines called "PC-04" must not collide). It is for
 /// machines only; a person reads the display name.
 ///
-/// <b>What is on disk.</b> Two files in <c>directory</c>: <see cref="IdFileName"/> (the id as
-/// text) and <see cref="CertificateFileName"/> (the certificate and its key as an unencrypted
-/// PKCS#12 image). The certificate file <b>is private key material</b>: the directory must be
-/// one only this user can read (for the agent, a per-user or per-service data directory, never a
-/// shared one). The key is written nowhere else, is never logged and is never put in an
-/// exception message.
+/// <b>The key never leaves Windows' key store.</b> It is created once as a persisted,
+/// non-exportable CNG key (<c>Educast-Device-{id}</c>, in the current user's store, in the
+/// Microsoft software provider), so there is exactly one copy of it in the world and no code,
+/// this class included, can read it out. The certificate is made around that key and bound to it
+/// each time it is loaded. Loading creates nothing: a process that is killed, or never disposes
+/// the identity, leaves the key store exactly as it was.
 ///
-/// <b>Why the key can be saved at all.</b> The certificate the factory returns has a deliberately
-/// non-exportable key, so this class cannot export it afterwards. It takes the PKCS#12 image from
-/// the factory at the one moment the key is still exportable, when the certificate is made. Loading it
-/// back uses the same flags as the factory (<see cref="X509KeyStorageFlags.DefaultKeySet"/>, the
-/// only mode SChannel accepts), so the reloaded certificate behaves the same as a fresh one: a
-/// key container that exists only while the certificate is alive and is removed when it is
-/// disposed. Nothing is added to the machine key store permanently, and the PKCS#12 file is the
-/// single copy of the key that outlives the process.
+/// <b>What is on disk.</b> Two files in the directory: <see cref="IdFileName"/> (the id as text)
+/// and <see cref="CertificateFileName"/> (the certificate's public part, DER). That is public
+/// data; no private key material is written to any file, ever, so the directory needs no special
+/// protection and a planted or copied file is not a risk: an id and certificate are only accepted
+/// when a key by that name exists in this user's key store and is the certificate's own key.
 ///
-/// <b>An id with no certificate is useless</b>, and so is a certificate with no id, a certificate
-/// that will not load, and a certificate whose name is not the id beside it. Any of those is
-/// treated as an empty directory and a new identity (a new id) is created over it. The one
-/// thing that is not treated that way is a file that is merely unreadable at the moment (locked,
-/// access denied): that throws, because replacing a good identity over a transient error would
-/// unpair a machine for no reason.
+/// <b>Anything that does not all agree is replaced.</b> An id with no certificate is useless,
+/// and so is a certificate with no id, a certificate that will not load, one whose name is not
+/// the id beside it, an id with no key, or a key that is not the certificate's. Each is treated as
+/// an empty directory: a new identity (a new id) is created over it, and any key the old identity
+/// left in the key store under its name is deleted. The one thing that is not treated that way is
+/// a file that is merely unreadable at the moment (locked, access denied): that throws, because
+/// replacing a good identity over a transient error would unpair a machine for no reason.
 /// </remarks>
 public sealed record DeviceIdentity(string DeviceId, X509Certificate2 Certificate) : IDisposable
 {
     internal const string IdFileName = "device-id.txt";
-    internal const string CertificateFileName = "device-certificate.pfx";
+    internal const string CertificateFileName = "device-certificate.cer";
+    internal const string KeyNamePrefix = "Educast-Device-";
+
+    /// <summary>The length of a device id: <c>Guid.ToString("N")</c>.</summary>
+    internal const int DeviceIdLength = 32;
+
+    private const CngKeyOpenOptions UserKey = CngKeyOpenOptions.UserKey;
 
     // Two callers in one process must not both decide the directory is empty and both create.
     private static readonly Lock Gate = new();
 
+    /// <summary>True for exactly 32 lowercase hex characters, which is all a device id ever is.</summary>
+    internal static bool IsValidDeviceId(string? value) =>
+        value is { Length: DeviceIdLength } && value.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
+
+    /// <summary>The name of the key store entry that holds the private key of device <paramref name="deviceId"/>.</summary>
+    internal static string KeyNameFor(string deviceId) => KeyNamePrefix + deviceId;
+
     /// <summary>
     /// Returns this install's identity from <paramref name="directory"/>, creating it (and the
-    /// directory) on first use. Later calls return the same id and the same certificate. The
-    /// caller owns the result and must dispose it.
+    /// directory) on first use. Later calls return the same id and the same certificate, bound to
+    /// the same key. The caller owns the result and must dispose it; disposing releases the
+    /// certificate's handle on the key and does not delete the key.
     /// </summary>
+    /// <remarks>
+    /// <b>The identity belongs to the Windows account the app runs under</b>, because that is
+    /// whose key store holds the key. A different account on the same PC has its own identity,
+    /// even if it is given the same directory (the id and certificate it finds there name a key it
+    /// does not have, so it replaces them). The directory holds only public data.
+    /// </remarks>
     public static DeviceIdentity LoadOrCreate(string directory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
@@ -57,124 +75,163 @@ public sealed record DeviceIdentity(string DeviceId, X509Certificate2 Certificat
 
         lock (Gate)
         {
-            return TryLoad(fullDirectory) ?? Create(fullDirectory);
+            var staleIds = new HashSet<string>(StringComparer.Ordinal);
+            return TryLoad(fullDirectory, staleIds) ?? Create(fullDirectory, staleIds);
         }
     }
 
-    /// <summary>The length of a device id: <c>Guid.ToString("N")</c>.</summary>
-    internal const int DeviceIdLength = 32;
-
-    /// <summary>True for exactly 32 lowercase hex characters, which is all a device id ever is.</summary>
-    internal static bool IsValidDeviceId(string? value) =>
-        value is { Length: DeviceIdLength } && value.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
-
-    /// <summary>Releases the certificate and with it the key container behind it.</summary>
+    /// <summary>Releases the certificate's handle on the key. The key stays in the key store.</summary>
     public void Dispose() => Certificate.Dispose();
 
-    private static DeviceIdentity? TryLoad(string directory)
+    /// <summary>Deletes the key of device <paramref name="deviceId"/> from the key store, if there is one.</summary>
+    internal static void DeleteKey(string deviceId)
     {
-        string deviceId;
-        byte[] pkcs12;
-        try
+        var name = KeyNameFor(deviceId);
+        if (CngKey.Exists(name, CngProvider.MicrosoftSoftwareKeyStorageProvider, UserKey))
         {
-            deviceId = File.ReadAllText(Path.Combine(directory, IdFileName)).Trim();
-            pkcs12 = File.ReadAllBytes(Path.Combine(directory, CertificateFileName));
-        }
-        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
-        {
-            return null;
-        }
-
-        try
-        {
-            if (!IsValidDeviceId(deviceId))
-            {
-                return null;
-            }
-
-            X509Certificate2 certificate;
-            try
-            {
-                certificate = X509CertificateLoader.LoadPkcs12(
-                    pkcs12, password: null, keyStorageFlags: X509KeyStorageFlags.DefaultKeySet);
-            }
-            catch (CryptographicException)
-            {
-                return null;
-            }
-
-            if (certificate.HasPrivateKey
-                && string.Equals(
-                    certificate.GetNameInfo(X509NameType.SimpleName, forIssuer: false),
-                    deviceId,
-                    StringComparison.Ordinal))
-            {
-                return new DeviceIdentity(deviceId, certificate);
-            }
-
-            certificate.Dispose();
-            return null;
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(pkcs12);
-        }
-    }
-
-    private static DeviceIdentity Create(string directory)
-    {
-        var deviceId = Guid.NewGuid().ToString("N");
-        var certificate = SelfSignedCertificateFactory.Create(deviceId, out var pkcs12);
-        try
-        {
-            Directory.CreateDirectory(directory);
-
-            // The certificate first, the id last: the id file is what says "this directory holds
-            // an identity", and a load also checks that the two agree, so a crash between the
-            // two writes is recovered from by making a new identity.
-            WriteAtomically(Path.Combine(directory, CertificateFileName), pkcs12);
-            WriteAtomically(Path.Combine(directory, IdFileName), System.Text.Encoding.ASCII.GetBytes(deviceId));
-            return new DeviceIdentity(deviceId, certificate);
-        }
-        catch
-        {
-            certificate.Dispose();
-            throw;
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(pkcs12);
+            using var key = CngKey.Open(name, CngProvider.MicrosoftSoftwareKeyStorageProvider, UserKey);
+            key.Delete();
         }
     }
 
     /// <summary>
-    /// The same atomic write <see cref="PeerCertificateStore.Save"/> uses: a complete temporary
-    /// file beside the destination, then swapped in, so a crash or a full disk leaves the
-    /// previous file intact rather than a truncated one. The temporary file is removed whatever
-    /// happens, since for the certificate it holds a private key.
+    /// Returns the identity the directory holds if it is whole, or null. Whatever ids the
+    /// directory names on the way are added to <paramref name="staleIds"/>, so that a replacement
+    /// can delete the keys they own.
     /// </summary>
-    private static void WriteAtomically(string path, byte[] content)
+    private static DeviceIdentity? TryLoad(string directory, HashSet<string> staleIds)
     {
-        var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        string? idText = null;
+        byte[]? certificateBytes = null;
         try
         {
-            File.WriteAllBytes(temporaryPath, content);
+            idText = File.ReadAllText(Path.Combine(directory, IdFileName)).Trim();
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+        }
 
-            if (File.Exists(path))
+        try
+        {
+            certificateBytes = File.ReadAllBytes(Path.Combine(directory, CertificateFileName));
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+        }
+
+        if (IsValidDeviceId(idText))
+        {
+            staleIds.Add(idText!);
+        }
+
+        if (certificateBytes is null)
+        {
+            return null;
+        }
+
+        X509Certificate2 publicCertificate;
+        try
+        {
+            publicCertificate = X509CertificateLoader.LoadCertificate(certificateBytes);
+        }
+        catch (CryptographicException)
+        {
+            return null;
+        }
+
+        try
+        {
+            var certificateId = CertificateIdentity.ReadDeviceId(publicCertificate);
+            if (IsValidDeviceId(certificateId))
             {
-                File.Replace(temporaryPath, path, destinationBackupFileName: null);
+                staleIds.Add(certificateId!);
             }
-            else
+
+            if (!IsValidDeviceId(idText) || !string.Equals(certificateId, idText, StringComparison.Ordinal))
             {
-                File.Move(temporaryPath, path);
+                return null;
             }
+
+            var bound = TryBindToStoredKey(publicCertificate, idText!);
+            return bound is null ? null : new DeviceIdentity(idText!, bound);
         }
         finally
         {
-            if (File.Exists(temporaryPath))
+            publicCertificate.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Opens the named key and returns <paramref name="publicCertificate"/> bound to it, or null
+    /// if there is no such key or it is not the certificate's key. Creates nothing.
+    /// </summary>
+    private static X509Certificate2? TryBindToStoredKey(X509Certificate2 publicCertificate, string deviceId)
+    {
+        var name = KeyNameFor(deviceId);
+        if (!CngKey.Exists(name, CngProvider.MicrosoftSoftwareKeyStorageProvider, UserKey))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var key = CngKey.Open(name, CngProvider.MicrosoftSoftwareKeyStorageProvider, UserKey);
+            if (key.Algorithm != CngAlgorithm.ECDsaP256)
             {
-                File.Delete(temporaryPath);
+                return null;
             }
+
+            using var ecdsa = new ECDsaCng(key);
+            return ecdsa.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual(publicCertificate.PublicKey.ExportSubjectPublicKeyInfo())
+                ? publicCertificate.CopyWithPrivateKey(ecdsa)
+                : null;
+        }
+        catch (CryptographicException)
+        {
+            return null;
+        }
+    }
+
+    private static DeviceIdentity Create(string directory, HashSet<string> staleIds)
+    {
+        foreach (var staleId in staleIds)
+        {
+            DeleteKey(staleId);
+        }
+
+        var deviceId = Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(directory);
+
+        // The order is chosen so that a crash at any point leaves nothing behind that the next
+        // start cannot clean up: the id is on disk before the key exists, so a key can never be
+        // orphaned without the id that names it; and the certificate, which is what makes the
+        // directory an identity, is written last.
+        AtomicFile.WriteAllBytes(Path.Combine(directory, IdFileName), System.Text.Encoding.ASCII.GetBytes(deviceId));
+        try
+        {
+            using var key = CngKey.Create(
+                CngAlgorithm.ECDsaP256,
+                KeyNameFor(deviceId),
+                new CngKeyCreationParameters
+                {
+                    Provider = CngProvider.MicrosoftSoftwareKeyStorageProvider,
+                    KeyCreationOptions = CngKeyCreationOptions.None,
+                    ExportPolicy = CngExportPolicies.None,
+                    KeyUsage = CngKeyUsages.Signing,
+                });
+            using var ecdsa = new ECDsaCng(key);
+
+            var publicBytes = SelfSignedCertificateFactory.CreatePublicCertificate(deviceId, ecdsa);
+            AtomicFile.WriteAllBytes(Path.Combine(directory, CertificateFileName), publicBytes);
+
+            // Bound the same way a later load binds it.
+            using var publicCertificate = X509CertificateLoader.LoadCertificate(publicBytes);
+            return new DeviceIdentity(deviceId, publicCertificate.CopyWithPrivateKey(ecdsa));
+        }
+        catch
+        {
+            DeleteKey(deviceId);
+            throw;
         }
     }
 }
