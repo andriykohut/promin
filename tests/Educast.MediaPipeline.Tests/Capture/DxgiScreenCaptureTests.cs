@@ -66,13 +66,17 @@ public class DxgiScreenCaptureTests
         Assert.Equal(Native.ScreenHeight, frame.Height);
     }
 
-    // Takes frames until the screen goes quiet and returns the region of the last one.
+    // Takes frames for a short while after the pointer moved and returns the region of the last one.
+    // Every frame carries the pointer as of the moment it was acquired, so the last one reflects the
+    // move. The time bound matters: on a screen that never goes quiet (video, a game, a console
+    // scrolling) "wait until nothing changes" would never finish.
     private static byte[] CaptureRegionAfterSettling(DxgiScreenCapture capture, int x, int y, int size)
     {
         Thread.Sleep(150); // let the compositor report the pointer move
         CapturedFrame last = default;
         var got = false;
-        while (capture.TryGetNextFrame(TimeSpan.FromMilliseconds(300), out var frame))
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.Elapsed < TimeSpan.FromMilliseconds(600) && capture.TryGetNextFrame(TimeSpan.FromMilliseconds(300), out var frame))
         {
             last = frame;
             got = true;
@@ -83,7 +87,8 @@ public class DxgiScreenCaptureTests
 
     private static void Drain(DxgiScreenCapture capture)
     {
-        while (capture.TryGetNextFrame(TimeSpan.FromMilliseconds(300), out _))
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.Elapsed < TimeSpan.FromMilliseconds(600) && capture.TryGetNextFrame(TimeSpan.FromMilliseconds(300), out _))
         {
         }
     }

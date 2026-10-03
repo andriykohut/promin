@@ -36,6 +36,10 @@ public sealed class DxgiScreenCapture : IScreenCapture
     private int _stagingHeight;
     private byte[] _regionBuffer = [];
 
+    // False until the first desktop image of the current duplication has arrived, so a pointer-only
+    // update is never drawn over an image from before a reset.
+    private bool _haveDesktop;
+
     private PointerShape? _shape;
     private bool _pointerVisible;
     private int _pointerX;
@@ -88,19 +92,55 @@ public sealed class DxgiScreenCapture : IScreenCapture
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         frame = default;
-        var waitMs = ToMilliseconds(timeout);
+        ToMilliseconds(timeout); // validates the timeout
 
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            var remaining = timeout == Timeout.InfiniteTimeSpan ? timeout : TimeSpan.FromTicks(Math.Max(0, (timeout - clock.Elapsed).Ticks));
+
+            switch (TryAcquire(remaining))
+            {
+                case Step.Frame:
+                    _context.CopyResource(_frame!, _desktop!);
+                    if (_pointerVisible && _shape is not null)
+                        DrawPointer(_shape);
+                    frame = new CapturedFrame(_frame!, _width, _height);
+                    return true;
+
+                case Step.NoFrame:
+                    return false;
+
+                default: // Step.NeedDesktop
+                    // The first update on a new duplication can be pointer-only. There is no image
+                    // to redraw yet, so keep waiting for the real one instead of reporting "no frame".
+                    if (remaining == TimeSpan.Zero)
+                        return false;
+                    break;
+            }
+        }
+    }
+
+    private enum Step
+    {
+        Frame,
+        NoFrame,
+        NeedDesktop,
+    }
+
+    private Step TryAcquire(TimeSpan timeout)
+    {
         if (_duplication is null && !TryRecreateDuplication())
         {
             Thread.Sleep(timeout < RetryPause ? timeout : RetryPause);
-            return false;
+            return Step.NoFrame;
         }
 
-        var result = _duplication!.AcquireNextFrame(waitMs, out var info, out var resource);
+        var result = _duplication!.AcquireNextFrame(ToMilliseconds(timeout), out var info, out var resource);
         switch (ClassifyAcquire(result))
         {
             case AcquireOutcome.Timeout:
-                return false;
+                return Step.NoFrame;
 
             case AcquireOutcome.AccessLost:
                 // Mode change, lock screen, UAC prompt, another duplication took over: the old
@@ -108,12 +148,12 @@ public sealed class DxgiScreenCapture : IScreenCapture
                 resource?.Dispose();
                 DropDuplication();
                 TryRecreateDuplication();
-                return false;
+                return Step.NoFrame;
 
             case AcquireOutcome.Failed:
                 resource?.Dispose();
                 result.CheckError();
-                return false;
+                return Step.NoFrame;
         }
 
         try
@@ -121,7 +161,7 @@ public sealed class DxgiScreenCapture : IScreenCapture
             var desktopChanged = info.LastPresentTime != 0;
             var pointerChanged = info.LastMouseUpdateTime != 0;
             if (!desktopChanged && !pointerChanged)
-                return false;
+                return Step.NoFrame;
 
             // The shape must be read before ReleaseFrame. A new shape is only reported when the
             // pointer's appearance changes; otherwise the last one stays in force.
@@ -135,9 +175,11 @@ public sealed class DxgiScreenCapture : IScreenCapture
             }
 
             if (desktopChanged)
+            {
                 CopyDesktop(resource!);
-            else if (_desktop is null)
-                return false; // a pointer-only update before we ever saw the desktop: nothing to redraw
+                _haveDesktop = true;
+            }
+            return _haveDesktop ? Step.Frame : Step.NeedDesktop;
         }
         finally
         {
@@ -145,13 +187,6 @@ public sealed class DxgiScreenCapture : IScreenCapture
             // The duplicated texture dies here, which is why we copied it into our own first.
             _duplication.ReleaseFrame();
         }
-
-        _context.CopyResource(_frame!, _desktop!);
-        if (_pointerVisible && _shape is not null)
-            DrawPointer(_shape);
-
-        frame = new CapturedFrame(_frame!, _width, _height);
-        return true;
     }
 
     public void Dispose()
@@ -273,6 +308,7 @@ public sealed class DxgiScreenCapture : IScreenCapture
     {
         _duplication?.Dispose();
         _duplication = null;
+        _haveDesktop = false;
     }
 
     // Returns false while the duplication cannot be made (lock screen or UAC showing, mode change
