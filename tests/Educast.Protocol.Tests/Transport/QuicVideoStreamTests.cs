@@ -184,4 +184,101 @@ public class QuicVideoStreamTests
         Assert.Equal(frame, await agent.ReceiveVideoFrameAsync(deadline.Token));
         Assert.IsType<StopBroadcast>(await agentControl.ReceiveAsync(deadline.Token));
     }
+
+    /// <summary>
+    /// The master receives no video, so it grants an agent no inbound unidirectional credit at
+    /// all: a student-controlled machine cannot open a single stream at the teacher's laptop,
+    /// let alone 256 of them at 4 MB each. The agent's attempt simply never gets a stream. Fails
+    /// the symmetric 256-stream credit, under which this frame is delivered.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    public async Task Master_GrantsAnAgentNoInboundVideoStreams()
+    {
+        using var deadline = QuicLoopbackHarness.Deadline();
+        await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
+        var (master, agent) = await harness.ConnectAsync(deadline.Token);
+
+        using var attempt = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        attempt.CancelAfter(TimeSpan.FromSeconds(2));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await agent.SendVideoFrameAsync(Frame(1, true, 1024), attempt.Token));
+
+        using var brief = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        brief.CancelAfter(TimeSpan.FromMilliseconds(500));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await master.ReceiveVideoFrameAsync(brief.Token));
+        Assert.Equal(0, master.ActiveVideoDrains);
+
+        // The direction that matters is untouched.
+        var frame = Frame(2, true, 1024);
+        await master.SendVideoFrameAsync(frame, deadline.Token);
+        Assert.Equal(frame, await agent.ReceiveVideoFrameAsync(deadline.Token));
+    }
+
+    /// <summary>
+    /// However many streams a peer opens, only a bounded number are read into memory at once;
+    /// the rest wait unread. Twenty streams are opened and deliberately left unfinished, so
+    /// every drain that starts stays active. Fails a drain pump that spawns a reader per stream
+    /// with no limit — there, all twenty are buffering at once.
+    /// </summary>
+    [Fact(Timeout = 60000)]
+    public async Task InboundVideoDrains_AreBoundedInConcurrency()
+    {
+        using var deadline = QuicLoopbackHarness.Deadline(30);
+        await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
+
+        var acceptTask = harness.Listener.AcceptAsync(deadline.Token);
+        var rawMaster = await harness.ConnectRawAsync(deadline.Token);
+        await using var agent = await acceptTask;
+
+        const int opened = 20;
+        var streams = new List<System.Net.Quic.QuicStream>();
+        try
+        {
+            for (var i = 0; i < opened; i++)
+            {
+                var stream = await rawMaster.OpenOutboundStreamAsync(
+                    System.Net.Quic.QuicStreamType.Unidirectional, deadline.Token);
+                streams.Add(stream);
+
+                // A first write is what makes the stream exist for the receiver; no FIN follows.
+                await stream.WriteAsync(Frame((uint)i, false, 512), deadline.Token);
+            }
+
+            var observed = 0;
+            for (var poll = 0; poll < 40; poll++)
+            {
+                await Task.Delay(50, deadline.Token);
+                observed = Math.Max(observed, agent.ActiveVideoDrains);
+            }
+
+            Assert.Equal(QuicTransportSettings.MaxConcurrentInboundVideoStreams, observed);
+
+            // Finishing the streams frees the slots, and the streams that were waiting are then
+            // read too: the bound delays frames, it does not wedge the connection.
+            foreach (var stream in streams)
+            {
+                stream.CompleteWrites();
+            }
+
+            for (var received = 0; received < QuicTransportSettings.MaxConcurrentInboundVideoStreams; received++)
+            {
+                await agent.ReceiveVideoFrameAsync(deadline.Token);
+            }
+
+            for (var poll = 0; poll < 100 && agent.ActiveVideoDrains != 0; poll++)
+            {
+                await Task.Delay(50, deadline.Token);
+            }
+
+            Assert.Equal(0, agent.ActiveVideoDrains);
+        }
+        finally
+        {
+            foreach (var stream in streams)
+            {
+                await stream.DisposeAsync();
+            }
+        }
+    }
 }

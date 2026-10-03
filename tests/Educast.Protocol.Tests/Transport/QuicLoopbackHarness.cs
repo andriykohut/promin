@@ -123,7 +123,7 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
             IdleTimeout = QuicTransportSettings.IdleTimeout,
             KeepAliveInterval = QuicTransportSettings.KeepAliveInterval,
             MaxInboundBidirectionalStreams = QuicTransportSettings.MaxInboundBidirectionalStreams,
-            MaxInboundUnidirectionalStreams = QuicTransportSettings.MaxInboundUnidirectionalStreams,
+            MaxInboundUnidirectionalStreams = QuicTransportSettings.MasterMaxInboundUnidirectionalStreams,
             ClientAuthenticationOptions = new SslClientAuthenticationOptions
             {
                 TargetHost = Endpoint.Address.ToString(),

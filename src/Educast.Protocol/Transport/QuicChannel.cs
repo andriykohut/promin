@@ -43,9 +43,16 @@ public sealed class QuicChannel : IAsyncDisposable
     private readonly Channel<QuicStream> _inboundControlStreams = Channel.CreateUnbounded<QuicStream>();
     private readonly Channel<byte[]> _inboundVideoFrames = Channel.CreateBounded<byte[]>(
         new BoundedChannelOptions(InboundFrameQueueCapacity) { FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly SemaphoreSlim _drainSlots = new(
+        QuicTransportSettings.MaxConcurrentInboundVideoStreams,
+        QuicTransportSettings.MaxConcurrentInboundVideoStreams);
     private readonly CancellationTokenSource _acceptCts = new();
     private readonly Task _acceptLoop;
     private int _disposed;
+    private int _activeVideoDrains;
+
+    /// <summary>How many inbound video streams are being read into memory right now.</summary>
+    internal int ActiveVideoDrains => Volatile.Read(ref _activeVideoDrains);
 
     public QuicChannel(QuicConnection connection, string? remoteDeviceId = null)
     {
@@ -190,10 +197,25 @@ public sealed class QuicChannel : IAsyncDisposable
         {
             try
             {
-                var frame = await ReadWholeFrameAsync(stream, _acceptCts.Token).ConfigureAwait(false);
-                if (frame is not null)
+                // Wait for a slot before reading a single byte. A stream that is waiting holds
+                // no frame buffer, and QUIC flow control holds its sender, so the memory a peer
+                // can make this side allocate is bounded by the slot count rather than by how
+                // many streams it has credit to open. The wait is here and not in the accept
+                // pump so that queued video can never delay a control stream being accepted.
+                await _drainSlots.WaitAsync(_acceptCts.Token).ConfigureAwait(false);
+                Interlocked.Increment(ref _activeVideoDrains);
+                try
                 {
-                    _inboundVideoFrames.Writer.TryWrite(frame);
+                    var frame = await ReadWholeFrameAsync(stream, _acceptCts.Token).ConfigureAwait(false);
+                    if (frame is not null)
+                    {
+                        _inboundVideoFrames.Writer.TryWrite(frame);
+                    }
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _activeVideoDrains);
+                    _drainSlots.Release();
                 }
             }
             catch (QuicException)
@@ -275,7 +297,9 @@ public sealed class QuicChannel : IAsyncDisposable
             await orphan.DisposeAsync().ConfigureAwait(false);
         }
 
+        // Every drain has finished by now: the accept loop awaits them all before it completes.
         _acceptCts.Dispose();
+        _drainSlots.Dispose();
 
         try
         {

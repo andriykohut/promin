@@ -56,12 +56,12 @@ public sealed class QuicMasterConnector
             KeepAliveInterval = QuicTransportSettings.KeepAliveInterval,
             HandshakeTimeout = QuicTransportSettings.HandshakeTimeout,
 
-            // The master receives control messages, not video, so it grants the agent enough
-            // credit for the control stream plus reconnect overlap. Unidirectional credit is
-            // kept symmetric with the agent so the direction of video is a protocol decision
-            // rather than something transport limits impose.
+            // The master receives control messages, not video. It grants the agent enough
+            // bidirectional credit for the control stream plus reconnect overlap, and no
+            // unidirectional credit at all: agent machines are student-controlled, and every
+            // stream of credit is memory a student's PC can make the teacher's laptop allocate.
             MaxInboundBidirectionalStreams = QuicTransportSettings.MaxInboundBidirectionalStreams,
-            MaxInboundUnidirectionalStreams = QuicTransportSettings.MaxInboundUnidirectionalStreams,
+            MaxInboundUnidirectionalStreams = QuicTransportSettings.MasterMaxInboundUnidirectionalStreams,
 
             ClientAuthenticationOptions = new SslClientAuthenticationOptions
             {

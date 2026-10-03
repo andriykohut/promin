@@ -142,7 +142,7 @@ public sealed class QuicAgentListener : IAsyncDisposable
         // (one frame each), so this is a concurrency bound, not a total. The control channel
         // needs only one bidirectional stream.
         MaxInboundBidirectionalStreams = QuicTransportSettings.MaxInboundBidirectionalStreams,
-        MaxInboundUnidirectionalStreams = QuicTransportSettings.MaxInboundUnidirectionalStreams,
+        MaxInboundUnidirectionalStreams = QuicTransportSettings.AgentMaxInboundUnidirectionalStreams,
 
         ServerAuthenticationOptions = new SslServerAuthenticationOptions
         {
