@@ -169,4 +169,15 @@ public class DxgiScreenCaptureLogicTests
 
         Assert.Contains("DuplicateOutput1", message);
         Assert.Contains(ResultCode.AccessDenied.Code.ToString("X8"), message);
+    }
+    [Fact]
+    public void UnsupportedSurface_SaysHowTheDuplicationWasMadeAndWhetherItWasPointerOnly()
+    {
+        var message = DxgiScreenCapture.DescribeUnsupportedSurface(
+            Format.R16G16B16A16_Float, true, null, "IDXGIOutput5.DuplicateOutput1", pointerOnlyUpdate: true);
+
+        Assert.Contains("IDXGIOutput5.DuplicateOutput1", message);
+        Assert.Contains("pointer-only", message);
+        Assert.DoesNotContain("pointer-only",
+            DxgiScreenCapture.DescribeUnsupportedSurface(Format.R16G16B16A16_Float, true, null, "x", pointerOnlyUpdate: false));
     }}

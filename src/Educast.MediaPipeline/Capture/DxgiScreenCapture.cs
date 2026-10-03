@@ -48,6 +48,9 @@ public sealed class DxgiScreenCapture : IScreenCapture
     // Why the last DuplicateOutput1 attempt did not work, for the error if the fallback surface is not BGRA8.
     private SharpGen.Runtime.Result? _duplicateOutput1Failure;
 
+    // Which call made the current duplication, for the same error message.
+    private string _duplicatedWith = "not yet duplicated";
+
     private bool _disposed;
 
     /// <summary>
@@ -184,7 +187,7 @@ public sealed class DxgiScreenCapture : IScreenCapture
                 // Defensively, if the driver hands none back and we have no image, keep waiting.
                 if (resource is null)
                     return Step.NeedDesktop;
-                CopyDesktop(resource);
+                CopyDesktop(resource, pointerOnlyUpdate: info.LastPresentTime == 0);
                 _haveDesktop = true;
             }
             return Step.Frame;
@@ -222,9 +225,14 @@ public sealed class DxgiScreenCapture : IScreenCapture
     /// the usual cause is DuplicateOutput1 not having been usable, why that may be.
     /// </summary>
     internal static string DescribeUnsupportedSurface(
-        Format format, bool processIsPerMonitorV2DpiAware, SharpGen.Runtime.Result? duplicateOutput1Failure)
+        Format format, bool processIsPerMonitorV2DpiAware, SharpGen.Runtime.Result? duplicateOutput1Failure,
+        string? duplicatedWith = null, bool pointerOnlyUpdate = false)
     {
         var message = $"The desktop image is {format}; only B8G8R8A8_UNorm is supported.";
+        if (duplicatedWith is not null)
+            message += $" The duplication was made with {duplicatedWith}.";
+        if (pointerOnlyUpdate)
+            message += " The surface came with a pointer-only update (no screen change), which Windows may not convert.";
         if (duplicateOutput1Failure is { } failure)
             message += $" Asking Windows for a B8G8R8A8_UNorm picture (IDXGIOutput5.DuplicateOutput1) failed with 0x{failure.Code:X8}.";
         if (!processIsPerMonitorV2DpiAware)
@@ -374,6 +382,7 @@ public sealed class DxgiScreenCapture : IScreenCapture
                 {
                     var duplication = output5.DuplicateOutput1(Device, SupportedFormats);
                     _duplicateOutput1Failure = null;
+                    _duplicatedWith = "IDXGIOutput5.DuplicateOutput1";
                     return duplication;
                 }
                 catch (SharpGen.Runtime.SharpGenException ex)
@@ -383,6 +392,9 @@ public sealed class DxgiScreenCapture : IScreenCapture
             }
         }
 
+        _duplicatedWith = _duplicateOutput1Failure is null
+            ? "IDXGIOutput1.DuplicateOutput (IDXGIOutput5 not available)"
+            : "IDXGIOutput1.DuplicateOutput (after DuplicateOutput1 failed)";
         using var output1 = output.QueryInterface<IDXGIOutput1>();
         return output1.DuplicateOutput(Device);
     }
@@ -436,13 +448,13 @@ public sealed class DxgiScreenCapture : IScreenCapture
         }
     }
 
-    private void CopyDesktop(IDXGIResource resource)
+    private void CopyDesktop(IDXGIResource resource, bool pointerOnlyUpdate)
     {
         using var source = resource.QueryInterface<ID3D11Texture2D>();
         var description = source.Description;
         if (!IsAcceptableSurfaceFormat(description.Format))
             throw new NotSupportedException(DescribeUnsupportedSurface(
-                description.Format, DpiAwareness.IsPerMonitorV2(), _duplicateOutput1Failure));
+                description.Format, DpiAwareness.IsPerMonitorV2(), _duplicateOutput1Failure, _duplicatedWith, pointerOnlyUpdate));
 
         if (_desktop is null || _width != description.Width || _height != description.Height)
         {
