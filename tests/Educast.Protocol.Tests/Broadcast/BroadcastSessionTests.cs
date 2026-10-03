@@ -17,6 +17,15 @@ public class BroadcastSessionTests
     // Real-time tests never want a keyframe interval to elapse by accident on a slow machine.
     private const int NeverMs = 60_000;
 
+    // Real-time tests that are not about backpressure give each client room for every frame, so a starved
+    // machine cannot make the session drop one: a client that loses a frame waits for the next keyframe, and
+    // a test waiting on "N frames" would then wait for it.
+    private const int Roomy = 1000;
+
+    // For real-time tests that wait on "at least N frames" of a changing screen: should a frame be lost
+    // anyway, the next keyframe is only this far away.
+    private const int RealTimeKeyframeMs = 25;
+
     private static async Task Eventually(Func<bool> condition, string what)
     {
         var clock = Stopwatch.StartNew();
@@ -56,7 +65,7 @@ public class BroadcastSessionTests
     public async Task Start_AsksTheSourceOncePerFrame_AndDeliversTheSameFrameToEveryClient()
     {
         var source = new FakeFrameSource(SourceStep.NothingNew, SourceStep.Changed, SourceStep.Changed, SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: NeverMs);
         var clients = new[] { new RecordingVideoSink(), new RecordingVideoSink(), new RecordingVideoSink() };
         for (var i = 0; i < clients.Length; i++)
         {
@@ -83,7 +92,7 @@ public class BroadcastSessionTests
     public async Task Start_PrefixesEveryFrameWithItsEnvelope()
     {
         var source = new FakeFrameSource(SourceStep.NothingNew, SourceStep.Changed, SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: NeverMs);
         var client = new RecordingVideoSink();
         session.AddClient("client-a", client);
 
@@ -105,7 +114,7 @@ public class BroadcastSessionTests
         // Call 0 is forced (the broadcast has just started), call 1 and 2 are not. Frame 2 is a keyframe
         // the encoder chose on its own: the envelope must say so.
         var source = new FakeFrameSource(SourceStep.NothingNew, SourceStep.Changed, SourceStep.Changed, SourceStep.ChangedAsKeyframe);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: NeverMs);
         var client = new RecordingVideoSink();
         session.AddClient("client-a", client);
 
@@ -123,7 +132,7 @@ public class BroadcastSessionTests
         // The source ignores the forced keyframe on call 0 and returns a delta. A decoder cannot start from
         // that, so the client is not sent it, and the keyframe stays owed for the next call.
         var source = new FakeFrameSource(SourceStep.Changed, SourceStep.ChangedIgnoringForce);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: NeverMs);
         var client = new RecordingVideoSink();
         session.AddClient("client-a", client);
 
@@ -144,7 +153,7 @@ public class BroadcastSessionTests
     public async Task RemoveClient_StopsDeliveryToThatClientOnly()
     {
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: RealTimeKeyframeMs);
         var staying = new RecordingVideoSink();
         var leaving = new RecordingVideoSink();
         session.AddClient("staying", staying);
@@ -174,7 +183,7 @@ public class BroadcastSessionTests
     public async Task AddClient_WithAnExistingId_ReplacesTheOldClient()
     {
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: RealTimeKeyframeMs);
         var old = new RecordingVideoSink();
         var replacement = new RecordingVideoSink();
         session.AddClient("pc", old);
@@ -194,7 +203,7 @@ public class BroadcastSessionTests
     public async Task AClientAddedWhileRunning_StartsOnAKeyframe_EvenOnAChangingScreen()
     {
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: RealTimeKeyframeMs);
         var early = new RecordingVideoSink();
         session.AddClient("early", early);
         session.Start();
@@ -213,22 +222,23 @@ public class BroadcastSessionTests
     [Fact]
     public async Task SlowClient_AbortsItsOwnFrameStreams_WithoutBlockingOtherClients()
     {
+        // The keyframe goes through; the next frame (a delta) stalls and is aborted when the queue fills.
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: 2, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: 2, keyframeIntervalMs: RealTimeKeyframeMs);
         var fast = new RecordingVideoSink();
-        var slow = new StalledVideoSink();
+        var slow = new ScriptedVideoSink(OnCancel.Throw, stallOnCalls: [1]);
         session.AddClient("fast", fast);
         session.AddClient("slow", slow);
 
         session.Start();
         await Eventually(
-            () => fast.ReceivedFrames.Count > 5 && session.DroppedFrameCountFor("slow") > 0 && slow.AbortedFrameCount > 0,
+            () => fast.ReceivedFrames.Count > 5 && session.DroppedFrameCountFor("slow") > 0 && slow.PassedCount >= 2 && slow.TokenOfCall(1).IsCancellationRequested,
             "the fast client to keep receiving while the slow one drops and aborts");
         var dropped = session.DroppedFrameCountFor("slow");
         session.Stop();
 
         Assert.True(dropped > 0); // the slow client dropped frames instead of stalling the session
-        Assert.True(slow.AbortedFrameCount > 0); // and its in-flight frame streams were actually aborted
+        Assert.True(slow.TokenOfCall(1).IsCancellationRequested); // and its in-flight frame stream was actually aborted
     }
 
     [Fact]
@@ -466,6 +476,367 @@ public class BroadcastSessionTests
         }
     }
 
+    // Holds its first call until Release() (or until cancelled); every later call completes at once.
+    private sealed class GatedVideoSink : IVideoSink
+    {
+        private readonly object _lock = new();
+        private readonly List<VideoFrameEnvelope> _passed = [];
+        private readonly List<CancellationToken> _tokens = [];
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _completed;
+
+        public int PassedCount
+        {
+            get { lock (_lock) { return _passed.Count; } }
+        }
+
+        public int CompletedCount => Volatile.Read(ref _completed);
+
+        public CancellationToken TokenOfCall(int index)
+        {
+            lock (_lock)
+            {
+                return _tokens[index];
+            }
+        }
+
+        public void Release() => _release.TrySetResult();
+
+        public async ValueTask SendFrameAsync(byte[] envelopeAndFrame, CancellationToken ct)
+        {
+            bool first;
+            lock (_lock)
+            {
+                first = _passed.Count == 0;
+                _passed.Add(EnvelopeOf(envelopeAndFrame));
+                _tokens.Add(ct);
+            }
+
+            if (first)
+            {
+                await _release.Task.WaitAsync(ct);
+            }
+
+            Interlocked.Increment(ref _completed);
+        }
+    }
+
+    // Takes `hold` of the manual clock's time to send each frame, whatever the frame is.
+    private sealed class ClockDelaySink(ManualTimeProvider clock, TimeSpan hold) : IVideoSink
+    {
+        private readonly object _lock = new();
+        private readonly List<VideoFrameEnvelope> _passed = [];
+        private int _completed;
+
+        public int PassedCount
+        {
+            get { lock (_lock) { return _passed.Count; } }
+        }
+
+        public int CompletedCount => Volatile.Read(ref _completed);
+
+        public IReadOnlyList<VideoFrameEnvelope> Passed
+        {
+            get { lock (_lock) { return _passed.ToArray(); } }
+        }
+
+        public async ValueTask SendFrameAsync(byte[] envelopeAndFrame, CancellationToken ct)
+        {
+            // The timer exists before the call is visible to the test, so the clock cannot move past it.
+            var delay = Task.Delay(hold, clock, ct);
+            lock (_lock)
+            {
+                _passed.Add(EnvelopeOf(envelopeAndFrame));
+            }
+
+            await delay;
+            Interlocked.Increment(ref _completed);
+        }
+    }
+
+    // Call 0 returns a keyframe at once; call 1 blocks until Release() and then returns a delta; every later
+    // call returns a changed picture straight away.
+    private sealed class HoldableSource : IEncodedFrameSource
+    {
+        private int _calls;
+        private byte _next;
+
+        public ManualResetEventSlim Entered { get; } = new();
+
+        public ManualResetEventSlim Release { get; } = new();
+
+        public int CallCount => Volatile.Read(ref _calls);
+
+        public bool TryGetNextFrame(TimeSpan timeout, bool forceKeyframe, out EncodedVideoFrame frame)
+        {
+            var call = Interlocked.Increment(ref _calls) - 1;
+            if (call == 1)
+            {
+                Entered.Set();
+                Release.Wait(TimeSpan.FromSeconds(60));
+            }
+
+            frame = new EncodedVideoFrame([_next++], call == 0 || forceKeyframe);
+            return true;
+        }
+    }
+
+    // ---- G1: a keyframe in flight is ended only by its own deadline --------------------------------------------
+
+    [Fact]
+    public async Task AKeyframeInFlight_IsNotAbortedByTheQueueFillingBehindIt()
+    {
+        // Default queue capacity (8), 100 ms frames, keyframe deadline max(200, 2000 / 2) = 1000 ms. The
+        // keyframe is held in the sink while nine frames arrive behind it: the ninth evicts the first.
+        var clock = new ManualTimeProvider();
+        var source = new FakeFrameSource(SourceStep.Changed);
+        var session = new BroadcastSession(source, frameIntervalMs: 100, keyframeIntervalMs: 2000, timeProvider: clock);
+        var sink = new GatedVideoSink();
+        session.AddClient("pc", sink);
+
+        session.Start();
+        await Eventually(() => sink.PassedCount >= 1, "the keyframe to be in the sink");
+        for (var tick = 1; tick <= 9; tick++)
+        {
+            await TickAsync(source, clock, 100); // up to 900 ms
+        }
+
+        await Eventually(() => session.DroppedFrameCountFor("pc") >= 1, "the queue to overflow behind the keyframe");
+        clock.Advance(TimeSpan.FromMilliseconds(50)); // 950 ms: short of the keyframe deadline
+        Assert.False(sink.TokenOfCall(0).IsCancellationRequested, "the queue filling behind a keyframe must not abort it");
+
+        sink.Release();
+        await Eventually(() => sink.CompletedCount == 1, "the keyframe to complete");
+
+        // Offered: the keyframe and nine deltas = 10. Dropped: the evicted delta and the eight that follow it
+        // (a gap only a keyframe can cross) = 9. The keyframe is the one frame that arrived.
+        await Eventually(() => session.DroppedFrameCountFor("pc") == 9, "the evicted and the discarded deltas to be counted");
+        var offered = session.FramesOfferedTo("pc");
+        var passed = sink.PassedCount;
+        session.Stop();
+
+        Assert.Equal(10, offered);
+        Assert.Equal(1, passed); // and no delta was sent after the gap
+    }
+
+    [Fact]
+    public async Task ASlowClient_GetsEachKeyframe_AndNoDeltasBetween()
+    {
+        // Every send takes 950 ms: more than nine 100 ms frame intervals (the queue of 8 overflows behind
+        // each keyframe) but inside the 1000 ms keyframe deadline. The client must degrade to a still picture
+        // refreshed every keyframe interval, not to nothing.
+        var clock = new ManualTimeProvider();
+        var source = new FakeFrameSource(SourceStep.Changed);
+        var session = new BroadcastSession(source, frameIntervalMs: 100, keyframeIntervalMs: 2000, timeProvider: clock);
+        var healthy = new RecordingVideoSink();
+        var slow = new ClockDelaySink(clock, TimeSpan.FromMilliseconds(950));
+        session.AddClient("healthy", healthy);
+        session.AddClient("slow", slow);
+        var disconnected = 0;
+        session.ClientDisconnected += _ => Interlocked.Increment(ref disconnected);
+
+        session.Start();
+        await Eventually(() => slow.PassedCount >= 1, "the first keyframe to be in the sink");
+        for (var tick = 1; tick <= 60; tick++)
+        {
+            if (tick % 20 == 19)
+            {
+                var finished = (tick / 20) + 1;
+                await Eventually(() => slow.CompletedCount >= finished, "the previous keyframe to finish");
+            }
+
+            await TickAsync(source, clock, 100, keepUpWith: healthy);
+            if (tick % 20 == 0)
+            {
+                var reached = (tick / 20) + 1;
+                await Eventually(() => slow.PassedCount >= reached, "the next keyframe to reach the sink");
+            }
+        }
+
+        var passed = slow.Passed;
+        session.Stop();
+
+        Assert.Equal<uint>([0, 20, 40, 60], passed.Select(e => e.FrameId).ToArray());
+        Assert.All(passed, e => Assert.True(e.IsKeyframe));
+        Assert.Equal(0, disconnected);
+        Assert.Equal(61, healthy.ReceivedFrames.Count);
+    }
+
+    [Fact]
+    public async Task AKeyframeThatOverrunsItsOwnDeadline_IsStillDropped()
+    {
+        // Same arrangement at the default capacity, but now the keyframe is still in the sink at 1000 ms.
+        var clock = new ManualTimeProvider();
+        var source = new FakeFrameSource(SourceStep.Changed);
+        var session = new BroadcastSession(source, frameIntervalMs: 100, keyframeIntervalMs: 2000, timeProvider: clock);
+        var sink = new GatedVideoSink();
+        session.AddClient("pc", sink);
+
+        session.Start();
+        await Eventually(() => sink.PassedCount >= 1, "the keyframe to be in the sink");
+        for (var tick = 1; tick <= 9; tick++)
+        {
+            await TickAsync(source, clock, 100);
+        }
+
+        clock.Advance(TimeSpan.FromMilliseconds(100)); // 1000 ms
+        Assert.True(sink.TokenOfCall(0).IsCancellationRequested);
+
+        // Offered 10; dropped: the evicted delta, the keyframe aborted at its deadline, and the eight deltas
+        // behind them. The tick at 1000 ms was withheld: the gate had closed when the queue overflowed.
+        await Eventually(() => session.DroppedFrameCountFor("pc") == 10, "all ten frames to be counted as dropped");
+        var offered = session.FramesOfferedTo("pc");
+        session.Stop();
+
+        Assert.Equal(10, offered);
+    }
+
+    [Fact]
+    public async Task ADeltaInFlight_IsStillAbortedByEviction()
+    {
+        // 1 ms frames (delta deadline 200 ms, so the deadline cannot be what ends it), default capacity 8.
+        // The keyframe goes through; frame 1 stalls; frames 2-9 fill the queue; frame 10 evicts frame 2.
+        var clock = new ManualTimeProvider();
+        var source = new FakeFrameSource(SourceStep.Changed);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs, timeProvider: clock);
+        var sink = new ScriptedVideoSink(OnCancel.Throw, stallOnCalls: [1]);
+        session.AddClient("pc", sink);
+
+        session.Start();
+        await Eventually(() => sink.PassedCount >= 1, "the keyframe to be sent");
+        await TickAsync(source, clock, 1);
+        await Eventually(() => sink.PassedCount >= 2, "the delta to stall in the sink");
+        for (var tick = 2; tick <= 9; tick++)
+        {
+            await TickAsync(source, clock, 1);
+        }
+
+        Assert.False(sink.TokenOfCall(1).IsCancellationRequested); // the queue is full, not yet overflowing
+
+        await TickAsync(source, clock, 1);
+        await Eventually(() => sink.TokenOfCall(1).IsCancellationRequested, "the overflow to abort the in-flight delta");
+
+        // Offered 0-10 = 11. Dropped: evicted frame 2, aborted frame 1, frames 3-10 discarded = 10.
+        await Eventually(() => session.DroppedFrameCountFor("pc") == 10, "the exact drop count");
+        var offered = session.FramesOfferedTo("pc");
+        session.Stop();
+
+        Assert.Equal(11, offered);
+    }
+
+    // ---- G2: the send loop is the judge of what is decodable ---------------------------------------------------
+
+    [Fact]
+    public async Task ADelta_IsSentOnlyIfThePreviousFrameWasDelivered()
+    {
+        // The capture-side gate is switched off, so nothing but the send loop can keep a delta from a client
+        // that lost its reference. Keyframe at 0; frame 1 (a delta) stalls and is cancelled at its 200 ms
+        // deadline (t = 300); frames 2-9 were queued behind it; the next keyframe is frame 10; frame 11
+        // follows it.
+        var clock = new ManualTimeProvider();
+        var source = new FakeFrameSource(SourceStep.Changed);
+        var session = new BroadcastSession(source, frameIntervalMs: 100, perClientQueueCapacity: 100, keyframeIntervalMs: 1000, timeProvider: clock)
+        {
+            UseCaptureSideGate = false,
+        };
+        var sink = new ScriptedVideoSink(OnCancel.Throw, stallOnCalls: [1]);
+        session.AddClient("pc", sink);
+
+        session.Start();
+        await Eventually(() => sink.PassedCount >= 1, "the keyframe to be sent");
+        await TickAsync(source, clock, 100);
+        await Eventually(() => sink.PassedCount >= 2, "the delta to stall in the sink");
+        for (var tick = 2; tick <= 11; tick++)
+        {
+            await TickAsync(source, clock, 100);
+        }
+
+        await Eventually(() => sink.PassedCount >= 4, "the next keyframe and the delta after it to be sent");
+        await Eventually(() => session.DroppedFrameCountFor("pc") == 9, "the cancelled delta and the eight behind it to be counted");
+        var offered = session.FramesOfferedTo("pc");
+        session.Stop();
+
+        Assert.Equal<uint>([0, 1, 10, 11], sink.Passed.Select(e => e.FrameId).ToArray());
+        Assert.Equal(12, offered); // nothing was withheld at capture; the discards are all the send loop's
+    }
+
+    [Fact]
+    public async Task ANewClientIsNeverSentADelta_EvenWithoutTheCaptureGate()
+    {
+        // The capture-side gate is switched off. A client joins while the source is producing a delta, so the
+        // delta is queued for it as its very first frame. It has no reference for it; the send loop must
+        // discard it, and the client's first frame is the keyframe the join forced.
+        var clock = new ManualTimeProvider();
+        var source = new HoldableSource();
+        var session = new BroadcastSession(source, frameIntervalMs: 100, keyframeIntervalMs: NeverMs, timeProvider: clock)
+        {
+            UseCaptureSideGate = false,
+        };
+        var first = new RecordingVideoSink();
+        session.AddClient("first", first);
+
+        session.Start();
+        await Eventually(() => first.ReceivedFrames.Count >= 1, "the first keyframe");
+
+        // The manual clock runs the capture loop's continuation inline, and this source blocks, so the
+        // advance goes on another thread.
+        var advancing = Task.Run(() => clock.Advance(TimeSpan.FromMilliseconds(100)));
+        await Eventually(() => source.Entered.IsSet, "the source to be producing frame 1, a delta");
+        var late = new ScriptedVideoSink(OnCancel.Throw);
+        session.AddClient("late", late);
+        source.Release.Set();
+        await advancing.WaitAsync(WaitLimit);
+        await Eventually(() => first.ReceivedFrames.Count >= 2, "frame 1 to be fanned out");
+
+        await TickHoldable(clock, source, 100); // frame 2: the keyframe the join forced
+        await TickHoldable(clock, source, 100); // frame 3: a delta after it
+        await Eventually(() => late.PassedCount >= 2, "the late client to receive the keyframe and the delta");
+        session.Stop();
+
+        Assert.Equal<uint>([2, 3], late.Passed.Select(e => e.FrameId).ToArray());
+        Assert.True(late.Passed[0].IsKeyframe);
+    }
+
+    private static async Task TickHoldable(ManualTimeProvider clock, HoldableSource source, int ms)
+    {
+        var before = source.CallCount;
+        clock.Advance(TimeSpan.FromMilliseconds(ms));
+        await Eventually(() => source.CallCount > before, "the capture loop to take its next tick");
+    }
+
+    [Fact]
+    public async Task AKeyframeQueuedAfterADrop_ResumesTheStream_WithoutWaitingForTheNextOne()
+    {
+        // Frame 1 (a delta) stalls from t = 100 ms with its deadline at 300 ms. A second client joins at
+        // 150 ms, which forces a keyframe (frame 2, at 200 ms). The deadline expires at 300 ms, after that
+        // keyframe was queued: the stream must carry straight on with it and the deltas after it.
+        var clock = new ManualTimeProvider();
+        var source = new FakeFrameSource(SourceStep.Changed);
+        var session = new BroadcastSession(source, frameIntervalMs: 100, perClientQueueCapacity: 100, keyframeIntervalMs: NeverMs, timeProvider: clock);
+        var sink = new ScriptedVideoSink(OnCancel.Throw, stallOnCalls: [1]);
+        session.AddClient("pc", sink);
+
+        session.Start();
+        await Eventually(() => sink.PassedCount >= 1, "the first keyframe to be sent");
+        await TickAsync(source, clock, 100); // 100 ms: frame 1 stalls
+        await Eventually(() => sink.PassedCount >= 2, "the delta to stall in the sink");
+        clock.Advance(TimeSpan.FromMilliseconds(50)); // 150 ms
+        session.AddClient("joiner", new RecordingVideoSink());
+        await TickAsync(source, clock, 50); // 200 ms: the forced keyframe, frame 2
+        await TickAsync(source, clock, 100); // 300 ms: frame 3, and the deadline of frame 1
+        await Eventually(() => session.DroppedFrameCountFor("pc") >= 1, "the missed deadline to have been processed");
+        await TickAsync(source, clock, 100); // frame 4
+        await TickAsync(source, clock, 100); // frame 5
+
+        await Eventually(() => sink.PassedCount >= 6, "the keyframe and every delta after it to be sent");
+        var dropped = session.DroppedFrameCountFor("pc");
+        session.Stop();
+
+        Assert.Equal<uint>([0, 1, 2, 3, 4, 5], sink.Passed.Select(e => e.FrameId).ToArray());
+        Assert.True(sink.Passed[2].IsKeyframe);
+        Assert.Equal(1, dropped); // only the delta that missed its deadline
+    }
+
     // ---- what the session did, not what the sink threw ----------------------------------------------------
 
     private static async Task<BroadcastSession> ExpireOneDeltaAsync(ScriptedVideoSink sink, Action<int> onDisconnected)
@@ -521,21 +892,36 @@ public class BroadcastSessionTests
     [Fact]
     public async Task ASinkThatReturnsNormallyAfterAnEvictionAbort_StillCountsTheDrops()
     {
-        // The eviction path: a queue of 2 and a first frame that stalls and, when aborted, returns normally.
+        // The eviction path, on the manual clock: a queue of 2; the keyframe (frame 0) goes through; frame 1
+        // (a delta) stalls and, when aborted, returns normally; frames 2 and 3 fill the queue; frame 4
+        // evicts frame 2 and aborts frame 1. Offered: 0 to 4 = 5. Dropped: the evicted frame 2, the aborted
+        // frame 1 (although its send "returned normally"), and frames 3 and 4, which follow the lost ones
+        // and are discarded unsent = 4. Delivered: the keyframe = 1.
+        var clock = new ManualTimeProvider();
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: 2, keyframeIntervalMs: NeverMs);
-        var sink = new ScriptedVideoSink(OnCancel.ReturnNormally, stallOnCalls: [0]);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: 2, keyframeIntervalMs: NeverMs, timeProvider: clock);
+        var sink = new ScriptedVideoSink(OnCancel.ReturnNormally, stallOnCalls: [1]);
         session.AddClient("pc", sink);
         var disconnected = 0;
         session.ClientDisconnected += _ => Interlocked.Increment(ref disconnected);
 
         session.Start();
-
-        // Frame 0 stalls; frames 1 and 2 fill the queue; frame 3 evicts frame 1 and aborts frame 0. Two
-        // drops are certain: the evicted frame and the aborted one (which "returned normally").
-        await Eventually(() => session.DroppedFrameCountFor("pc") >= 2, "the evicted and the aborted frame to be counted");
+        await Eventually(() => sink.PassedCount >= 1, "the keyframe to be sent");
+        await TickAsync(source, clock, 1);
+        await Eventually(() => sink.PassedCount >= 2, "the delta to stall in the sink");
+        await TickAsync(source, clock, 1);
+        await TickAsync(source, clock, 1);
+        await TickAsync(source, clock, 1);
+        await Eventually(() => sink.TokenOfCall(1).IsCancellationRequested, "the eviction to abort the in-flight delta");
+        await Eventually(() => session.DroppedFrameCountFor("pc") == 4, "the exact drop count");
+        var offered = session.FramesOfferedTo("pc");
+        var dropped = session.DroppedFrameCountFor("pc");
+        var passed = sink.PassedCount;
         session.Stop();
 
+        Assert.Equal(5, offered);
+        Assert.Equal(4, dropped);
+        Assert.Equal(2, passed); // the keyframe and the aborted delta; nothing after the loss
         Assert.Equal(0, disconnected);
     }
 
@@ -543,7 +929,7 @@ public class BroadcastSessionTests
     public async Task ASinkThatThrowsWithoutBeingCancelled_IsADisconnect()
     {
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: NeverMs);
         session.AddClient("pc", new ThrowingVideoSink());
         var disconnected = new List<string>();
         session.ClientDisconnected += id => { lock (disconnected) { disconnected.Add(id); } };
@@ -848,7 +1234,7 @@ public class BroadcastSessionTests
     public async Task ClientDisconnected_FiresOnce_ForThatClientOnly_WhenItsSinkThrows()
     {
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: RealTimeKeyframeMs);
         var healthy = new RecordingVideoSink();
         session.AddClient("healthy", healthy);
         session.AddClient("failing", new ThrowingVideoSink());
@@ -872,7 +1258,7 @@ public class BroadcastSessionTests
         // A sink that throws OperationCanceledException on its own, not because the session cancelled it,
         // has failed; only the session's own aborts and deadlines are "this frame was shed".
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: NeverMs);
         session.AddClient("odd", new SelfCancellingVideoSink());
         var disconnected = new List<string>();
         session.ClientDisconnected += id => { lock (disconnected) { disconnected.Add(id); } };
@@ -888,7 +1274,7 @@ public class BroadcastSessionTests
     public async Task ARejoiningClient_IsAddedBackAndStartsOnAKeyframe()
     {
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: RealTimeKeyframeMs);
         session.AddClient("pc", new ThrowingVideoSink());
         var disconnected = 0;
         session.ClientDisconnected += _ => Interlocked.Increment(ref disconnected);
@@ -927,7 +1313,7 @@ public class BroadcastSessionTests
             .Append(SourceStep.Changed)
             .ToArray();
         var source = new FakeFrameSource(SourceStep.NothingNew, script);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: NeverMs);
         var client = new RecordingVideoSink();
         session.AddClient("client-a", client);
 
@@ -1136,7 +1522,7 @@ public class BroadcastSessionTests
     public async Task Start_WhileRunning_Throws_AndAfterStop_StartsAgainFromFrameZero()
     {
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: RealTimeKeyframeMs);
         var before = new RecordingVideoSink();
         session.AddClient("a", before);
         session.Start();
@@ -1159,30 +1545,41 @@ public class BroadcastSessionTests
     [Fact]
     public async Task EventHandlers_MayCallStop_WithoutDeadlock()
     {
+        // A handler that waited on its own task would be released only by Stop's 2 s bounded wait, so the
+        // time Stop takes inside the handler is what tells a deadlock from a clean return.
+        var drain = TimeSpan.FromSeconds(2);
         var source = new FakeFrameSource(SourceStep.Changed);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: RealTimeKeyframeMs);
         session.AddClient("healthy", new RecordingVideoSink());
         session.AddClient("failing", new ThrowingVideoSink());
         var handled = 0;
+        var stopTookInHandler = TimeSpan.MaxValue;
         session.ClientDisconnected += _ =>
         {
+            var watch = Stopwatch.StartNew();
             session.Stop();
+            stopTookInHandler = watch.Elapsed;
             Interlocked.Increment(ref handled);
         };
 
         session.Start();
         await Eventually(() => Volatile.Read(ref handled) == 1, "a handler that calls Stop to return");
+        Assert.True(stopTookInHandler < drain * 0.75, $"Stop inside a ClientDisconnected handler took {stopTookInHandler.TotalMilliseconds:0} ms");
 
         var failingSource = new FakeFrameSource(SourceStep.Throw);
         var second = new BroadcastSession(failingSource, frameIntervalMs: 1);
         var secondHandled = 0;
+        var secondStopTook = TimeSpan.MaxValue;
         second.SourceFailed += _ =>
         {
+            var watch = Stopwatch.StartNew();
             second.Stop();
+            secondStopTook = watch.Elapsed;
             Interlocked.Increment(ref secondHandled);
         };
         second.Start();
         await Eventually(() => Volatile.Read(ref secondHandled) == 1, "a SourceFailed handler that calls Stop to return");
+        Assert.True(secondStopTook < drain * 0.75, $"Stop inside a SourceFailed handler took {secondStopTook.TotalMilliseconds:0} ms");
     }
 
     [Fact]
@@ -1202,7 +1599,7 @@ public class BroadcastSessionTests
     public async Task FramesOfferedTo_CountsEveryFrameQueuedForThatClient()
     {
         var source = new FakeFrameSource(SourceStep.NothingNew, [.. Enumerable.Repeat(SourceStep.Changed, 5)]);
-        var session = new BroadcastSession(source, frameIntervalMs: 1, keyframeIntervalMs: NeverMs);
+        var session = new BroadcastSession(source, frameIntervalMs: 1, perClientQueueCapacity: Roomy, keyframeIntervalMs: NeverMs);
         var sink = new RecordingVideoSink();
         session.AddClient("a", sink);
 

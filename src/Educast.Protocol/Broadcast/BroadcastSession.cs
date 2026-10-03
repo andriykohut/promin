@@ -15,8 +15,10 @@ namespace Educast.Protocol.Broadcast;
 /// When the queue is full the oldest frame is dropped and the frame still in flight is aborted: it is older
 /// than everything behind it, so finishing it would only push the client further behind. Each frame's send
 /// also has a deadline of <c>max(200 ms, 2 x frameIntervalMs)</c> (a keyframe, the largest frame, gets
-/// <c>max(that, keyframeIntervalMs / 2)</c>); on expiry the frame is aborted and counted as dropped, and the
-/// client carries on with the next one. A deadline is not a disconnect.
+/// <c>max(that, keyframeIntervalMs / 2)</c>); on expiry the frame is aborted and counted as dropped. A
+/// deadline is not a disconnect. A keyframe in flight is ended only by its own deadline (or the client's
+/// removal): the queue filling up behind it never aborts it, so a PC too slow for the stream still gets a
+/// fresh still picture every keyframe interval instead of nothing.
 /// </para>
 /// <para>
 /// A frame the session cancelled (deadline or eviction) is a drop however the sink then behaves: it may
@@ -25,11 +27,14 @@ namespace Educast.Protocol.Broadcast;
 /// disconnect.
 /// </para>
 /// <para>
-/// A client that lost a frame cannot decode the deltas that follow it. Its keyframe gate closes: it is sent
-/// nothing, and holds its last good picture, until the next keyframe the session produces anyway. No
-/// keyframe is ever forced because of a drop, since that would make one bad PC cost the other nine a full
-/// frame each. Deltas withheld from a gated client are neither offered nor dropped; deltas that were already
-/// queued behind the lost frame are discarded unsent and do count as dropped.
+/// A client that lost a frame cannot decode the deltas that follow it. The send loop decides what may be
+/// sent, from its own state alone: a keyframe always; a delta only if the frame it last delivered to this
+/// client has the id just before it. Frame ids rise by one per frame produced, so a lost frame leaves a gap
+/// that only a keyframe can cross; anything else queued is discarded unsent and counted as dropped. The
+/// client holds its last good picture until the next keyframe the session produces anyway. No keyframe is
+/// ever forced because of a drop, since that would make one bad PC cost the other nine a full frame each.
+/// As an optimisation the capture loop also stops queueing deltas for such a client; those withheld deltas
+/// are neither offered nor dropped.
 /// </para>
 /// <para>
 /// The capture loop hands frames to clients with a non-blocking <c>TryWrite</c> and never awaits a sink.
@@ -46,6 +51,8 @@ public sealed class BroadcastSession
     // honours its cancellation token finishes at once; this only bounds the damage from one that does not.
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(2);
 
+    private sealed record InFlightSend(CancellationTokenSource Cts, bool IsKeyframe);
+
     private sealed class ClientState
     {
         public ClientState(IVideoSink sink, int queueCapacity)
@@ -61,14 +68,14 @@ public sealed class BroadcastSession
                     FullMode = BoundedChannelFullMode.DropOldest,
                     SingleReader = true,
                 },
-                _ =>
+                evicted =>
                 {
                     Interlocked.Increment(ref DroppedFrameCount);
-                    CloseKeyframeGate();
+                    NoteFrameLost(VideoFrameEnvelope.ReadFrom(evicted).FrameId);
 
-                    // The frame in flight is older than everything queued behind it: finishing it would only
-                    // push this client further behind.
-                    AbortInFlightFrame();
+                    // A delta in flight is older than everything queued behind it: finishing it would only
+                    // push this client further behind. A keyframe in flight is left alone.
+                    AbortInFlightDelta();
                 });
         }
 
@@ -80,39 +87,51 @@ public sealed class BroadcastSession
 
         public Task SendLoop { get; set; } = Task.CompletedTask;
 
-        // A decoder cannot start from anything but a keyframe, so a client is not offered frames until a
-        // keyframe has been queued for it, and not again after it loses a frame. Opened by the capture loop;
-        // closed by whoever drops a frame.
-        private int _keyframeGateOpen;
+        // The capture loop's optimisation (correctness lives in the send loop): a client is not queued deltas
+        // while it cannot decode them. The gate is open while the newest keyframe queued for this client is
+        // newer than the newest frame known lost. Both are monotonic maxima, so there is no check-then-act
+        // between the capture loop reopening and a send loop closing, whatever their order.
+        private long _newestKeyframeQueuedId = -1;
+        private long _newestLostFrameId = -1;
 
-        // Counts closings of the gate. The send loop compares it with what it last saw to learn that frames
-        // queued before a loss are now undecodable, however the gate itself has been reopened since.
-        public int DropEpoch;
-
-        public CancellationTokenSource? InFlightFrameCts;
+        public InFlightSend? InFlight;
         public int DroppedFrameCount;
         public int FramesOffered;
 
-        public bool KeyframeGateOpen => Volatile.Read(ref _keyframeGateOpen) != 0;
+        public bool KeyframeGateOpen =>
+            Volatile.Read(ref _newestKeyframeQueuedId) > Volatile.Read(ref _newestLostFrameId);
 
-        public void OpenKeyframeGate() => Volatile.Write(ref _keyframeGateOpen, 1);
+        public void NoteKeyframeQueued(uint frameId) => RaiseTo(ref _newestKeyframeQueuedId, frameId);
 
-        public void CloseKeyframeGate()
+        public void NoteFrameLost(uint frameId) => RaiseTo(ref _newestLostFrameId, frameId);
+
+        private static void RaiseTo(ref long field, long value)
         {
-            Interlocked.Increment(ref DropEpoch);
-            Volatile.Write(ref _keyframeGateOpen, 0);
+            long seen;
+            while ((seen = Volatile.Read(ref field)) < value
+                && Interlocked.CompareExchange(ref field, value, seen) != seen)
+            {
+            }
         }
 
         /// <summary>
-        /// Abandons the frame stream currently being written to this client. Cancelled asynchronously: the
-        /// sink's cancellation callbacks (QUIC stream aborts) must not run on the capture thread.
+        /// Abandons the frame stream currently being written to this client, if it is a delta. A keyframe is
+        /// ended only by its own deadline: it is the one frame this client needs, and a slow client must be
+        /// able to finish it however far the queue behind it overflows. Cancelled asynchronously: the sink's
+        /// cancellation callbacks (QUIC stream aborts) must not run on the capture thread.
         /// </summary>
-        public void AbortInFlightFrame()
+        public void AbortInFlightDelta()
         {
-            var cts = Interlocked.Exchange(ref InFlightFrameCts, null);
+            var inFlight = Volatile.Read(ref InFlight);
+            if (inFlight is null || inFlight.IsKeyframe
+                || !ReferenceEquals(Interlocked.CompareExchange(ref InFlight, null, inFlight), inFlight))
+            {
+                return;
+            }
+
             try
             {
-                _ = cts?.CancelAsync();
+                _ = inFlight.Cts.CancelAsync();
             }
             catch (ObjectDisposedException)
             {
@@ -126,6 +145,12 @@ public sealed class BroadcastSession
             Queue.Writer.TryComplete();
         }
     }
+
+    /// <summary>
+    /// Test seam: when false the capture loop queues every frame for every client, so a test can show that
+    /// the send loop alone keeps undecodable deltas from a client.
+    /// </summary>
+    internal bool UseCaptureSideGate { get; init; } = true;
 
     private readonly IEncodedFrameSource _source;
     private readonly int _frameIntervalMs;
@@ -165,9 +190,9 @@ public sealed class BroadcastSession
         _keyframeInterval = TimeSpan.FromMilliseconds(keyframeIntervalMs);
         _sendDeadline = TimeSpan.FromMilliseconds(Math.Max(200L, 2L * frameIntervalMs));
 
-        // A keyframe is the largest frame and the one a client most needs. The client it goes to has nothing
-        // queued behind it (its gate is shut until the keyframe is queued), so waiting longer costs no one
-        // anything.
+        // A keyframe is the largest frame and the one a client most needs, and a keyframe in flight is never
+        // aborted by the queue behind it, so this deadline is its whole budget. Deltas queue behind it
+        // meanwhile and are lost if they overflow, but that costs no other client anything.
         _keyframeSendDeadline = TimeSpan.FromTicks(Math.Max(_sendDeadline.Ticks, _keyframeInterval.Ticks / 2));
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -419,21 +444,23 @@ public sealed class BroadcastSession
         new VideoFrameEnvelope(_nextFrameId++, frame.IsKeyframe).WriteTo(payload);
         encoded.CopyTo(payload.AsSpan(VideoFrameEnvelope.Size));
 
+        var frameId = _nextFrameId - 1;
         foreach (var client in _clients.Values)
         {
-            // A client waiting for a keyframe is sent nothing else: not counted as offered, not as dropped.
-            if (!client.KeyframeGateOpen && !frame.IsKeyframe)
+            // A client that cannot decode a delta is not queued one: not counted as offered, not as dropped.
+            // (The send loop would discard it anyway; this just avoids queueing it.)
+            if (UseCaptureSideGate && !client.KeyframeGateOpen && !frame.IsKeyframe)
             {
                 continue;
             }
 
             Offer(client, payload);
 
-            // After the write, not before: queueing this keyframe may evict an older frame, and that eviction
-            // closes the gate, but a keyframe starts a new chain, so the loss does not matter to what follows.
+            // After the write, not before: queueing this keyframe may evict an older frame, and that loss is
+            // noted first, but a keyframe starts a new chain, so only a loss newer than it matters.
             if (frame.IsKeyframe)
             {
-                client.OpenKeyframeGate();
+                client.NoteKeyframeQueued(frameId);
             }
         }
     }
@@ -456,8 +483,7 @@ public sealed class BroadcastSession
     {
         var ct = state.Cts.Token;
         var disconnected = false;
-        var seenDropEpoch = 0;
-        var needKeyframe = false;
+        long? lastDeliveredId = null;
         try
         {
             await foreach (var frame in state.Queue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
@@ -466,31 +492,22 @@ public sealed class BroadcastSession
                 // sink must not be called again.
                 ct.ThrowIfCancellationRequested();
 
-                // A frame was lost since the last one looked: everything still queued behind it was encoded
-                // against a picture this client does not have, so it waits for the next keyframe.
-                var epoch = Volatile.Read(ref state.DropEpoch);
-                if (epoch != seenDropEpoch)
+                // This loop is the judge of what the client can decode, from its own state alone: a keyframe
+                // always; a delta only if the frame last delivered is the one just before it. A frame that was
+                // evicted, withheld, discarded or aborted leaves a gap that only a keyframe can cross.
+                var envelope = VideoFrameEnvelope.ReadFrom(frame);
+                var isKeyframe = envelope.IsKeyframe;
+                if (!isKeyframe && lastDeliveredId != (long)envelope.FrameId - 1)
                 {
-                    seenDropEpoch = epoch;
-                    needKeyframe = true;
-                }
-
-                var isKeyframe = VideoFrameEnvelope.ReadFrom(frame).IsKeyframe;
-                if (needKeyframe)
-                {
-                    if (!isKeyframe)
-                    {
-                        // Queued for this client, never sent: dropped.
-                        Interlocked.Increment(ref state.DroppedFrameCount);
-                        continue;
-                    }
-
-                    needKeyframe = false;
+                    // Queued for this client, never sent: dropped.
+                    Interlocked.Increment(ref state.DroppedFrameCount);
+                    continue;
                 }
 
                 using var deadline = new CancellationTokenSource(isKeyframe ? _keyframeSendDeadline : _sendDeadline, _timeProvider);
                 using var frameCts = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
-                Interlocked.Exchange(ref state.InFlightFrameCts, frameCts);
+                var inFlight = new InFlightSend(frameCts, isKeyframe);
+                Volatile.Write(ref state.InFlight, inFlight);
 
                 Exception? sendFailure = null;
                 try
@@ -503,7 +520,7 @@ public sealed class BroadcastSession
                 }
                 finally
                 {
-                    Interlocked.CompareExchange(ref state.InFlightFrameCts, null, frameCts);
+                    Interlocked.CompareExchange(ref state.InFlight, null, inFlight);
                 }
 
                 // What happened to the frame is decided by what the session did, not by what the sink threw:
@@ -521,7 +538,7 @@ public sealed class BroadcastSession
                     // newer frame displaced it). The session cannot know it arrived, so it is a drop, however
                     // the send ended, and never a disconnect.
                     Interlocked.Increment(ref state.DroppedFrameCount);
-                    state.CloseKeyframeGate();
+                    state.NoteFrameLost(envelope.FrameId);
                     continue;
                 }
 
@@ -531,6 +548,8 @@ public sealed class BroadcastSession
                     disconnected = true;
                     break;
                 }
+
+                lastDeliveredId = envelope.FrameId;
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
