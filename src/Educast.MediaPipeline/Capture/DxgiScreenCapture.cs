@@ -372,7 +372,7 @@ public sealed class DxgiScreenCapture : IScreenCapture
             {
                 try
                 {
-                    var duplication = output5.DuplicateOutput1(Device, 0, SupportedFormats);
+                    var duplication = output5.DuplicateOutput1(Device, SupportedFormats);
                     _duplicateOutput1Failure = null;
                     return duplication;
                 }
