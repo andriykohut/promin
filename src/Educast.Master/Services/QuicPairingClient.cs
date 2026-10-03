@@ -41,4 +41,6 @@ public sealed class QuicPairingClient : IPairingClient
         _inner.PairAsync(pc, roomCode, ct);
 
     public void Unpair(string deviceId) => _inner.Unpair(deviceId);
+
+    public bool IsTrusted(string deviceId) => _inner.IsTrusted(deviceId);
 }

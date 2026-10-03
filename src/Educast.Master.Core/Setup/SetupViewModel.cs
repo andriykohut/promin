@@ -13,7 +13,14 @@ namespace Educast.Master.Core.Setup;
 /// <remarks>
 /// <b>The room code lives in <see cref="CodeText"/> and nowhere else.</b> It is normalised at the
 /// moment of pairing, handed to the pairing client, and never written to the room store or
-/// anything that persists.
+/// anything that persists. It is cleared as soon as every PC is in the room.
+///
+/// <b>Nothing escapes.</b> Every public member is called from a click handler or a navigation
+/// event, so none of them throws for anything a disk, the network or a student PC can do: a
+/// pairing that fails in an unexpected way reads <see cref="SetupRowStatus.CannotPairNow"/>, a
+/// save that fails leaves the screen as it was and shows <see cref="StoreError"/>, a discovery
+/// port that is taken shows <see cref="DiscoveryError"/>, and a batch never leaves a row
+/// <see cref="SetupRowStatus.Waiting"/> or <see cref="SetupRowStatus.Pairing"/>.
 ///
 /// <b>Threads.</b> Every public member is called on the UI thread. <see cref="IDiscovery.Seen"/>
 /// arrives on any thread and is marshalled through <c>runOnUiThread</c>; the pairing client
@@ -51,6 +58,14 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     private int _batchTotal;
     private int _batchIndex;
     private CancellationTokenSource? _pairingCts;
+    private bool _discoveryRunning;
+    private SetupBanner? _discoveryError;
+    private SetupBanner? _storeError;
+    private bool _roomUnreadable;
+    private bool _checklistExpanded;
+    private bool _checklistTouched;
+    private bool _settingChecklist;
+    private bool _lastNothingFound = true;
 
     public SetupViewModel(
         IPairingClient pairing,
@@ -88,6 +103,9 @@ public sealed class SetupViewModel : INotifyPropertyChanged
 
     public ObservableCollection<SetupRow> Rows { get; } = [];
 
+    /// <summary>The "A PC is missing?" checklist, as the page shows it.</summary>
+    public IReadOnlyList<ChecklistItem> Checklist => SetupChecklist.Items;
+
     /// <summary>Whatever is typed in the room code field. Never stored anywhere else.</summary>
     public string CodeText
     {
@@ -96,7 +114,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         {
             if (Set(ref _codeText, value ?? string.Empty))
             {
-                Raise(nameof(CanPairAll));
+                RefreshActions();
             }
         }
     }
@@ -156,6 +174,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>The result bar: a warning when some failed, success when all are in the room.</summary>
     public SetupBanner? Banner
     {
         get
@@ -179,7 +198,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
             {
                 return new SetupBanner(
                     SetupBannerKind.Success,
-                    $"All {all} PCs are in this room.",
+                    all == 1 ? "1 PC is in this room." : $"All {all} PCs are in this room.",
                     "You only do this once. They reconnect by themselves from now on.");
             }
 
@@ -187,13 +206,50 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Set while this screen cannot look for PCs because the discovery port is taken.</summary>
+    public SetupBanner? DiscoveryError => _discoveryError;
+
+    /// <summary>Set when the room could not be read at start, or the last save failed.</summary>
+    public SetupBanner? StoreError => _storeError;
+
     public bool ShowCodeCard => !(Rows.Count > 0 && Rows.All(r => r.Status == SetupRowStatus.InRoom));
 
     public bool NothingFound => Rows.Count == 0;
 
     public bool HasRows => Rows.Count > 0;
 
-    /// <summary>Page shown: load the room, start discovery.</summary>
+    /// <summary>The "Looking for student PCs" card: nothing found yet, and discovery is running.</summary>
+    public bool ShowsLookingCard => NothingFound && _discoveryRunning;
+
+    /// <summary>The "Still looking" indicator beside the count: rows exist, and discovery is running.</summary>
+    public bool ShowsStillLooking => HasRows && _discoveryRunning;
+
+    /// <summary>
+    /// Whether the "A PC is missing?" checklist is open. Open by default while nothing is found,
+    /// closed once something is — unless a person has opened or closed it by hand, in which case
+    /// it stays as they set it.
+    /// </summary>
+    public bool IsChecklistExpanded
+    {
+        get => _checklistExpanded;
+        set
+        {
+            if (_checklistExpanded == value)
+            {
+                return;
+            }
+
+            _checklistExpanded = value;
+            if (!_settingChecklist)
+            {
+                _checklistTouched = true;
+            }
+
+            Raise();
+        }
+    }
+
+    /// <summary>Page shown: load the room, start discovery. Never throws.</summary>
     /// <remarks>
     /// The discovery and health subscriptions live between <see cref="Activate"/> and
     /// <see cref="Deactivate"/>: both sources outlive any one page, so a view model that kept
@@ -211,7 +267,31 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         Rows.Clear();
         _seen.Clear();
         _members.Clear();
-        _members.AddRange(_store.Load());
+        _checklistTouched = false;
+        _roomUnreadable = false;
+        SetStoreError(null);
+
+        IReadOnlyList<RoomMember> loaded;
+        try
+        {
+            loaded = _store.Load();
+        }
+        catch (Exception)
+        {
+            loaded = [];
+            _roomUnreadable = true;
+            SetStoreError(SetupBanner.ReadError);
+        }
+
+        // A member this console no longer holds a pin for cannot be dialled, so it is not in the
+        // room: it is dropped, and comes back as Not paired when it is next seen.
+        var trusted = loaded.Where(m => _pairing.IsTrusted(m.DeviceId)).ToList();
+        _members.AddRange(trusted);
+        if (trusted.Count != loaded.Count)
+        {
+            TrySave();
+        }
+
         foreach (var member in _members)
         {
             Insert(new SetupRow(member.DeviceId, member.DisplayName, member.LastAddress, SetupRowStatus.InRoom)
@@ -220,8 +300,22 @@ public sealed class SetupViewModel : INotifyPropertyChanged
             });
         }
 
+        bool started;
+        try
+        {
+            started = _discovery.Start();
+        }
+        catch (Exception)
+        {
+            started = false;
+        }
+
+        _discoveryRunning = started;
+        Set(ref _discoveryError, started ? null : SetupBanner.DiscoveryUnavailable, nameof(DiscoveryError));
+
+        _lastNothingFound = NothingFound;
+        SetChecklist(NothingFound);
         RefreshAll();
-        _discovery.Start();
     }
 
     /// <summary>Page left: stop discovery, cancel pairing.</summary>
@@ -235,6 +329,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
 
         _discovery.Stop();
+        _discoveryRunning = false;
         _cancelRequested = true;
         _pairingCts?.Cancel();
     }
@@ -267,7 +362,6 @@ public sealed class SetupViewModel : INotifyPropertyChanged
                 var row = batch[i];
                 if (_cancelRequested || cts.IsCancellationRequested)
                 {
-                    ReturnToNotPaired(batch.Skip(i));
                     break;
                 }
 
@@ -278,6 +372,15 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
         finally
         {
+            // Whatever happened, no row is left where it has no action.
+            foreach (var row in batch)
+            {
+                if (row.Status is SetupRowStatus.Waiting or SetupRowStatus.Pairing)
+                {
+                    row.Status = SetupRowStatus.NotPaired;
+                }
+            }
+
             _pairingCts = null;
             _isPairing = false;
             RefreshAll();
@@ -293,7 +396,10 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
 
         _cancelRequested = true;
-        ReturnToNotPaired(Rows.Where(r => r.Status == SetupRowStatus.Waiting).ToList());
+        foreach (var row in Rows.Where(r => r.Status == SetupRowStatus.Waiting).ToList())
+        {
+            row.Status = SetupRowStatus.NotPaired;
+        }
     }
 
     /// <summary>
@@ -319,13 +425,18 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
         finally
         {
+            if (row.Status == SetupRowStatus.Pairing)
+            {
+                row.Status = SetupRowStatus.NotPaired;
+            }
+
             _pairingCts = null;
             _busy = false;
             RefreshAll();
         }
     }
 
-    /// <summary>Trims; ignores an empty name; cuts to 64 characters; saves.</summary>
+    /// <summary>Trims; ignores an empty name; cuts to 64 characters; saves. A failed save changes nothing.</summary>
     public void Rename(SetupRow row, string newName)
     {
         ArgumentNullException.ThrowIfNull(row);
@@ -345,29 +456,53 @@ public sealed class SetupViewModel : INotifyPropertyChanged
             return;
         }
 
-        row.Name = name;
-        Reposition(row);
-
         var index = _members.FindIndex(m => m.DeviceId == row.DeviceId);
         if (index >= 0)
         {
-            _members[index] = _members[index] with { DisplayName = name };
-            _store.Save(_members.ToList());
+            var before = _members[index];
+            _members[index] = before with { DisplayName = name };
+            if (!TrySave())
+            {
+                _members[index] = before;
+                return;
+            }
         }
+
+        row.Name = name;
+        Reposition(row);
     }
 
     /// <summary>
-    /// Forgets the PC's certificate on this machine and takes it out of the room. The row stays,
-    /// as Not paired, while the PC is still being seen; otherwise it goes.
+    /// Takes the PC out of the room and forgets its certificate on this machine. The row stays,
+    /// as Not paired, while the PC is still being seen; otherwise it goes. A failed save changes
+    /// nothing.
     /// </summary>
     public void Remove(SetupRow row)
     {
         ArgumentNullException.ThrowIfNull(row);
 
-        _pairing.Unpair(row.DeviceId);
-        if (_members.RemoveAll(m => m.DeviceId == row.DeviceId) > 0)
+        var index = _members.FindIndex(m => m.DeviceId == row.DeviceId);
+        if (index >= 0)
         {
-            _store.Save(_members.ToList());
+            var member = _members[index];
+            _members.RemoveAt(index);
+            if (!TrySave())
+            {
+                _members.Insert(index, member);
+                return;
+            }
+        }
+
+        try
+        {
+            _pairing.Unpair(row.DeviceId);
+        }
+        catch (Exception)
+        {
+            // The pin could not be written away. The room no longer lists the PC; a pin without a
+            // member is harmless (pairing the same certificate again is idempotent) but the
+            // person should know a save failed.
+            SetStoreError(SetupBanner.SaveError);
         }
 
         if (_seen.TryGetValue(row.DeviceId, out var pc))
@@ -406,26 +541,18 @@ public sealed class SetupViewModel : INotifyPropertyChanged
             row.Status = SetupRowStatus.NotPaired;
             return;
         }
+        catch (Exception)
+        {
+            // Not something the PC or the network did (those come back as results): this side
+            // failed. The row says so; the batch goes on.
+            row.Status = SetupRowStatus.CannotPairNow;
+            return;
+        }
 
         switch (result)
         {
             case PairResult.Paired:
-                // The transport has pinned the PC's certificate; the room must say so too, at
-                // once, whatever happens next.
-                var member = new RoomMember(
-                    row.DeviceId, pc.AnnouncedName, pc.Address, pc.Port, _today(), Selected: true);
-                var index = _members.FindIndex(m => m.DeviceId == row.DeviceId);
-                if (index >= 0)
-                {
-                    _members[index] = member;
-                }
-                else
-                {
-                    _members.Add(member);
-                }
-
-                _store.Save(_members.ToList());
-                row.Status = SetupRowStatus.InRoom;
+                RecordPaired(row, pc);
                 break;
             case PairResult.WrongCode:
                 row.Status = SetupRowStatus.WrongCode;
@@ -439,6 +566,74 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
 
         Raise(nameof(CountText));
+    }
+
+    /// <summary>
+    /// The transport has pinned the PC's certificate; the room must say so too, at once. If the
+    /// room cannot be saved, the pin is undone so the PC is never trusted-but-not-in-the-room.
+    /// </summary>
+    private void RecordPaired(SetupRow row, StudentPc pc)
+    {
+        var member = new RoomMember(row.DeviceId, pc.AnnouncedName, pc.Address, pc.Port, _today(), Selected: true);
+        var index = _members.FindIndex(m => m.DeviceId == row.DeviceId);
+        var before = index >= 0 ? _members[index] : null;
+        if (index >= 0)
+        {
+            _members[index] = member;
+        }
+        else
+        {
+            _members.Add(member);
+        }
+
+        if (TrySave())
+        {
+            row.Status = SetupRowStatus.InRoom;
+            return;
+        }
+
+        if (before is not null)
+        {
+            _members[index] = before;
+        }
+        else
+        {
+            _members.Remove(member);
+        }
+
+        try
+        {
+            _pairing.Unpair(row.DeviceId);
+        }
+        catch (Exception)
+        {
+            // The save bar is already up; nothing more to say.
+        }
+
+        row.Status = SetupRowStatus.CannotPairNow;
+    }
+
+    /// <summary>Saves the room. False, with <see cref="StoreError"/> set, when it could not be.</summary>
+    private bool TrySave()
+    {
+        if (_roomUnreadable)
+        {
+            // Writing a room over one that could not be read would lose it. The read bar stays
+            // and says to restart.
+            return false;
+        }
+
+        try
+        {
+            _store.Save(_members.ToList());
+            SetStoreError(null);
+            return true;
+        }
+        catch (Exception)
+        {
+            SetStoreError(SetupBanner.SaveError);
+            return false;
+        }
     }
 
     private void OnSeen(StudentPc pc)
@@ -462,7 +657,6 @@ public sealed class SetupViewModel : INotifyPropertyChanged
             Insert(new SetupRow(pc.DeviceId, pc.AnnouncedName, pc.Address, SetupRowStatus.NotPaired)
             {
                 Port = pc.Port,
-                CanAct = ActionsAllowed,
             });
             RefreshAll();
             return;
@@ -476,17 +670,6 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         {
             existing.Name = pc.AnnouncedName;
             Reposition(existing);
-        }
-    }
-
-    private void ReturnToNotPaired(IEnumerable<SetupRow> rows)
-    {
-        foreach (var row in rows)
-        {
-            if (row.Status == SetupRowStatus.Waiting)
-            {
-                row.Status = SetupRowStatus.NotPaired;
-            }
         }
     }
 
@@ -526,12 +709,25 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
     }
 
+    private void SetChecklist(bool expanded)
+    {
+        _settingChecklist = true;
+        IsChecklistExpanded = expanded;
+        _settingChecklist = false;
+    }
+
+    private void SetStoreError(SetupBanner? error) => Set(ref _storeError, error, nameof(StoreError));
+
     private void RefreshActions()
     {
         var allowed = ActionsAllowed;
+        var codeValid = RoomCode.TryNormalize(_codeText, out _);
+        var editable = !_isPairing && !_busy;
         foreach (var row in Rows)
         {
             row.CanAct = allowed;
+            row.CanPairNow = allowed && codeValid;
+            row.CanEdit = editable;
         }
 
         Raise(nameof(CanPairAll));
@@ -539,6 +735,21 @@ public sealed class SetupViewModel : INotifyPropertyChanged
 
     private void RefreshAll()
     {
+        if (!ShowCodeCard && _codeText.Length > 0)
+        {
+            // Every PC is in the room; the code has done its work and is not kept.
+            CodeText = string.Empty;
+        }
+
+        if (NothingFound != _lastNothingFound)
+        {
+            _lastNothingFound = NothingFound;
+            if (!_checklistTouched)
+            {
+                SetChecklist(NothingFound);
+            }
+        }
+
         RefreshActions();
         Raise(nameof(IsPairing));
         Raise(nameof(PairAllLabel));
@@ -547,6 +758,8 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         Raise(nameof(ShowCodeCard));
         Raise(nameof(NothingFound));
         Raise(nameof(HasRows));
+        Raise(nameof(ShowsLookingCard));
+        Raise(nameof(ShowsStillLooking));
     }
 
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
@@ -561,5 +774,6 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         return true;
     }
 
-    private void Raise(string? name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    private void Raise([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

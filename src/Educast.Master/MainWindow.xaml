@@ -18,9 +18,13 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!--
+            An absolute ms-appx URI: a Window has no base URI of its own, so a relative one
+            cannot be resolved and the title bar showed a placeholder.
+        -->
         <TitleBar x:Name="AppTitleBar" Title="Educast">
             <TitleBar.IconSource>
-                <ImageIconSource ImageSource="Assets/AppIcon.ico" />
+                <ImageIconSource ImageSource="ms-appx:///Assets/AppIcon.ico" />
             </TitleBar.IconSource>
         </TitleBar>
 
@@ -30,9 +34,9 @@
             Margin="24,0,24,6"
             IsClosable="False"
             IsOpen="{x:Bind Health.HasLocalFault, Mode=OneWay}"
-            Message="{x:Bind Health.LocalFault, Mode=OneWay}"
+            Message="{x:Bind Health.LocalFaultMessage, Mode=OneWay}"
             Severity="Error"
-            Title="{x:Bind LocalFaultTitle}" />
+            Title="{x:Bind Health.LocalFaultTitle, Mode=OneWay}" />
 
         <Frame x:Name="RootFrame" Grid.Row="2" />
     </Grid>

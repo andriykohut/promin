@@ -1,6 +1,7 @@
 using Educast.Master.Core.Rooms;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Navigation;
 
 namespace Educast.Master.Pages;
@@ -25,5 +26,7 @@ public sealed partial class RoomPage : Page
         ViewModel.Activate();
     }
 
-    private void SetUpDevices_Click(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(SetupPage));
+    // No slide: the design allows no decorative animation on these screens.
+    private void SetUpDevices_Click(object sender, RoutedEventArgs e) =>
+        Frame.Navigate(typeof(SetupPage), null, new SuppressNavigationTransitionInfo());
 }

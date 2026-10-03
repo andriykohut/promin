@@ -132,16 +132,19 @@ public sealed class SetupViewModelTests
         var changes = new List<string?>();
         vm.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
 
-        _health.LocalFault = ConsoleHealth.CertificateFaultMessage;
+        _health.LocalFault = LocalFault.UnusableCertificate;
 
         Assert.False(vm.CanPairAll);
         Assert.Contains(nameof(SetupViewModel.CanPairAll), changes);
         Assert.False(Row(vm, 1).CanAct);
+        Assert.False(Row(vm, 1).CanPairNow);
+        Assert.True(Row(vm, 1).CanEdit);
 
         _health.LocalFault = null;
 
         Assert.True(vm.CanPairAll);
         Assert.True(Row(vm, 1).CanAct);
+        Assert.True(Row(vm, 1).CanPairNow);
     }
 
     [Fact]
@@ -305,8 +308,9 @@ public sealed class SetupViewModelTests
     [Fact]
     public async Task PairOne_WithAnotherCode_LeavesTheMainFieldAlone()
     {
+        // Two rows, so that the room is not complete afterwards (a complete room clears the code).
         var vm = Activated();
-        Raise(1);
+        Raise(1, 2);
         vm.CodeText = "482913";
 
         await vm.PairOneAsync(Row(vm, 1), "111 222");
@@ -506,7 +510,7 @@ public sealed class SetupViewModelTests
 
         vm.Deactivate();
         Raise(2);
-        _health.LocalFault = "x";
+        _health.LocalFault = LocalFault.NoSecureTransport;
 
         Assert.Single(vm.Rows);
         Assert.Equal(0, changes);
@@ -526,6 +530,331 @@ public sealed class SetupViewModelTests
         }
 
         Assert.Empty(vm.Rows);
+    }
+
+    // Fix round 1 — A1: nothing a save or a pairing does may leave a row stuck or escape.
+
+    private static readonly SetupBanner SaveError = new(
+        SetupBannerKind.Error, "Educast could not save this room.", "Check that this PC's disk is not full, then try again.");
+
+    [Fact]
+    public async Task APairingThatThrows_MakesThatRowCannotPairNow_AndTheRestStillPair()
+    {
+        var vm = Activated();
+        Raise(1, 2, 3);
+        vm.CodeText = "482913";
+        _client.Throws[Id(2)] = new InvalidOperationException("a programming error in the transport");
+
+        await vm.PairAllAsync();
+
+        Assert.Equal(SetupRowStatus.InRoom, Row(vm, 1).Status);
+        Assert.Equal(SetupRowStatus.CannotPairNow, Row(vm, 2).Status);
+        Assert.Equal(SetupRowStatus.InRoom, Row(vm, 3).Status);
+        Assert.Equal(3, _client.Calls.Count);
+        Assert.Null(vm.StoreError);
+        Assert.False(vm.IsPairing);
+    }
+
+    [Fact]
+    public async Task ASaveThatFailsAfterASuccessfulPairing_UnpairsThePc_AndShowsTheSaveError()
+    {
+        var vm = Activated();
+        Raise(1);
+        vm.CodeText = "482913";
+        _store.SaveThrows = new IOException("disk full");
+
+        await vm.PairAllAsync();
+
+        Assert.Equal(SetupRowStatus.CannotPairNow, Row(vm, 1).Status);
+        Assert.Equal([Id(1)], _client.Unpaired);
+        Assert.Empty(_store.Members);
+        Assert.Equal(SaveError, vm.StoreError);
+    }
+
+    [Fact]
+    public async Task PairAll_NeverLeavesARowWaitingOrPairing_WhateverHappens()
+    {
+        var vm = Activated();
+        Raise(1, 2, 3, 4);
+        vm.CodeText = "482913";
+        _client.Throws[Id(1)] = new InvalidOperationException("boom");
+        _client.Results[Id(2)] = PairResult.Unreachable;
+        _store.SaveThrows = new IOException("disk full");
+
+        await vm.PairAllAsync();
+
+        Assert.DoesNotContain(vm.Rows, r => r.Status is SetupRowStatus.Waiting or SetupRowStatus.Pairing);
+        Assert.False(vm.IsPairing);
+        Assert.Equal(4, _client.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Rename_WhenTheSaveFails_KeepsTheOldName_AndShowsTheSaveError()
+    {
+        var vm = Activated();
+        Raise(1);
+        vm.CodeText = "482913";
+        await vm.PairAllAsync();
+        _store.SaveThrows = new IOException("disk full");
+
+        vm.Rename(Row(vm, 1), "Front left");
+
+        Assert.Equal("PC-01", Row(vm, 1).Name);
+        Assert.Equal("PC-01", Assert.Single(_store.Members).DisplayName);
+        Assert.Equal(SaveError, vm.StoreError);
+    }
+
+    [Fact]
+    public async Task Remove_WhenTheSaveFails_KeepsThePcInTheRoom_AndShowsTheSaveError()
+    {
+        var vm = Activated();
+        Raise(1);
+        vm.CodeText = "482913";
+        await vm.PairAllAsync();
+        _store.SaveThrows = new IOException("disk full");
+
+        vm.Remove(Row(vm, 1));
+
+        Assert.Equal(SetupRowStatus.InRoom, Row(vm, 1).Status);
+        Assert.Single(_store.Members);
+        Assert.Empty(_client.Unpaired);
+        Assert.Equal(SaveError, vm.StoreError);
+    }
+
+    [Fact]
+    public async Task TheSaveError_ClearsOnTheNextSuccessfulSave()
+    {
+        var vm = Activated();
+        Raise(1, 2);
+        vm.CodeText = "482913";
+        await vm.PairAllAsync();
+        _store.SaveThrows = new IOException("disk full");
+        vm.Rename(Row(vm, 1), "Front left");
+        Assert.NotNull(vm.StoreError);
+
+        _store.SaveThrows = null;
+        vm.Rename(Row(vm, 1), "Front left");
+
+        Assert.Null(vm.StoreError);
+        Assert.Equal("Front left", Row(vm, 1).Name);
+    }
+
+    [Fact]
+    public async Task Deactivate_DuringAPairing_LeavesNoRowWaitingOrPairing()
+    {
+        var vm = Activated();
+        Raise(1, 2, 3);
+        vm.CodeText = "482913";
+        _client.HoldDeviceId = Id(1);
+        _client.HonoursCancellation = true;
+        var run = vm.PairAllAsync();
+        await _client.Reached;
+
+        vm.Deactivate();
+        await run;
+
+        Assert.All(vm.Rows, r => Assert.Equal(SetupRowStatus.NotPaired, r.Status));
+        Assert.Single(_client.Calls);
+        Assert.Empty(_store.Members);
+    }
+
+    // A3: the singular on the success bar.
+
+    [Fact]
+    public async Task OnePc_SuccessTitle_UsesTheSingular()
+    {
+        var vm = Activated();
+        Raise(1);
+        vm.CodeText = "482913";
+
+        await vm.PairAllAsync();
+
+        Assert.Equal("1 PC is in this room.", vm.Banner?.Title);
+        Assert.Equal(SetupBannerKind.Success, vm.Banner?.Kind);
+    }
+
+    [Fact]
+    public async Task SeveralPcs_SuccessTitle_UsesThePlural()
+    {
+        var vm = Activated();
+        Raise(1, 2);
+        vm.CodeText = "482913";
+
+        await vm.PairAllAsync();
+
+        Assert.Equal("All 2 PCs are in this room.", vm.Banner?.Title);
+    }
+
+    // A4: discovery that cannot start.
+
+    [Fact]
+    public void WhenDiscoveryCannotStart_ShowsTheErrorBar_AndNoLookingState()
+    {
+        _discovery.CanStart = false;
+
+        var vm = Activated();
+
+        Assert.Equal(
+            new SetupBanner(
+                SetupBannerKind.Error,
+                "Educast cannot look for student PCs.",
+                "Another program on this PC is using network port 17844. Close any other copy of Educast, then open this screen again."),
+            vm.DiscoveryError);
+        Assert.True(vm.NothingFound);
+        Assert.False(vm.ShowsLookingCard);
+        Assert.False(vm.ShowsStillLooking);
+    }
+
+    [Fact]
+    public async Task WhenDiscoveryCannotStart_RoomMembersAreStillListed_AndTheirActionsWork()
+    {
+        _discovery.CanStart = false;
+        _store.Members.Add(new RoomMember(Id(1), "PC-01", "192.168.1.21", 17843, Today, Selected: true));
+
+        var vm = Activated();
+
+        var row = Assert.Single(vm.Rows);
+        Assert.Equal(SetupRowStatus.InRoom, row.Status);
+        Assert.False(vm.ShowsStillLooking);
+        Assert.True(row.CanEdit);
+        vm.Rename(row, "Front left");
+        Assert.Equal("Front left", Assert.Single(_store.Members).DisplayName);
+        vm.Remove(row);
+        Assert.Empty(_store.Members);
+        Assert.Empty(vm.Rows);
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public void WhenDiscoveryStarts_TheLookingStatesShow_AndThereIsNoError()
+    {
+        var vm = Activated();
+        Assert.Null(vm.DiscoveryError);
+        Assert.True(vm.ShowsLookingCard);
+        Assert.False(vm.ShowsStillLooking);
+
+        Raise(1);
+        Assert.False(vm.ShowsLookingCard);
+        Assert.True(vm.ShowsStillLooking);
+    }
+
+    // C: row actions and the code.
+
+    [Fact]
+    public void PairAndTryAgain_NeedAValidMainCode_EnterItsCodeDoesNot()
+    {
+        var vm = Activated();
+        Raise(1);
+        var row = Row(vm, 1);
+
+        Assert.False(row.CanPairNow);
+        Assert.True(row.CanAct);
+
+        vm.CodeText = "48291";
+        Assert.False(row.CanPairNow);
+
+        vm.CodeText = "482 913";
+        Assert.True(row.CanPairNow);
+        Assert.True(row.CanAct);
+    }
+
+    [Fact]
+    public async Task RenameAndRemove_AreDisabledWhilePairing()
+    {
+        var vm = Activated();
+        Raise(1, 2);
+        vm.CodeText = "482913";
+        await vm.PairOneAsync(Row(vm, 1));
+        Assert.True(Row(vm, 1).CanEdit);
+        _client.HoldDeviceId = Id(2);
+
+        var run = vm.PairAllAsync();
+        await _client.Reached;
+        Assert.False(Row(vm, 1).CanEdit);
+
+        _client.Release();
+        await run;
+        Assert.True(Row(vm, 1).CanEdit);
+    }
+
+    [Fact]
+    public async Task TheCode_IsCleared_WhenEveryPcIsPaired()
+    {
+        var vm = Activated();
+        Raise(1, 2);
+        vm.CodeText = "482913";
+
+        await vm.PairAllAsync();
+
+        Assert.False(vm.ShowCodeCard);
+        Assert.Equal(string.Empty, vm.CodeText);
+    }
+
+    [Fact]
+    public void AMemberWithoutAPin_IsDroppedFromTheRoom_AndAppearsNotPairedWhenSeen()
+    {
+        _store.Members.Add(new RoomMember(Id(1), "Front left", "192.168.1.21", 17843, Today, Selected: true));
+        _store.Members.Add(new RoomMember(Id(2), "PC-02", "192.168.1.22", 17843, Today, Selected: true));
+        _client.Trusted = id => id != Id(1);
+
+        var vm = Activated();
+
+        Assert.Equal([Id(2)], vm.Rows.Select(r => r.DeviceId));
+        Assert.Equal([Id(2)], _store.Members.Select(m => m.DeviceId));
+
+        Raise(1);
+        Assert.Equal(SetupRowStatus.NotPaired, Row(vm, 1).Status);
+        Assert.Equal("PC-01", Row(vm, 1).Name);
+    }
+
+    [Fact]
+    public void AnUnreadableRoom_ShowsTheReadError_AndAnEmptyRoom()
+    {
+        _store.LoadThrows = new RoomStoreException("locked", new IOException());
+
+        var vm = Activated();
+
+        Assert.Empty(vm.Rows);
+        Assert.Equal(
+            new SetupBanner(
+                SetupBannerKind.Error,
+                "Educast could not read this room.",
+                "Close any other copy of Educast, then start it again."),
+            vm.StoreError);
+        Assert.Equal(1, _discovery.Started);
+    }
+
+    [Fact]
+    public void TheChecklist_IsOpenWhenNothingIsFound_AndClosesOnTheFirstPc()
+    {
+        var vm = Activated();
+        Assert.True(vm.IsChecklistExpanded);
+
+        Raise(1);
+
+        Assert.False(vm.IsChecklistExpanded);
+    }
+
+    [Fact]
+    public void TheChecklist_StaysAsThePersonSetIt()
+    {
+        var vm = Activated();
+        vm.IsChecklistExpanded = false;
+        vm.IsChecklistExpanded = true;
+
+        Raise(1);
+
+        Assert.True(vm.IsChecklistExpanded);
+    }
+
+    [Fact]
+    public void TheChecklist_StartsClosed_WhenTheRoomHasMembers()
+    {
+        _store.Members.Add(new RoomMember(Id(1), "PC-01", "192.168.1.21", 17843, Today, Selected: true));
+
+        var vm = Activated();
+
+        Assert.False(vm.IsChecklistExpanded);
     }
 
     [Fact]

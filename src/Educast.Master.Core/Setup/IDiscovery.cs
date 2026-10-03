@@ -8,7 +8,11 @@ public interface IDiscovery
     /// <summary>Raised on any thread each time a student PC announces itself.</summary>
     event Action<StudentPc>? Seen;
 
-    void Start();
+    /// <summary>
+    /// Starts listening. Returns false when it cannot — the discovery port is already in use on
+    /// this PC — so that the screen can say so instead of looking for ever.
+    /// </summary>
+    bool Start();
 
     void Stop();
 }

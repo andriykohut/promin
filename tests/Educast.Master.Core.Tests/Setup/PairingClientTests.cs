@@ -63,14 +63,37 @@ public sealed class PairingClientTests : IDisposable
         Assert.Equal(expected, result);
     }
 
+    private const string Thumbprint = "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
+
+    /// <summary>Gives the store one pin, the way the real one gets them: from the file at start.</summary>
+    private void SeedPin(string deviceId)
+    {
+        File.WriteAllText(_trustPath, $$$"""{"{{{deviceId}}}":"{{{Thumbprint}}}"}""");
+        PairingClient.LoadTrust(_trust, _trustPath);
+        Assert.True(_trust.TryGetPinnedThumbprint(deviceId, out _));
+        File.Delete(_trustPath);
+    }
+
     [Fact]
     public async Task PairAsync_SavesTheTrustFile_OnlyWhenItPaired()
     {
+        SeedPin("device-09");
+
         await Client(PairingFailure.KeyNotProven).PairAsync(Pc, "482913", CancellationToken.None);
         Assert.False(File.Exists(_trustPath));
 
         await Client(PairingFailure.None).PairAsync(Pc, "482913", CancellationToken.None);
-        Assert.True(File.Exists(_trustPath));
+        Assert.Equal($$$"""{"device-09":"{{{Thumbprint}}}"}""", File.ReadAllText(_trustPath));
+    }
+
+    [Fact]
+    public void IsTrusted_SaysWhetherThisConsoleHoldsAPin()
+    {
+        SeedPin("device-09");
+        var client = Client(PairingFailure.None);
+
+        Assert.True(client.IsTrusted("device-09"));
+        Assert.False(client.IsTrusted("device-01"));
     }
 
     [Fact]
@@ -84,10 +107,12 @@ public sealed class PairingClientTests : IDisposable
     [Fact]
     public void Unpair_ForgetsThePin_AndSavesTheTrustFile()
     {
+        SeedPin("device-01");
+
         Client(PairingFailure.None).Unpair("device-01");
 
         Assert.False(_trust.TryGetPinnedThumbprint("device-01", out _));
-        Assert.True(File.Exists(_trustPath));
+        Assert.Equal("{}", File.ReadAllText(_trustPath));
     }
 
     [Fact]

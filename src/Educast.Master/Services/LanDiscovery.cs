@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using Educast.Master.Core.Rooms;
 using Educast.Master.Core.Setup;
 using Educast.Protocol;
@@ -12,7 +13,9 @@ namespace Educast.Master.Services;
 /// <remarks>
 /// A scanner cannot be restarted once disposed, so each <see cref="Start"/> makes a new one and
 /// <see cref="Stop"/> disposes it. Both are called on the UI thread — never from inside a
-/// <c>DeviceDiscovered</c> handler, which runs on the scanner's own thread.
+/// <c>DeviceDiscovered</c> handler, which runs on the scanner's own thread. The scanner's
+/// constructor throws <see cref="SocketException"/> when the port is already bound (a second
+/// console on this PC); that is reported as <c>false</c>, not thrown into a navigation.
 /// </remarks>
 public sealed class LanDiscovery : IDiscovery
 {
@@ -20,17 +23,27 @@ public sealed class LanDiscovery : IDiscovery
 
     public event Action<StudentPc>? Seen;
 
-    public void Start()
+    public bool Start()
     {
         if (_scanner is not null)
         {
-            return;
+            return true;
         }
 
-        var scanner = new LanDiscoveryScanner(EducastPorts.Discovery);
+        LanDiscoveryScanner scanner;
+        try
+        {
+            scanner = new LanDiscoveryScanner(EducastPorts.Discovery);
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+
         scanner.DeviceDiscovered += OnDiscovered;
         _scanner = scanner;
         scanner.Start();
+        return true;
     }
 
     public void Stop()

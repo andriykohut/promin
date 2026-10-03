@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Net;
+using System.Net.Quic;
 using Educast.Master.Core;
 using Educast.Master.Core.Rooms;
 using Educast.Master.Core.Setup;
@@ -61,26 +63,53 @@ public sealed class AppServices : IDisposable
     public static AppServices Create() => new(RootDirectory);
 
     /// <summary>
-    /// Proves, off the UI thread, that this PC's certificate can complete a TLS handshake, so
-    /// that a console with an unusable certificate says so instead of blaming every student PC
-    /// it fails to reach. Loopback only: no port is opened to the network and no firewall prompt.
+    /// Proves, off the UI thread, that this PC can make the secure connections Educast uses and
+    /// that its certificate can complete a TLS handshake, so that a broken console says so
+    /// instead of blaming every student PC it fails to reach. Loopback only: no port is opened
+    /// to the network and no firewall prompt.
     /// </summary>
+    /// <remarks>
+    /// Two faults have words for the operator: no QUIC on this Windows, and an unusable
+    /// certificate. Anything else the check throws is unexpected; it is written to the debug
+    /// output (<see cref="Trace"/>) rather than swallowed, and no third message is invented.
+    /// </remarks>
     public async Task CheckCertificateAsync(DispatcherQueue ui)
     {
         ArgumentNullException.ThrowIfNull(ui);
 
+        LocalFault? fault = null;
         try
         {
-            await Task.Run(async () =>
+            fault = await Task.Run(async () =>
             {
+                // Asking msquic whether it is there can load it; not on the UI thread.
+                if (!QuicListener.IsSupported || !QuicConnection.IsSupported)
+                {
+                    return LocalFault.NoSecureTransport;
+                }
+
                 await using var probe = new QuicAgentListener(
                     Identity.Certificate, new PeerCertificateStore(), port: 0, IPAddress.Loopback);
                 await probe.StartAsync(CancellationToken.None).ConfigureAwait(false);
+                return null;
             }).ConfigureAwait(false);
+        }
+        catch (PlatformNotSupportedException)
+        {
+            fault = LocalFault.NoSecureTransport;
         }
         catch (LocalCredentialException)
         {
-            ui.TryEnqueue(() => Health.LocalFault = ConsoleHealth.CertificateFaultMessage);
+            fault = LocalFault.UnusableCertificate;
+        }
+        catch (Exception e)
+        {
+            Trace.TraceError("The console's start-up certificate check failed unexpectedly: {0}", e);
+        }
+
+        if (fault is not null)
+        {
+            ui.TryEnqueue(() => Health.LocalFault = fault);
         }
     }
 

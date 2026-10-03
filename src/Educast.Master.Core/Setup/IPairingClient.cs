@@ -2,7 +2,7 @@ using Educast.Master.Core.Rooms;
 
 namespace Educast.Master.Core.Setup;
 
-/// <summary>The transport, as the setup screen needs it: pair one PC, or forget one.</summary>
+/// <summary>The transport, as the setup screen needs it: pair one PC, forget one, or ask about one.</summary>
 public interface IPairingClient
 {
     /// <summary>
@@ -14,4 +14,7 @@ public interface IPairingClient
 
     /// <summary>Forget a PC's certificate on this machine.</summary>
     void Unpair(string deviceId);
+
+    /// <summary>True when this machine holds a certificate pin for the PC, so it can be dialled.</summary>
+    bool IsTrusted(string deviceId);
 }

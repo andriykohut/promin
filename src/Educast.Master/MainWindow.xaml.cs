@@ -3,6 +3,7 @@ using Educast.Master.Core;
 using Educast.Master.Pages;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Graphics;
 
 namespace Educast.Master;
@@ -27,15 +28,16 @@ public sealed partial class MainWindow : Window
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        AppWindow.SetIcon("Assets/AppIcon.ico");
+
+        // The taskbar and Alt+Tab icon. SetIcon resolves a relative path against the current
+        // directory, which is not the app's when it is started from elsewhere.
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         SizeInEffectivePixels();
 
-        RootFrame.Navigate(typeof(RoomPage));
+        RootFrame.Navigate(typeof(RoomPage), null, new SuppressNavigationTransitionInfo());
     }
 
     public ConsoleHealth Health { get; }
-
-    public string LocalFaultTitle => ConsoleHealth.CertificateFaultTitle;
 
     /// <summary>
     /// The sizes in the design are effective pixels; AppWindow takes physical ones, so both are

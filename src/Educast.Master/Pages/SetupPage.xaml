@@ -36,6 +36,25 @@
             <Setter Property="Height" Value="32" />
         </Style>
 
+        <DataTemplate x:Key="ChecklistTemplate" x:DataType="setup:ChecklistItem">
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="{x:Bind Label}" />
+                <TextBlock
+                    Grid.Column="1"
+                    Style="{StaticResource SecondaryTextStyle}"
+                    TextWrapping="Wrap">
+                    <Run
+                        FontWeight="SemiBold"
+                        Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                        Text="{x:Bind Lead}" /><Run Text="{x:Bind Rest}" />
+                </TextBlock>
+            </Grid>
+        </DataTemplate>
+
         <DataTemplate x:Key="RowTemplate" x:DataType="setup:SetupRow">
             <Grid MinHeight="46">
                 <!-- A failed row is tinted; nothing else about the row changes. -->
@@ -135,10 +154,11 @@
                         VerticalAlignment="Center"
                         Orientation="Horizontal"
                         Spacing="6">
+                        <!-- Pair and Try again use the main field's code, so they need a valid one. -->
                         <Button
                             Click="Pair_Click"
                             Content="Pair"
-                            IsEnabled="{x:Bind CanAct, Mode=OneWay}"
+                            IsEnabled="{x:Bind CanPairNow, Mode=OneWay}"
                             Visibility="{x:Bind ShowsPair, Mode=OneWay}" />
                         <Button
                             Click="EnterCode_Click"
@@ -146,9 +166,9 @@
                             IsEnabled="{x:Bind CanAct, Mode=OneWay}"
                             Visibility="{x:Bind ShowsEnterCode, Mode=OneWay}" />
                         <Button
-                            Click="TryAgain_Click"
+                            Click="Pair_Click"
                             Content="Try again"
-                            IsEnabled="{x:Bind CanAct, Mode=OneWay}"
+                            IsEnabled="{x:Bind CanPairNow, Mode=OneWay}"
                             Visibility="{x:Bind ShowsTryAgain, Mode=OneWay}" />
                         <Button
                             AutomationProperties.Name="More"
@@ -159,10 +179,12 @@
                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
                                     <MenuFlyoutItem
                                         Click="Rename_Click"
+                                        IsEnabled="{x:Bind CanEdit, Mode=OneWay}"
                                         Tag="{x:Bind}"
                                         Text="Rename" />
                                     <MenuFlyoutItem
                                         Click="Remove_Click"
+                                        IsEnabled="{x:Bind CanEdit, Mode=OneWay}"
                                         Tag="{x:Bind}"
                                         Text="Remove from this room" />
                                 </MenuFlyout>
@@ -211,6 +233,20 @@
                 </InfoBar.ActionButton>
             </InfoBar>
 
+            <!-- What this PC could not do: read or save the room; look for PCs. Never closable. -->
+            <InfoBar
+                IsClosable="False"
+                IsOpen="{x:Bind HasValue(ViewModel.StoreError), Mode=OneWay}"
+                Message="{x:Bind MessageOf(ViewModel.StoreError), Mode=OneWay}"
+                Severity="Error"
+                Title="{x:Bind TitleOf(ViewModel.StoreError), Mode=OneWay}" />
+            <InfoBar
+                IsClosable="False"
+                IsOpen="{x:Bind HasValue(ViewModel.DiscoveryError), Mode=OneWay}"
+                Message="{x:Bind MessageOf(ViewModel.DiscoveryError), Mode=OneWay}"
+                Severity="Error"
+                Title="{x:Bind TitleOf(ViewModel.DiscoveryError), Mode=OneWay}" />
+
             <!-- 3. The room code card. -->
             <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.ShowCodeCard, Mode=OneWay}">
                 <Grid Padding="18,16" ColumnSpacing="20">
@@ -230,6 +266,12 @@
                             Text="The 6-digit code you chose when installing Educast on the student PCs."
                             TextWrapping="Wrap" />
                     </StackPanel>
+                    <!--
+                        Six digits, nothing else (design doc 6.2): the code-behind filters each
+                        change through RoomCodeEntry.Accept and pushes the result to CodeText. The
+                        field is deliberately not bound two-way: a binding writing the value back
+                        counts as setting the password from code, which hides the reveal button.
+                    -->
                     <PasswordBox
                         x:Name="CodeBox"
                         Grid.Column="1"
@@ -237,8 +279,8 @@
                         VerticalAlignment="Center"
                         AutomationProperties.Name="Room code"
                         InputScope="NumericPin"
-                        MaxLength="7"
-                        Password="{x:Bind ViewModel.CodeText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        MaxLength="6"
+                        PasswordChanged="CodeBox_PasswordChanged"
                         PasswordRevealMode="Peek"
                         PlaceholderText="6 digits" />
                     <Button
@@ -288,8 +330,8 @@
                     VerticalAlignment="Bottom"
                     Orientation="Horizontal"
                     Spacing="8"
-                    Visibility="{x:Bind ViewModel.HasRows, Mode=OneWay}">
-                    <ProgressRing IsActive="True" Style="{StaticResource SmallRingStyle}" />
+                    Visibility="{x:Bind ViewModel.ShowsStillLooking, Mode=OneWay}">
+                    <ProgressRing IsActive="{x:Bind ViewModel.ShowsStillLooking, Mode=OneWay}" Style="{StaticResource SmallRingStyle}" />
                     <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="Still looking" />
                 </StackPanel>
             </Grid>
@@ -308,8 +350,8 @@
                 </ItemsRepeater>
             </Border>
 
-            <!-- 6. Nothing found yet. -->
-            <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.NothingFound, Mode=OneWay}">
+            <!-- 6. Nothing found yet (and discovery is running; otherwise the error bar above says why not). -->
+            <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.ShowsLookingCard, Mode=OneWay}">
                 <StackPanel Padding="24,34,24,30" HorizontalAlignment="Center">
                     <ProgressRing
                         Width="26"
@@ -318,7 +360,7 @@
                         MinHeight="26"
                         Margin="0,0,0,12"
                         HorizontalAlignment="Center"
-                        IsActive="True" />
+                        IsActive="{x:Bind ViewModel.ShowsLookingCard, Mode=OneWay}" />
                     <TextBlock
                         HorizontalAlignment="Center"
                         FontSize="18"
@@ -334,55 +376,21 @@
                 </StackPanel>
             </Border>
 
-            <!-- 7. A PC is missing? (design doc 6.6) -->
+            <!--
+                7. A PC is missing? (design doc 6.6). The lines come from Core, where the port is
+                EducastPorts.Quic and the wording is tested. Open by default while nothing is
+                found; once a person has toggled it, it stays as they set it.
+            -->
             <Expander
                 HorizontalAlignment="Stretch"
                 HorizontalContentAlignment="Stretch"
                 Header="A PC is missing?"
-                IsExpanded="{x:Bind ViewModel.NothingFound, Mode=OneWay}">
-                <Grid ColumnSpacing="10" RowSpacing="5">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="1." />
-                    <TextBlock
-                        Grid.Column="1"
-                        Style="{StaticResource SecondaryTextStyle}"
-                        TextWrapping="Wrap">
-                        <Run FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorPrimaryBrush}" Text="Is it switched on" /><Run Text=", and is Educast running on it? It starts with Windows after install." />
-                    </TextBlock>
-
-                    <TextBlock
-                        Grid.Row="1"
-                        Style="{StaticResource SecondaryTextStyle}"
-                        Text="2." />
-                    <TextBlock
-                        Grid.Row="1"
-                        Grid.Column="1"
-                        Style="{StaticResource SecondaryTextStyle}"
-                        TextWrapping="Wrap">
-                        <Run FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorPrimaryBrush}" Text="Is it on the same network" /><Run Text=" as this PC? Guest Wi-Fi and separate VLANs do not work." />
-                    </TextBlock>
-
-                    <TextBlock
-                        Grid.Row="2"
-                        Style="{StaticResource SecondaryTextStyle}"
-                        Text="3." />
-                    <TextBlock
-                        Grid.Row="2"
-                        Grid.Column="1"
-                        Style="{StaticResource SecondaryTextStyle}"
-                        TextWrapping="Wrap">
-                        <Run FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorPrimaryBrush}" Text="Is its firewall letting Educast through?" /><Run Text=" Allow UDP port 17843. The setup guide has the steps." />
-                    </TextBlock>
-                </Grid>
+                IsExpanded="{x:Bind ViewModel.IsChecklistExpanded, Mode=TwoWay}">
+                <ItemsRepeater ItemTemplate="{StaticResource ChecklistTemplate}" ItemsSource="{x:Bind ViewModel.Checklist}">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Spacing="5" />
+                    </ItemsRepeater.Layout>
+                </ItemsRepeater>
             </Expander>
         </StackPanel>
     </ScrollViewer>

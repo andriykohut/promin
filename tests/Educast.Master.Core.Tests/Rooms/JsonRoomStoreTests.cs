@@ -50,6 +50,46 @@ public sealed class JsonRoomStoreTests : IDisposable
     }
 
     [Fact]
+    public void Load_WhenTheFileCannotBeRead_ThrowsRoomStoreException()
+    {
+        File.WriteAllText(_path, "[]");
+        using var lock_ = new FileStream(_path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var error = Assert.Throws<RoomStoreException>(() => new JsonRoomStore(_path).Load());
+
+        Assert.IsAssignableFrom<IOException>(error.InnerException);
+        Assert.False(File.Exists(_path + ".corrupt"));
+    }
+
+    [Fact]
+    public void Save_WhenTheFileIsLocked_ThrowsRoomStoreException()
+    {
+        File.WriteAllText(_path, "[]");
+        using var lock_ = new FileStream(_path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        Assert.Throws<RoomStoreException>(() =>
+            new JsonRoomStore(_path).Save([new RoomMember("a1", "PC-01", "192.168.1.21", 17843, new DateOnly(2026, 10, 3), true)]));
+        Assert.Empty(Directory.GetFiles(_directory, "*.tmp"));
+    }
+
+    [Fact]
+    public void Load_SkipsAMemberWithNoNameOrAddress_AndKeepsTheRest()
+    {
+        File.WriteAllText(_path, """
+            [
+              {"DeviceId":"a1","DisplayName":"PC-01","LastAddress":"192.168.1.21","Port":17843,"PairedOn":"2026-10-03","Selected":true},
+              {"DeviceId":"b2","DisplayName":null,"LastAddress":"192.168.1.22","Port":17843,"PairedOn":"2026-10-03","Selected":true},
+              {"DeviceId":"c3","DisplayName":"PC-03","LastAddress":"","Port":17843,"PairedOn":"2026-10-03","Selected":true},
+              {"DeviceId":"","DisplayName":"PC-04","LastAddress":"192.168.1.24","Port":17843,"PairedOn":"2026-10-03","Selected":true}
+            ]
+            """);
+
+        var loaded = new JsonRoomStore(_path).Load();
+
+        Assert.Equal(["a1"], loaded.Select(m => m.DeviceId));
+    }
+
+    [Fact]
     public void Save_ReplacesTheFileAtomically()
     {
         var store = new JsonRoomStore(_path);

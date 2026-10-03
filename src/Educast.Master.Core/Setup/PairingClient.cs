@@ -95,4 +95,6 @@ public sealed class PairingClient : IPairingClient
         _trustedAgents.Unpin(deviceId);
         _trustedAgents.Save(_trustPath);
     }
+
+    public bool IsTrusted(string deviceId) => _trustedAgents.TryGetPinnedThumbprint(deviceId, out _);
 }

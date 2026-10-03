@@ -10,6 +10,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -35,9 +36,19 @@
             </HyperlinkButton>
         </Grid>
 
+        <!-- Message area (design doc 5.6). For now only: the room file could not be read. -->
+        <InfoBar
+            Grid.Row="1"
+            Margin="24,0,24,0"
+            IsClosable="False"
+            IsOpen="{x:Bind ViewModel.HasLoadError, Mode=OneWay}"
+            Message="{x:Bind ViewModel.LoadErrorMessage, Mode=OneWay}"
+            Severity="Error"
+            Title="{x:Bind ViewModel.LoadErrorTitle, Mode=OneWay}" />
+
         <!-- Empty room (design doc 5.8). -->
         <Grid
-            Grid.Row="1"
+            Grid.Row="2"
             Margin="24,14,24,22"
             Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay}">
             <Rectangle
@@ -82,14 +93,14 @@
 
         <!-- With members: one line where the wall will be. Task 13 replaces this with the wall. -->
         <TextBlock
-            Grid.Row="1"
+            Grid.Row="2"
             Margin="24,14,24,22"
             Text="{x:Bind ViewModel.MemberCountText, Mode=OneWay}"
             Visibility="{x:Bind ViewModel.HasMembers, Mode=OneWay}" />
 
         <!-- Action bar. Only the primary button exists yet; the rest is Task 13. -->
         <Grid
-            Grid.Row="2"
+            Grid.Row="3"
             Padding="24,12"
             Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"

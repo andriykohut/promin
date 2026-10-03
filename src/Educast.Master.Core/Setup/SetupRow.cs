@@ -14,6 +14,8 @@ public sealed class SetupRow : INotifyPropertyChanged
     private string _address;
     private SetupRowStatus _status;
     private bool _canAct = true;
+    private bool _canPairNow;
+    private bool _canEdit = true;
 
     public SetupRow(string deviceId, string name, string address, SetupRowStatus status)
     {
@@ -68,13 +70,27 @@ public sealed class SetupRow : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Whether the row's action may be taken now. False while a pairing is running anywhere on
-    /// the screen and while this PC has a fault of its own.
+    /// Whether a pairing action may be taken on this row now. False while a pairing is running
+    /// anywhere on the screen and while this PC has a fault of its own. Gates Enter its code.
     /// </summary>
     public bool CanAct
     {
         get => _canAct;
         internal set => Set(ref _canAct, value);
+    }
+
+    /// <summary><see cref="CanAct"/>, and the main field holds a valid code. Gates Pair and Try again.</summary>
+    public bool CanPairNow
+    {
+        get => _canPairNow;
+        internal set => Set(ref _canPairNow, value);
+    }
+
+    /// <summary>Whether Rename and Remove may be taken: no pairing is running anywhere on the screen.</summary>
+    public bool CanEdit
+    {
+        get => _canEdit;
+        internal set => Set(ref _canEdit, value);
     }
 
     /// <summary>The port the PC was last announced on. Not shown.</summary>

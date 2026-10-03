@@ -49,6 +49,25 @@ public sealed class RoomViewModelTests
     }
 
     [Fact]
+    public void AnUnreadableRoom_ShowsTheReadError_AndReadsAsEmpty()
+    {
+        _store.LoadThrows = new RoomStoreException("locked", new IOException());
+        var vm = new RoomViewModel(_store);
+
+        vm.Activate();
+
+        Assert.True(vm.IsEmpty);
+        Assert.Equal("Educast could not read this room.", vm.LoadError?.Title);
+        Assert.Equal("Close any other copy of Educast, then start it again.", vm.LoadError?.Message);
+        Assert.True(vm.HasLoadError);
+
+        _store.LoadThrows = null;
+        vm.Activate();
+        Assert.Null(vm.LoadError);
+        Assert.False(vm.HasLoadError);
+    }
+
+    [Fact]
     public void Activate_ReadsTheRoomAgain()
     {
         var vm = new RoomViewModel(_store);
