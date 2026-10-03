@@ -20,6 +20,7 @@ namespace Educast.Protocol.Transport;
 /// The returned certificate owns a private key that is <b>not</b> persisted to disk:
 /// the PKCS#12 round-trip below deliberately omits <see cref="X509KeyStorageFlags.PersistKeySet"/>,
 /// so the key container is torn down when the certificate is disposed. Callers must dispose it.
+/// The key is not exportable either.
 /// </remarks>
 public static class SelfSignedCertificateFactory
 {
@@ -39,8 +40,10 @@ public static class SelfSignedCertificateFactory
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(
             certificateAuthority: false, hasPathLengthConstraint: false, pathLengthConstraint: 0, critical: true));
 
+        // DigitalSignature only. An ECDSA key signs; it cannot encipher a key, so asserting
+        // KeyEncipherment would be meaningless — and this extension is critical.
         request.CertificateExtensions.Add(new X509KeyUsageExtension(
-            X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, critical: true));
+            X509KeyUsageFlags.DigitalSignature, critical: true));
 
         request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
             [new Oid(ServerAuthenticationOid), new Oid(ClientAuthenticationOid)], critical: false));
@@ -55,10 +58,12 @@ public static class SelfSignedCertificateFactory
         // SChannel (which msquic uses on Windows) will only accept a TLS credential whose
         // private key lives in a key container, so the in-memory key from CreateSelfSigned
         // has to be round-tripped through PKCS#12. PersistKeySet is deliberately absent:
-        // the container is temporary and goes away with the certificate handle.
+        // the container is temporary and goes away with the certificate handle. Exportable is
+        // deliberately absent too: the key never needs to leave the container it lands in.
+        // (EphemeralKeySet is not an option: SChannel refuses such a credential, 0x8009030D.)
         return X509CertificateLoader.LoadPkcs12(
             certificate.Export(X509ContentType.Pfx),
             password: null,
-            keyStorageFlags: X509KeyStorageFlags.Exportable);
+            keyStorageFlags: X509KeyStorageFlags.DefaultKeySet);
     }
 }
