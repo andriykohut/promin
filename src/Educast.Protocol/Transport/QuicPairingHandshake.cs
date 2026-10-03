@@ -49,22 +49,27 @@ internal static class QuicPairingHandshake
     public static Task<bool> RunAsMasterAsync(
         IControlChannel control,
         byte[] presharedKey,
+        ReadOnlyMemory<byte> certificateBinding,
         CancellationToken ct,
         TimeSpan? timeout = null) =>
-        RunAsync(new PairingService().AuthenticateAsMasterAsync, control, presharedKey, timeout, ct);
+        RunAsync(
+            new PairingService().AuthenticateAsMasterAsync, control, presharedKey, certificateBinding, timeout, ct);
 
     /// <summary>Agent side: answers the challenge, then requires the master's proof.</summary>
     public static Task<bool> RunAsAgentAsync(
         IControlChannel control,
         byte[] presharedKey,
+        ReadOnlyMemory<byte> certificateBinding,
         CancellationToken ct,
         TimeSpan? timeout = null) =>
-        RunAsync(new PairingService().AuthenticateAsAgentAsync, control, presharedKey, timeout, ct);
+        RunAsync(
+            new PairingService().AuthenticateAsAgentAsync, control, presharedKey, certificateBinding, timeout, ct);
 
     private static async Task<bool> RunAsync(
-        Func<IControlChannel, byte[], CancellationToken, Task<bool>> role,
+        Func<IControlChannel, byte[], ReadOnlyMemory<byte>, CancellationToken, Task<bool>> role,
         IControlChannel control,
         byte[] presharedKey,
+        ReadOnlyMemory<byte> certificateBinding,
         TimeSpan? timeout,
         CancellationToken ct)
     {
@@ -80,7 +85,7 @@ internal static class QuicPairingHandshake
         bool paired;
         try
         {
-            paired = await role(control, presharedKey, linked.Token).ConfigureAwait(false);
+            paired = await role(control, presharedKey, certificateBinding, linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {

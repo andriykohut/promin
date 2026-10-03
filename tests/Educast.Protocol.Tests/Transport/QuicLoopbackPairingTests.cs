@@ -32,9 +32,9 @@ public class QuicLoopbackPairingTests
         await using var ownedMasterControl = masterControl;
 
         // The master writes first, which is what makes the stream exist for the agent at all.
-        var masterTask = QuicPairingHandshake.RunAsMasterAsync(masterControl, PresharedKey, deadline.Token);
+        var masterTask = harness.HandshakeAsMasterAsync(masterControl, PresharedKey, deadline.Token);
         await using var agentControl = await agentPending;
-        var agentTask = QuicPairingHandshake.RunAsAgentAsync(agentControl, PresharedKey, deadline.Token);
+        var agentTask = harness.HandshakeAsAgentAsync(agentControl, PresharedKey, deadline.Token);
         var results = await Task.WhenAll(masterTask, agentTask);
 
         Assert.All(results, succeeded => Assert.True(succeeded));
@@ -54,9 +54,9 @@ public class QuicLoopbackPairingTests
             await QuicLoopbackHarness.OpenControlPairAsync(master, agent, deadline.Token);
         await using var ownedMasterControl = masterControl;
 
-        var masterTask = QuicPairingHandshake.RunAsMasterAsync(masterControl, [1, 2, 3, 4], deadline.Token);
+        var masterTask = harness.HandshakeAsMasterAsync(masterControl, [1, 2, 3, 4], deadline.Token);
         await using var agentControl = await agentPending;
-        var agentTask = QuicPairingHandshake.RunAsAgentAsync(agentControl, [9, 9, 9, 9], deadline.Token);
+        var agentTask = harness.HandshakeAsAgentAsync(agentControl, [9, 9, 9, 9], deadline.Token);
         var results = await Task.WhenAll(masterTask, agentTask);
 
         Assert.All(results, succeeded => Assert.False(succeeded));
@@ -78,7 +78,7 @@ public class QuicLoopbackPairingTests
         await using var masterControl = await master.OpenControlChannelAsync(deadline.Token);
 
         var started = DateTimeOffset.UtcNow;
-        var paired = await QuicPairingHandshake.RunAsMasterAsync(
+        var paired = await harness.HandshakeAsMasterAsync(
             masterControl, PresharedKey, deadline.Token, TimeSpan.FromSeconds(1));
         var elapsed = DateTimeOffset.UtcNow - started;
 

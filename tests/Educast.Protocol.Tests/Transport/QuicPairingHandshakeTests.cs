@@ -14,6 +14,9 @@ public class QuicPairingHandshakeTests
 {
     private static readonly byte[] PresharedKey = [7, 7, 7, 7];
 
+    /// <summary>Any 64 bytes: these tests never get as far as a proof.</summary>
+    private static readonly byte[] Binding = new byte[CertificateBinding.Length];
+
     /// <summary>
     /// A disposed channel is a lifecycle bug in this process, not a peer that failed to pair.
     /// ObjectDisposedException derives from InvalidOperationException, so catching the latter
@@ -25,9 +28,9 @@ public class QuicPairingHandshakeTests
         var disposed = new FaultingControlChannel(new ObjectDisposedException("QuicControlChannel"));
 
         await Assert.ThrowsAsync<ObjectDisposedException>(() =>
-            QuicPairingHandshake.RunAsMasterAsync(disposed, PresharedKey, CancellationToken.None));
+            QuicPairingHandshake.RunAsMasterAsync(disposed, PresharedKey, Binding, CancellationToken.None));
         await Assert.ThrowsAsync<ObjectDisposedException>(() =>
-            QuicPairingHandshake.RunAsAgentAsync(disposed, PresharedKey, CancellationToken.None));
+            QuicPairingHandshake.RunAsAgentAsync(disposed, PresharedKey, Binding, CancellationToken.None));
     }
 
     /// <summary>Any other InvalidOperationException is a bug in this process too.</summary>
@@ -37,7 +40,7 @@ public class QuicPairingHandshakeTests
         var broken = new FaultingControlChannel(new InvalidOperationException("not linked"));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            QuicPairingHandshake.RunAsAgentAsync(broken, PresharedKey, CancellationToken.None));
+            QuicPairingHandshake.RunAsAgentAsync(broken, PresharedKey, Binding, CancellationToken.None));
     }
 
     /// <summary>A locally aborted QUIC operation is this process tearing itself down, not the peer.</summary>
@@ -48,7 +51,7 @@ public class QuicPairingHandshakeTests
             new QuicException(QuicError.OperationAborted, null, "aborted locally"));
 
         await Assert.ThrowsAsync<QuicException>(() =>
-            QuicPairingHandshake.RunAsAgentAsync(aborted, PresharedKey, CancellationToken.None));
+            QuicPairingHandshake.RunAsAgentAsync(aborted, PresharedKey, Binding, CancellationToken.None));
     }
 
     /// <summary>Everything the unauthenticated peer can cause is a failed pairing, never a throw.</summary>
@@ -67,8 +70,8 @@ public class QuicPairingHandshakeTests
         foreach (var failure in peerCaused)
         {
             var channel = new FaultingControlChannel(failure);
-            Assert.False(await QuicPairingHandshake.RunAsMasterAsync(channel, PresharedKey, CancellationToken.None));
-            Assert.False(await QuicPairingHandshake.RunAsAgentAsync(channel, PresharedKey, CancellationToken.None));
+            Assert.False(await QuicPairingHandshake.RunAsMasterAsync(channel, PresharedKey, Binding, CancellationToken.None));
+            Assert.False(await QuicPairingHandshake.RunAsAgentAsync(channel, PresharedKey, Binding, CancellationToken.None));
         }
     }
 
@@ -95,7 +98,7 @@ public class QuicPairingHandshakeTests
             ControlMessageCodec.Encode(new PairChallengeRequest(PairingCrypto.CreateNonce())), deadline.Token);
 
         await using var agentControl = await agent.AcceptControlChannelAsync(deadline.Token);
-        var agentTask = QuicPairingHandshake.RunAsAgentAsync(agentControl, PresharedKey, deadline.Token);
+        var agentTask = harness.HandshakeAsAgentAsync(agentControl, PresharedKey, deadline.Token);
 
         // Read the agent's answer off the wire, then claim success with a proof that is not one.
         var answer = new byte[4096];

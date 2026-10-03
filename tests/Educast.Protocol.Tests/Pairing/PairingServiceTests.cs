@@ -19,6 +19,12 @@ public class PairingServiceTests
 {
     private static readonly TimeSpan NoHang = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// What both sides pass when they are looking at the same two certificates. Opaque to the
+    /// service; the transport supplies SHA256(masterCertDER) || SHA256(agentCertDER).
+    /// </summary>
+    private static readonly byte[] Binding = Enumerable.Range(0, 64).Select(i => (byte)(i + 1)).ToArray();
+
     [Fact]
     public async Task AuthenticateBothSides_SucceedWhenPresharedKeysMatch()
     {
@@ -26,8 +32,8 @@ public class PairingServiceTests
         var service = new PairingService();
         byte[] key = [4, 2, 4, 2];
 
-        var masterTask = service.AuthenticateAsMasterAsync(masterChannel, key, CancellationToken.None);
-        var agentTask = service.AuthenticateAsAgentAsync(agentChannel, key, CancellationToken.None);
+        var masterTask = service.AuthenticateAsMasterAsync(masterChannel, key, Binding, CancellationToken.None);
+        var agentTask = service.AuthenticateAsAgentAsync(agentChannel, key, Binding, CancellationToken.None);
         var results = await Task.WhenAll(masterTask, agentTask);
 
         Assert.All(results, succeeded => Assert.True(succeeded));
@@ -39,11 +45,49 @@ public class PairingServiceTests
         var (masterChannel, agentChannel) = InMemoryControlChannel.CreatePair();
         var service = new PairingService();
 
-        var masterTask = service.AuthenticateAsMasterAsync(masterChannel, [1, 1, 1, 1], CancellationToken.None);
-        var agentTask = service.AuthenticateAsAgentAsync(agentChannel, [2, 2, 2, 2], CancellationToken.None);
+        var masterTask = service.AuthenticateAsMasterAsync(masterChannel, [1, 1, 1, 1], Binding, CancellationToken.None);
+        var agentTask = service.AuthenticateAsAgentAsync(agentChannel, [2, 2, 2, 2], Binding, CancellationToken.None);
         var results = await Task.WhenAll(masterTask, agentTask);
 
         Assert.All(results, succeeded => Assert.False(succeeded));
+    }
+
+    /// <summary>
+    /// The relay, at the protocol level. Both sides hold the right key, and every message is
+    /// delivered unchanged — but each side was handed a different binding, which is what happens
+    /// when each is looking at a middle party's certificate instead of the other's. Neither proof
+    /// verifies, so neither side pairs. Fails proofs that cover only the nonces.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateBothSides_Fail_WhenTheyAreNotLookingAtTheSameCertificates()
+    {
+        var (masterChannel, agentChannel) = InMemoryControlChannel.CreatePair();
+        var service = new PairingService();
+        byte[] key = [4, 2, 4, 2];
+        var seenByAgent = (byte[])Binding.Clone();
+        seenByAgent[0] ^= 0xFF;
+
+        var masterTask = service.AuthenticateAsMasterAsync(masterChannel, key, Binding, CancellationToken.None);
+        var agentTask = service.AuthenticateAsAgentAsync(agentChannel, key, seenByAgent, CancellationToken.None);
+
+        Assert.False(await WithinDeadlineAsync(masterTask));
+        Assert.False(await WithinDeadlineAsync(agentTask));
+    }
+
+    /// <summary>
+    /// An empty binding would turn the relay protection off without anything looking wrong, so
+    /// it is refused as a programming error on both sides rather than accepted as a mode.
+    /// </summary>
+    [Fact]
+    public async Task Authenticate_RefusesToRun_WithoutABinding()
+    {
+        var (masterChannel, agentChannel) = InMemoryControlChannel.CreatePair();
+        var service = new PairingService();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.AuthenticateAsMasterAsync(
+            masterChannel, [1, 2, 3, 4], ReadOnlyMemory<byte>.Empty, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.AuthenticateAsAgentAsync(
+            agentChannel, [1, 2, 3, 4], ReadOnlyMemory<byte>.Empty, CancellationToken.None));
     }
 
     /// <summary>
@@ -61,7 +105,7 @@ public class PairingServiceTests
         var (roguePeer, agentChannel) = InMemoryControlChannel.CreatePair();
         byte[] key = [7, 7, 7, 7];
 
-        var agentTask = new PairingService().AuthenticateAsAgentAsync(agentChannel, key, CancellationToken.None);
+        var agentTask = new PairingService().AuthenticateAsAgentAsync(agentChannel, key, Binding, CancellationToken.None);
 
         // A nonce the rogue chose, not one it was given.
         byte[] chosenNonce = [.. Enumerable.Repeat((byte)0xAB, PairingCrypto.NonceLength)];
@@ -93,7 +137,7 @@ public class PairingServiceTests
         var (masterChannel, agentChannel) = InMemoryControlChannel.CreatePair();
         byte[] key = [7, 7, 7, 7];
 
-        var agentTask = new PairingService().AuthenticateAsAgentAsync(agentChannel, key, CancellationToken.None);
+        var agentTask = new PairingService().AuthenticateAsAgentAsync(agentChannel, key, Binding, CancellationToken.None);
 
         byte[] masterNonce = PairingCrypto.CreateNonce();
         await masterChannel.SendAsync(new PairChallengeRequest(masterNonce), CancellationToken.None);
@@ -101,10 +145,10 @@ public class PairingServiceTests
             await masterChannel.ReceiveAsync(CancellationToken.None));
 
         // The agent's proof must itself be the specified value over both nonces.
-        Assert.True(PairingCrypto.VerifyAgentProof(key, masterNonce, reply.AgentNonce, reply.AgentProof));
+        Assert.True(PairingCrypto.VerifyAgentProof(key, masterNonce, reply.AgentNonce, Binding, reply.AgentProof));
 
         await masterChannel.SendAsync(
-            new PairAck(Success: true, PairingCrypto.ComputeMasterProof(key, masterNonce, reply.AgentNonce)),
+            new PairAck(Success: true, PairingCrypto.ComputeMasterProof(key, masterNonce, reply.AgentNonce, Binding)),
             CancellationToken.None);
 
         Assert.True(await WithinDeadlineAsync(agentTask));
@@ -120,7 +164,7 @@ public class PairingServiceTests
         var (peerChannel, agentChannel) = InMemoryControlChannel.CreatePair();
 
         var agentTask = new PairingService().AuthenticateAsAgentAsync(
-            agentChannel, [1, 2, 3, 4], CancellationToken.None);
+            agentChannel, [1, 2, 3, 4], Binding, CancellationToken.None);
         await peerChannel.SendAsync(new PairChallengeRequest([1, 2, 3]), CancellationToken.None);
 
         Assert.False(await WithinDeadlineAsync(agentTask));
@@ -134,13 +178,13 @@ public class PairingServiceTests
         byte[] key = [1, 2, 3, 4];
 
         var masterTask = new PairingService().AuthenticateAsMasterAsync(
-            masterChannel, key, CancellationToken.None);
+            masterChannel, key, Binding, CancellationToken.None);
 
         var challenge = Assert.IsType<PairChallengeRequest>(
             await peerChannel.ReceiveAsync(CancellationToken.None));
         byte[] shortNonce = [1, 2, 3];
         await peerChannel.SendAsync(
-            new PairChallengeResponse(PairingCrypto.ComputeAgentProof(key, challenge.MasterNonce, shortNonce), shortNonce),
+            new PairChallengeResponse(PairingCrypto.ComputeAgentProof(key, challenge.MasterNonce, shortNonce, Binding), shortNonce),
             CancellationToken.None);
 
         Assert.False(await WithinDeadlineAsync(masterTask));
@@ -159,7 +203,7 @@ public class PairingServiceTests
 
         await peerChannel.SendAsync(new StopBroadcast(), CancellationToken.None);
         var agentTask = new PairingService().AuthenticateAsAgentAsync(
-            agentChannel, [1, 2, 3, 4], CancellationToken.None);
+            agentChannel, [1, 2, 3, 4], Binding, CancellationToken.None);
 
         Assert.False(await WithinDeadlineAsync(agentTask));
 
@@ -179,7 +223,7 @@ public class PairingServiceTests
         var (masterChannel, peerChannel) = InMemoryControlChannel.CreatePair();
 
         var masterTask = new PairingService().AuthenticateAsMasterAsync(
-            masterChannel, [1, 2, 3, 4], CancellationToken.None);
+            masterChannel, [1, 2, 3, 4], Binding, CancellationToken.None);
 
         Assert.IsType<PairChallengeRequest>(await peerChannel.ReceiveAsync(CancellationToken.None));
         await peerChannel.SendAsync(new BroadcastReady(), CancellationToken.None);
@@ -198,7 +242,7 @@ public class PairingServiceTests
         var (masterChannel, peerChannel) = InMemoryControlChannel.CreatePair();
 
         var masterTask = new PairingService().AuthenticateAsMasterAsync(
-            masterChannel, [1, 2, 3, 4], CancellationToken.None);
+            masterChannel, [1, 2, 3, 4], Binding, CancellationToken.None);
 
         Assert.IsType<PairChallengeRequest>(await peerChannel.ReceiveAsync(CancellationToken.None));
         await peerChannel.SendAsync(
@@ -224,7 +268,7 @@ public class PairingServiceTests
     private static async Task<byte[]> RunMasterAndCaptureNonceAsync(PairingService service, byte[] key)
     {
         var (masterChannel, peerChannel) = InMemoryControlChannel.CreatePair();
-        var masterTask = service.AuthenticateAsMasterAsync(masterChannel, key, CancellationToken.None);
+        var masterTask = service.AuthenticateAsMasterAsync(masterChannel, key, Binding, CancellationToken.None);
 
         var challenge = Assert.IsType<PairChallengeRequest>(
             await peerChannel.ReceiveAsync(CancellationToken.None));
@@ -232,14 +276,14 @@ public class PairingServiceTests
         var agentNonce = PairingCrypto.CreateNonce();
         await peerChannel.SendAsync(
             new PairChallengeResponse(
-                PairingCrypto.ComputeAgentProof(key, challenge.MasterNonce, agentNonce), agentNonce),
+                PairingCrypto.ComputeAgentProof(key, challenge.MasterNonce, agentNonce, Binding), agentNonce),
             CancellationToken.None);
 
         Assert.True(await WithinDeadlineAsync(masterTask));
 
         var ack = Assert.IsType<PairAck>(await peerChannel.ReceiveAsync(CancellationToken.None));
         Assert.True(ack.Success);
-        Assert.True(PairingCrypto.VerifyMasterProof(key, challenge.MasterNonce, agentNonce, ack.MasterProof));
+        Assert.True(PairingCrypto.VerifyMasterProof(key, challenge.MasterNonce, agentNonce, Binding, ack.MasterProof));
 
         return challenge.MasterNonce;
     }

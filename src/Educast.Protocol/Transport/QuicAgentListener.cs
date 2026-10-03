@@ -207,11 +207,15 @@ public sealed class QuicAgentListener : IAsyncDisposable
             }
 
             channel = new QuicChannel(connection, pinnedDeviceId: null);
-            if (channel.RemoteCertificateSubjectName is not { } deviceId
+            if (channel.RemoteCertificate is not { } masterCertificate
+                || channel.RemoteCertificateSubjectName is not { } deviceId
                 || channel.RemoteCertificateThumbprint is not { } thumbprint)
             {
                 return PairingOutcome.Failed("The master presented a certificate that names no device.");
             }
+
+            // The certificate that actually arrived on this connection, and this side's own.
+            var binding = CertificateBinding.Compute(masterCertificate, _localCertificate);
 
             using var handshake = CancellationTokenSource.CreateLinkedTokenSource(ct);
             handshake.CancelAfter(handshakeBudget);
@@ -233,7 +237,7 @@ public sealed class QuicAgentListener : IAsyncDisposable
             await using (control.ConfigureAwait(false))
             {
                 if (!await QuicPairingHandshake
-                        .RunAsAgentAsync(control, presharedKey, handshake.Token, handshakeBudget)
+                        .RunAsAgentAsync(control, presharedKey, binding, handshake.Token, handshakeBudget)
                         .ConfigureAwait(false))
                 {
                     return PairingOutcome.Failed(

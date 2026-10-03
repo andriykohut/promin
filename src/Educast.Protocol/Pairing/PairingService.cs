@@ -16,8 +16,14 @@ namespace Educast.Protocol.Pairing;
 /// <b>Both</b> sides prove knowledge of the key. The earlier one-directional version had the
 /// agent answer a challenge and then trust whatever said "success": a rogue machine on the LAN
 /// could use an agent's pairing window as a chosen-nonce HMAC oracle against a human-typed key
-/// and then have itself pinned as a permanently trusted master. The proofs are domain-separated
-/// and each covers both nonces — see <see cref="PairingCrypto"/> for why.
+/// and then have itself pinned as a permanently trusted master. The proofs are domain-separated,
+/// cover both nonces, and cover a certificate binding — see <see cref="PairingCrypto"/> for why.
+///
+/// <b>The certificate binding is supplied by the caller and is not optional.</b> This type does
+/// not know what a certificate is and treats the binding as opaque bytes; what it guarantees is
+/// that both proofs cover it, so that pairing only succeeds between two parties that passed in
+/// the same bytes. The transport passes a digest of the two certificates at the ends of its own
+/// TLS connection, which is what makes a relay in the middle fail.
 ///
 /// <b>Roles are fixed by the transport, not by preference.</b> The master is the side that opens
 /// the control stream, and an outbound QUIC stream is invisible to the peer until its opener
@@ -36,14 +42,21 @@ public sealed class PairingService
 {
     /// <summary>
     /// Master side. Challenges the agent, verifies the agent's proof, and then proves the key
-    /// to the agent in turn. Returns true only once its own proof has been handed over — the
-    /// agent pins on that proof, so a master that could not deliver it has not paired.
+    /// to the agent in turn. Returns true only once its own proof has been handed over.
     /// </summary>
+    /// <param name="certificateBinding">
+    /// Opaque bytes both proofs must cover; must be the same on both sides for pairing to
+    /// succeed, and must not be empty.
+    /// </param>
     public async Task<bool> AuthenticateAsMasterAsync(
-        IControlChannel channel, byte[] presharedKey, CancellationToken ct)
+        IControlChannel channel,
+        byte[] presharedKey,
+        ReadOnlyMemory<byte> certificateBinding,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(presharedKey);
+        ThrowIfNoBinding(certificateBinding);
 
         var masterNonce = PairingCrypto.CreateNonce();
         await channel.SendAsync(new PairChallengeRequest(masterNonce), ct).ConfigureAwait(false);
@@ -52,27 +65,36 @@ public sealed class PairingService
         if (reply is not PairChallengeResponse response
             || !PairingCrypto.IsWellFormedNonce(response.AgentNonce)
             || !PairingCrypto.VerifyAgentProof(
-                presharedKey, masterNonce, response.AgentNonce, response.AgentProof))
+                presharedKey, masterNonce, response.AgentNonce, certificateBinding.Span, response.AgentProof))
         {
             await NotifyRejectedAsync(channel, ct).ConfigureAwait(false);
             return false;
         }
 
-        var masterProof = PairingCrypto.ComputeMasterProof(presharedKey, masterNonce, response.AgentNonce);
+        var masterProof = PairingCrypto.ComputeMasterProof(
+            presharedKey, masterNonce, response.AgentNonce, certificateBinding.Span);
         await channel.SendAsync(new PairAck(Success: true, masterProof), ct).ConfigureAwait(false);
         return true;
     }
 
     /// <summary>
-    /// Agent side. Answers the challenge with a proof over both nonces, then requires the
-    /// master's own proof before reporting success. The caller pins on that success and on
-    /// nothing else.
+    /// Agent side. Answers the challenge with a proof over both nonces and the binding, then
+    /// requires the master's own proof before reporting success. The caller pins on that success
+    /// and on nothing else.
     /// </summary>
+    /// <param name="certificateBinding">
+    /// Opaque bytes both proofs must cover; must be the same on both sides for pairing to
+    /// succeed, and must not be empty.
+    /// </param>
     public async Task<bool> AuthenticateAsAgentAsync(
-        IControlChannel channel, byte[] presharedKey, CancellationToken ct)
+        IControlChannel channel,
+        byte[] presharedKey,
+        ReadOnlyMemory<byte> certificateBinding,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(presharedKey);
+        ThrowIfNoBinding(certificateBinding);
 
         var challenge = await channel.ReceiveAsync(ct).ConfigureAwait(false);
         if (challenge is not PairChallengeRequest request
@@ -85,7 +107,8 @@ public sealed class PairingService
         }
 
         var agentNonce = PairingCrypto.CreateNonce();
-        var agentProof = PairingCrypto.ComputeAgentProof(presharedKey, request.MasterNonce, agentNonce);
+        var agentProof = PairingCrypto.ComputeAgentProof(
+            presharedKey, request.MasterNonce, agentNonce, certificateBinding.Span);
         await channel.SendAsync(new PairChallengeResponse(agentProof, agentNonce), ct).ConfigureAwait(false);
 
         var ack = await channel.ReceiveAsync(ct).ConfigureAwait(false);
@@ -93,7 +116,22 @@ public sealed class PairingService
         // Success alone is a claim; the proof is the only thing worth pinning on.
         return ack is PairAck { Success: true } verdict
             && PairingCrypto.VerifyMasterProof(
-                presharedKey, request.MasterNonce, agentNonce, verdict.MasterProof);
+                presharedKey, request.MasterNonce, agentNonce, certificateBinding.Span, verdict.MasterProof);
+    }
+
+    /// <summary>
+    /// An empty binding would silently turn the relay protection off, so it is a programming
+    /// error rather than a mode.
+    /// </summary>
+    private static void ThrowIfNoBinding(ReadOnlyMemory<byte> certificateBinding)
+    {
+        if (certificateBinding.IsEmpty)
+        {
+            throw new ArgumentException(
+                "A certificate binding is required: without one the proofs say nothing about which " +
+                "certificates are being paired.",
+                nameof(certificateBinding));
+        }
     }
 
     /// <summary>

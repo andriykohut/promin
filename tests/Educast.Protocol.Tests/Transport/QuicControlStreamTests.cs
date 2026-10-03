@@ -113,11 +113,11 @@ public class QuicControlStreamTests
             await QuicLoopbackHarness.OpenControlPairAsync(master, secondAgent, deadline.Token);
         await using var ownedMasterControl = masterControl;
 
-        var masterTask = QuicPairingHandshake.RunAsMasterAsync(masterControl, PresharedKey, deadline.Token);
+        var masterTask = harness.HandshakeAsMasterAsync(masterControl, PresharedKey, deadline.Token);
         await using var secondAgentControl = await agentPending;
         var results = await Task.WhenAll(
             masterTask,
-            QuicPairingHandshake.RunAsAgentAsync(secondAgentControl, PresharedKey, deadline.Token));
+            harness.HandshakeAsAgentAsync(secondAgentControl, PresharedKey, deadline.Token));
         Assert.All(results, succeeded => Assert.True(succeeded));
     }
 

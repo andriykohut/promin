@@ -66,6 +66,7 @@ public sealed class QuicChannel : IAsyncDisposable
         PinnedDeviceId = pinnedDeviceId;
         if (connection.RemoteCertificate is { } certificate)
         {
+            RemoteCertificate = certificate;
             RemoteCertificateThumbprint = PeerCertificateStore.ComputeThumbprint(certificate);
             RemoteCertificateSubjectName = CertificateIdentity.ReadDeviceId(certificate);
         }
@@ -90,6 +91,12 @@ public sealed class QuicChannel : IAsyncDisposable
 
     /// <summary>SHA-256 thumbprint of the certificate the peer actually presented.</summary>
     public string? RemoteCertificateThumbprint { get; }
+
+    /// <summary>
+    /// The certificate the peer actually presented on this TLS connection — the one a pairing
+    /// handshake over this channel has to be bound to.
+    /// </summary>
+    internal System.Security.Cryptography.X509Certificates.X509Certificate? RemoteCertificate { get; }
 
     /// <summary>
     /// The subject name on the certificate the peer presented. Supplied by the peer and proof

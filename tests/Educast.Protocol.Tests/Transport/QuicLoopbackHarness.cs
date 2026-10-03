@@ -18,6 +18,9 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
     public const string AgentDeviceId = "agent-1";
     public const string MasterDeviceId = "master-1";
 
+    /// <summary>The TLS server name a master uses when it dials in order to pair.</summary>
+    public static string? PairingServerName => null;
+
     private readonly List<IAsyncDisposable> _ownedAsync = [];
     private readonly List<IDisposable> _owned = [];
     private readonly System.Runtime.CompilerServices.StrongBox<int> _rejectedHandshakes;
@@ -197,6 +200,28 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
     }
 
     public static byte[] RandomBytes(int count) => RandomNumberGenerator.GetBytes(count);
+
+    /// <summary>
+    /// The binding both ends compute when they are talking to each other directly:
+    /// SHA256(masterCertDER) || SHA256(agentCertDER).
+    /// </summary>
+    public byte[] Binding => CertificateBinding.Compute(MasterCertificate, AgentCertificate);
+
+    /// <summary>The master's half of the handshake over an already-open control channel.</summary>
+    public Task<bool> HandshakeAsMasterAsync(
+        Educast.Protocol.Pairing.IControlChannel control,
+        byte[] presharedKey,
+        CancellationToken ct,
+        TimeSpan? timeout = null) =>
+        QuicPairingHandshake.RunAsMasterAsync(control, presharedKey, Binding, ct, timeout);
+
+    /// <summary>The agent's half of the handshake over an already-open control channel.</summary>
+    public Task<bool> HandshakeAsAgentAsync(
+        Educast.Protocol.Pairing.IControlChannel control,
+        byte[] presharedKey,
+        CancellationToken ct,
+        TimeSpan? timeout = null) =>
+        QuicPairingHandshake.RunAsAgentAsync(control, presharedKey, Binding, ct, timeout);
 
     /// <summary>
     /// The exact bytes this store would persist — its whole trust state. Two snapshots that are

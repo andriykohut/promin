@@ -91,15 +91,19 @@ public sealed class QuicMasterConnector
         try
         {
             channel = await ConnectCoreAsync(endpoint, deviceId, window, operation.Token).ConfigureAwait(false);
-            if (channel.RemoteCertificateThumbprint is not { } thumbprint)
+            if (channel.RemoteCertificate is not { } agentCertificate
+                || channel.RemoteCertificateThumbprint is not { } thumbprint)
             {
                 return PairingOutcome.Failed("The agent presented no certificate.");
             }
 
+            // This side's own certificate, and the one that actually arrived on this connection.
+            var binding = CertificateBinding.Compute(_localCertificate, agentCertificate);
+
             var control = await channel.OpenControlChannelAsync(operation.Token).ConfigureAwait(false);
             await using (control.ConfigureAwait(false))
             {
-                if (!await QuicPairingHandshake.RunAsMasterAsync(control, presharedKey, operation.Token)
+                if (!await QuicPairingHandshake.RunAsMasterAsync(control, presharedKey, binding, operation.Token)
                         .ConfigureAwait(false))
                 {
                     return PairingOutcome.Failed(
