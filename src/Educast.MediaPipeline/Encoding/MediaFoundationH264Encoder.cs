@@ -31,7 +31,6 @@ public sealed class MediaFoundationH264Encoder : IVideoEncoder
     private ID3D11Texture2D? _staging;
 
     private EncoderPipeline<IMFSample> _pipeline = null!;
-    private long _inputCount;
     private bool _disposed;
 
     public bool UsingHardwareEncoder { get; }
@@ -186,7 +185,7 @@ public sealed class MediaFoundationH264Encoder : IVideoEncoder
 
             // A steady clock at the target rate: frames arrive when the screen changes, but the encoder's
             // rate control wants regular spacing.
-            sample.SampleTime = EncoderSettings.SampleTime(_inputCount++, _fps);
+            sample.SampleTime = EncoderSettings.SampleTime(_pipeline.InputsAccepted, _fps);
             sample.SampleDuration = EncoderSettings.SampleDuration(_fps);
             return sample;
         }

@@ -73,4 +73,11 @@ internal interface IEncoderMft<in TInput> : IDisposable
 
     /// <summary>Asks for the next picture handed over to be a keyframe. Throws when the transform refuses.</summary>
     void RequestKeyframe();
+
+    /// <summary>
+    /// The sequence and picture parameter sets (an Annex B block with both) the transform currently publishes in its
+    /// output type, or null when it publishes none. Read afresh each time: it can change after a format change,
+    /// and some encoders only publish it once streaming has begun.
+    /// </summary>
+    byte[]? ReadParameterSets();
 }

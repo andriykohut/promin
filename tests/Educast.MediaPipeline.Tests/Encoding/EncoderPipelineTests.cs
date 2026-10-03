@@ -238,6 +238,89 @@ public class EncoderPipelineTests
         Assert.Contains("parameter sets", ex.Message);
     }
 
+    // ---- parameter sets after a format change (round 2, P1) ---------------------------------
+
+    private static readonly byte[] Idr = [0, 0, 0, 1, 0x65, 0x88, 0x84, 0];
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AfterAFormatChange_KeyframesGetTheNewParameterSets_NotTheOldOnes(bool asynchronous)
+    {
+        var a = FakeMft.Header(0xA1);
+        var b = FakeMft.Header(0xB2);
+        var mft = new FakeMft(asynchronous)
+        {
+            ParameterSets = FakeMft.ParameterSetPolicy.Never,
+            PublishedHeader = a,
+            ChangesFormatOnFirstOutput = true,
+            HeaderPublishedByFormatChange = b,
+        };
+        var pipeline = Pipeline(mft, new EncoderTimeouts(Input: TimeSpan.FromMilliseconds(400), Output: TimeSpan.FromMilliseconds(250)), typeParameterSets: a);
+
+        Assert.True(pipeline.TryEncode(0, forceKeyframe: true, out var frame));
+
+        Assert.Equal([.. b, .. Idr], frame.Data);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AnEncoderThatPublishesItsHeaderOnlyAfterAFormatChange_CanStart(bool asynchronous)
+    {
+        var b = FakeMft.Header(0xB2);
+        var mft = new FakeMft(asynchronous)
+        {
+            ParameterSets = FakeMft.ParameterSetPolicy.Never,
+            PublishedHeader = null,
+            ChangesFormatOnFirstOutput = true,
+            HeaderPublishedByFormatChange = b,
+        };
+        var pipeline = Pipeline(mft, new EncoderTimeouts(Input: TimeSpan.FromMilliseconds(400), Output: TimeSpan.FromMilliseconds(250)));
+
+        Assert.True(pipeline.TryEncode(0, forceKeyframe: true, out var frame));
+
+        Assert.Equal([.. b, .. Idr], frame.Data);
+    }
+
+    [Fact]
+    public void AHeaderPublishedLate_WithoutAFormatChange_IsFoundBeforeThrowing()
+    {
+        var mft = new FakeMft(asynchronous: false) { ParameterSets = FakeMft.ParameterSetPolicy.Never, PublishedHeader = null };
+        var pipeline = Pipeline(mft);
+        mft.PublishedHeader = FakeMft.Header(0xC3); // the type has one by the time the first keyframe is completed
+
+        Assert.True(pipeline.TryEncode(0, forceKeyframe: true, out var frame));
+
+        Assert.Equal([.. FakeMft.Header(0xC3), .. Idr], frame.Data);
+    }
+
+    // ---- an asynchronous transform that refuses what it asked for (round 2) ------------------
+
+    [Fact]
+    public void Async_AnInputTheTransformAskedForButRefuses_IsAnErrorNotASilentStall()
+    {
+        var mft = new FakeMft(asynchronous: true) { RefusesInputItAskedFor = true };
+        var pipeline = Pipeline(mft);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => pipeline.TryEncode(0, forceKeyframe: true, out _));
+
+        Assert.Contains("asked for", ex.Message);
+    }
+
+    [Fact]
+    public void InputsAccepted_CountsOnlyThePicturesTheEncoderTook()
+    {
+        var mft = new FakeMft(asynchronous: true) { NeverAsksForMoreInput = true };
+        var pipeline = Pipeline(mft, new EncoderTimeouts(Input: TimeSpan.FromMilliseconds(20), Output: TimeSpan.FromMilliseconds(20)));
+
+        Assert.True(pipeline.TryEncode(0, forceKeyframe: true, out _));
+        Assert.False(pipeline.TryEncode(1, forceKeyframe: false, out _)); // dropped: the encoder does not ask again
+        Assert.False(pipeline.TryEncode(2, forceKeyframe: false, out _));
+
+        Assert.Equal(1, pipeline.InputsAccepted);
+    }
+
     // ---- E5: a format change ---------------------------------------------------------------
 
     [Fact]

@@ -32,6 +32,9 @@ internal sealed class EncoderPipeline<TInput>
         _parameterSets = parameterSets;
     }
 
+    /// <summary>How many pictures the transform has taken. The encoder numbers its sample times with it, so a dropped picture leaves no gap.</summary>
+    internal long InputsAccepted { get; private set; }
+
     /// <summary>Keyframes that came out of the encoder without parameter sets of their own and were given remembered ones.</summary>
     internal int KeyframesCompleted { get; private set; }
 
@@ -77,17 +80,24 @@ internal sealed class EncoderPipeline<TInput>
             _mft.RequestKeyframe();
 
         if (_mft.ProcessInput(input) == InputResult.Accepted)
+        {
+            InputsAccepted++;
             return true;
+        }
 
         if (_mft.IsAsynchronous)
         {
-            _inputRequests++; // the request for input was not used
-            return false;
+            // It asked for this picture and now refuses it: the transform is breaking the protocol. Saying so is
+            // better than every later call retrying without an event and returning false, silently.
+            throw new InvalidOperationException("The encoder refused a picture it had asked for (MF_E_NOTACCEPTING after a need-input event).");
         }
 
         // A synchronous transform with a picture waiting refuses more input until it is collected.
         DrainSynchronous();
-        return _mft.ProcessInput(input) == InputResult.Accepted;
+        if (_mft.ProcessInput(input) != InputResult.Accepted)
+            return false;
+        InputsAccepted++;
+        return true;
     }
 
     private bool AsksForInput()
@@ -140,6 +150,7 @@ internal sealed class EncoderPipeline<TInput>
                     break;
                 case OutputResult.FormatChanged:
                     formatChanged = true;
+                    ReseedParameterSets();
                     break;
             }
         }
@@ -160,6 +171,7 @@ internal sealed class EncoderPipeline<TInput>
                     formatChanges = 0;
                     break;
                 case OutputResult.FormatChanged:
+                    ReseedParameterSets();
                     if (++formatChanges > MaxConsecutiveFormatChanges)
                         throw new InvalidOperationException("The encoder keeps changing its output format without producing a picture.");
                     break; // a synchronous transform can be asked again at once
@@ -183,6 +195,10 @@ internal sealed class EncoderPipeline<TInput>
             _parameterSets.Observe(data);
         if (isKeyframe)
         {
+            // An encoder may publish its header late (only once streaming has begun): look once more before
+            // giving up on a keyframe that has none of its own.
+            if (!summary.HasParameterSets && !_parameterSets.KnowsBoth)
+                ReseedParameterSets();
             data = _parameterSets.Complete(data, out var added);
             if (added)
                 KeyframesCompleted++;
@@ -191,6 +207,10 @@ internal sealed class EncoderPipeline<TInput>
         encoded = new EncodedFrame(data, isKeyframe, _nextFrameId++);
         return true;
     }
+
+    // The output type is where an encoder publishes its parameter sets, and it changes with the format: what the
+    // transform publishes now replaces what was remembered. Sets seen later in the stream replace it in turn.
+    private void ReseedParameterSets() => _parameterSets.Seed(_mft.ReadParameterSets());
 
     // ---- waiting ----------------------------------------------------------------------------
 

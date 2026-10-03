@@ -127,6 +127,11 @@ public class MediaFoundationH264EncoderTests(ITestOutputHelper output)
             if (forced.Contains(i))
                 AssertKeyframeIsDecodable(encoded);
         }
+
+        // Not asserted: either answer is acceptable. It says whether this encoder writes SPS/PPS into every
+        // keyframe itself (0) or the later ones needed the remembered sets put in front (more than 0). There are
+        // seven keyframes in this test, the first of which has always carried them.
+        output.WriteLine($"keyframes in this run: {forced.Count}; keyframes the encoder wrote without SPS/PPS and had them added: {encoder.KeyframesCompletedFromMemory}");
     }
 
     [Theory(Skip = NeedsGpu)]

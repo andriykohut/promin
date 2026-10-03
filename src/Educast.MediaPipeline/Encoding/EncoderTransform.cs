@@ -538,8 +538,9 @@ internal sealed class EncoderTransform : IEncoderMft<IMFSample>
         _outputBufferSize = Math.Max(info.Size, 1 << 20);
     }
 
-    private byte[]? ReadParameterSets()
+    public byte[]? ReadParameterSets()
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         try
         {
             using var current = _transform.GetOutputCurrentType(0);
@@ -609,6 +610,8 @@ internal sealed class EncoderTransform : IEncoderMft<IMFSample>
             return MftEvent.None;
         if (hr < 0)
             throw new InvalidOperationException($"The encoder's event queue failed (0x{hr:X8}).");
+        if (pointer == 0)
+            return MftEvent.None; // success with no event: nothing to read, and nothing to release
 
         using var mediaEvent = new IMFMediaEvent(pointer);
         switch (mediaEvent.EventType)

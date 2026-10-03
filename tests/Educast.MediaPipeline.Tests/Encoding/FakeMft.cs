@@ -58,6 +58,15 @@ internal sealed class FakeMft : IEncoderMft<int>
     /// <summary>Report a format change instead of the first picture.</summary>
     public bool ChangesFormatOnFirstOutput { get; set; }
 
+    /// <summary>The header (an Annex B SPS+PPS block) the output type publishes now; tests set it to publish one late.</summary>
+    public byte[]? PublishedHeader { get; set; }
+
+    /// <summary>The header the output type publishes once the format has changed.</summary>
+    public byte[]? HeaderPublishedByFormatChange { get; set; }
+
+    /// <summary>Asynchronous: refuse an input the transform itself asked for (a transform breaking the protocol).</summary>
+    public bool RefusesInputItAskedFor { get; set; }
+
     public ParameterSetPolicy ParameterSets { get; set; } = ParameterSetPolicy.WithEveryKeyframe;
 
     public int ProcessOutputCalls { get; private set; }
@@ -70,7 +79,7 @@ internal sealed class FakeMft : IEncoderMft<int>
     {
         if (IsAsynchronous)
         {
-            if (_tokens == 0)
+            if (_tokens == 0 || RefusesInputItAskedFor)
                 return InputResult.NotAccepting;
             _tokens--;
         }
@@ -107,6 +116,8 @@ internal sealed class FakeMft : IEncoderMft<int>
         if (ChangesFormatOnFirstOutput)
         {
             ChangesFormatOnFirstOutput = false;
+            if (HeaderPublishedByFormatChange is not null)
+                PublishedHeader = HeaderPublishedByFormatChange;
             // The transform will announce the same picture again once its new format is in place.
             if (IsAsynchronous && _inFlight.Count > 0)
                 _inFlight.Peek().Announced = false;
@@ -150,6 +161,12 @@ internal sealed class FakeMft : IEncoderMft<int>
         KeyframeRequests++;
         _keyframeRequested = true;
     }
+
+    public byte[]? ReadParameterSets() => PublishedHeader;
+
+    /// <summary>An Annex B SPS+PPS block whose bytes carry <paramref name="marker"/>, so two headers can be told apart.</summary>
+    internal static byte[] Header(byte marker) =>
+        [.. StartCode, 0x67, 0x42, 0x00, marker, .. StartCode, 0x68, 0xCE, marker];
 
     public void Dispose() => Disposed = true;
 
