@@ -45,6 +45,9 @@ public sealed class DxgiScreenCapture : IScreenCapture
     private int _pointerX;
     private int _pointerY;
 
+    // Why the last DuplicateOutput1 attempt did not work, for the error if the fallback surface is not BGRA8.
+    private SharpGen.Runtime.Result? _duplicateOutput1Failure;
+
     private bool _disposed;
 
     /// <summary>
@@ -209,6 +212,26 @@ public sealed class DxgiScreenCapture : IScreenCapture
         _adapter?.Dispose();
     }
 
+    /// <summary>The only desktop-image format this capture accepts, and the only one it asks Windows for.</summary>
+    internal static readonly Format[] SupportedFormats = [Format.B8G8R8A8_UNorm];
+
+    internal static bool IsAcceptableSurfaceFormat(Format format) => Array.IndexOf(SupportedFormats, format) >= 0;
+
+    /// <summary>
+    /// The message for a desktop surface that is not BGRA8. It says what format arrived and, because
+    /// the usual cause is DuplicateOutput1 not having been usable, why that may be.
+    /// </summary>
+    internal static string DescribeUnsupportedSurface(
+        Format format, bool processIsPerMonitorV2DpiAware, SharpGen.Runtime.Result? duplicateOutput1Failure)
+    {
+        var message = $"The desktop image is {format}; only B8G8R8A8_UNorm is supported.";
+        if (duplicateOutput1Failure is { } failure)
+            message += $" Asking Windows for a B8G8R8A8_UNorm picture (IDXGIOutput5.DuplicateOutput1) failed with 0x{failure.Code:X8}.";
+        if (!processIsPerMonitorV2DpiAware)
+            message += " DuplicateOutput1 requires a per-monitor-v2 DPI-aware process, and this one is not: declare PerMonitorV2 in the application manifest.";
+        return message;
+    }
+
     internal enum FrameDecision
     {
         /// <summary>Neither the screen nor the pointer changed.</summary>
@@ -333,10 +356,33 @@ public sealed class DxgiScreenCapture : IScreenCapture
         return null;
     }
 
+    // The one place a duplication is made, for the first time and after every access-lost rebuild.
+    // With "automatically manage colour for apps" on, plain DuplicateOutput hands out an FP16 surface.
+    // DuplicateOutput1 lets us name BGRA8 as the only format we accept, and Windows converts to it.
+    // It needs a per-monitor-DPI-aware process (see DpiAwareness); where it is unavailable or refuses,
+    // fall back to DuplicateOutput, and CopyDesktop then rejects whatever non-BGRA8 surface results.
     private IDXGIOutputDuplication DuplicatePrimaryOutput()
     {
         using var output = FindPrimaryOutput(_adapter)
             ?? throw new InvalidOperationException("The primary display is not attached to the adapter this capture was created on.");
+
+        using (var output5 = output.QueryInterfaceOrNull<IDXGIOutput5>())
+        {
+            if (output5 is not null)
+            {
+                try
+                {
+                    var duplication = output5.DuplicateOutput1(Device, 0, SupportedFormats);
+                    _duplicateOutput1Failure = null;
+                    return duplication;
+                }
+                catch (SharpGen.Runtime.SharpGenException ex)
+                {
+                    _duplicateOutput1Failure = ex.ResultCode;
+                }
+            }
+        }
+
         using var output1 = output.QueryInterface<IDXGIOutput1>();
         return output1.DuplicateOutput(Device);
     }
@@ -394,8 +440,9 @@ public sealed class DxgiScreenCapture : IScreenCapture
     {
         using var source = resource.QueryInterface<ID3D11Texture2D>();
         var description = source.Description;
-        if (description.Format != Format.B8G8R8A8_UNorm)
-            throw new NotSupportedException($"The desktop image is {description.Format}; only B8G8R8A8_UNorm is supported.");
+        if (!IsAcceptableSurfaceFormat(description.Format))
+            throw new NotSupportedException(DescribeUnsupportedSurface(
+                description.Format, DpiAwareness.IsPerMonitorV2(), _duplicateOutput1Failure));
 
         if (_desktop is null || _width != description.Width || _height != description.Height)
         {

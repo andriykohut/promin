@@ -130,4 +130,43 @@ public class DxgiScreenCaptureLogicTests
     [InlineData(101, 100)]
     [InlineData(5000, 100)]
     public void RetryPause_FiniteTimeout_IsCappedAtTheRetryPause(int timeoutMs, int expectedMs) =>
-        Assert.Equal(TimeSpan.FromMilliseconds(expectedMs), DxgiScreenCapture.RetryPauseFor(TimeSpan.FromMilliseconds(timeoutMs)));}
+        Assert.Equal(TimeSpan.FromMilliseconds(expectedMs), DxgiScreenCapture.RetryPauseFor(TimeSpan.FromMilliseconds(timeoutMs)));
+    [Fact]
+    public void SurfaceFormat_OnlyBgra8IsAcceptable()
+    {
+        Assert.True(DxgiScreenCapture.IsAcceptableSurfaceFormat(Format.B8G8R8A8_UNorm));
+        Assert.False(DxgiScreenCapture.IsAcceptableSurfaceFormat(Format.R16G16B16A16_Float)); // what colour management hands out
+        Assert.False(DxgiScreenCapture.IsAcceptableSurfaceFormat(Format.R8G8B8A8_UNorm));
+        Assert.False(DxgiScreenCapture.IsAcceptableSurfaceFormat(Format.B8G8R8A8_UNorm_SRgb));
+        Assert.False(DxgiScreenCapture.IsAcceptableSurfaceFormat(Format.R10G10B10A2_UNorm));
+    }
+
+    [Fact]
+    public void DuplicateOutput1_IsOnlyAskedForBgra8() =>
+        Assert.Equal([Format.B8G8R8A8_UNorm], DxgiScreenCapture.SupportedFormats);
+
+    [Fact]
+    public void UnsupportedSurface_Message_NamesTheFormat() =>
+        Assert.Contains("R16G16B16A16_Float",
+            DxgiScreenCapture.DescribeUnsupportedSurface(Format.R16G16B16A16_Float, true, null));
+
+    [Fact]
+    public void UnsupportedSurface_NotDpiAware_SaysToDeclarePerMonitorV2()
+    {
+        var message = DxgiScreenCapture.DescribeUnsupportedSurface(Format.R16G16B16A16_Float, false, null);
+
+        Assert.Contains("PerMonitorV2", message);
+    }
+
+    [Fact]
+    public void UnsupportedSurface_DpiAware_DoesNotBlameDpi() =>
+        Assert.DoesNotContain("DPI", DxgiScreenCapture.DescribeUnsupportedSurface(Format.R16G16B16A16_Float, true, null));
+
+    [Fact]
+    public void UnsupportedSurface_ReportsWhyDuplicateOutput1Failed()
+    {
+        var message = DxgiScreenCapture.DescribeUnsupportedSurface(Format.R16G16B16A16_Float, true, ResultCode.AccessDenied);
+
+        Assert.Contains("DuplicateOutput1", message);
+        Assert.Contains(ResultCode.AccessDenied.Code.ToString("X8"), message);
+    }}

@@ -15,7 +15,7 @@ public class DxgiScreenCaptureTests
     [Fact(Skip = NeedsDesktop)]
     public void TryGetNextFrame_ReturnsAFrame_WithinFiveSeconds()
     {
-        using var capture = new DxgiScreenCapture();
+        using var capture = StartCapture();
 
         var gotFrame = capture.TryGetNextFrame(TimeSpan.FromSeconds(5), out var frame);
 
@@ -27,7 +27,7 @@ public class DxgiScreenCaptureTests
     [Fact(Skip = NeedsDesktop)]
     public void PointerOnlyUpdate_StillYieldsAFrame()
     {
-        using var capture = new DxgiScreenCapture();
+        using var capture = StartCapture();
         using var pointer = new PointerRestorer();
 
         Assert.True(capture.TryGetNextFrame(TimeSpan.FromSeconds(5), out _));
@@ -49,10 +49,10 @@ public class DxgiScreenCaptureTests
     [Fact(Skip = NeedsDesktop)]
     public void StillScreen_FreshCapture_PointerMove_StillYieldsAFrame()
     {
-        using (var probe = new DxgiScreenCapture())
+        using (var probe = StartCapture())
             Assert.True(WaitForStillScreen(probe), "The screen never held still for 1.5 s within 15 s: this test needs an idle desktop.");
 
-        using var capture = new DxgiScreenCapture();
+        using var capture = StartCapture();
         using var pointer = new PointerRestorer();
         pointer.MoveTo(pointer.Start.X + (pointer.Start.X + 40 < Native.ScreenWidth ? 40 : -40), pointer.Start.Y);
 
@@ -63,7 +63,7 @@ public class DxgiScreenCaptureTests
     [Fact(Skip = NeedsDesktop)]
     public void PointerIsDrawnIntoTheFrame()
     {
-        using var capture = new DxgiScreenCapture();
+        using var capture = StartCapture();
         using var pointer = new PointerRestorer();
 
         pointer.MoveTo(200, 200);
@@ -80,7 +80,7 @@ public class DxgiScreenCaptureTests
     public void FrameSize_MatchesThePrimaryDisplay()
     {
         Native.RequireDpiAwareness();
-        using var capture = new DxgiScreenCapture();
+        using var capture = StartCapture();
 
         Assert.True(capture.TryGetNextFrame(TimeSpan.FromSeconds(5), out var frame));
 
@@ -105,6 +105,15 @@ public class DxgiScreenCaptureTests
         }
         Assert.True(got, "no frame arrived after the pointer moved");
         return ReadRegion(capture.Device, last.Texture, x, y, size);
+    }
+
+    // DuplicateOutput1 (how the capture gets an SDR picture when Windows colour management would
+    // otherwise give it FP16) needs a per-monitor-v2 DPI-aware process, and the test host is not one.
+    // A real application declares this in its manifest; here we declare it before the first capture.
+    private static DxgiScreenCapture StartCapture()
+    {
+        Native.RequireDpiAwareness();
+        return new DxgiScreenCapture();
     }
 
     // True once a 1.5 s wait for the next frame comes back empty, i.e. nothing on screen changed.
@@ -204,6 +213,7 @@ public class DxgiScreenCaptureTests
         {
             SetProcessDpiAwarenessContext(PerMonitorAwareV2); // fails harmlessly if the process is already aware
             Assert.True(IsProcessDPIAware(), "the test process is not DPI-aware, so screen coordinates would be scaled");
+            Assert.True(DpiAwareness.IsPerMonitorV2(), "the test process is not per-monitor-v2 DPI-aware, which DuplicateOutput1 requires");
         }
     }
 }
