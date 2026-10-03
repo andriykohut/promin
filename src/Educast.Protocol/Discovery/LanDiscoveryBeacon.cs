@@ -8,26 +8,35 @@ namespace Educast.Protocol.Discovery;
 /// teacher's console that starts listening at any time finds it within one interval.
 /// </summary>
 /// <remarks>
-/// The announcement is sent to <see cref="IPAddress.Broadcast"/> (255.255.255.255) on
-/// the discovery port unless a destination is passed in; tests pass a loopback
-/// address so that nothing ever goes onto a real network. When the destination is a loopback
-/// address the sending socket is bound to loopback as well, rather than to every interface:
-/// there is nothing a wildcard-bound socket could reach that a loopback destination can use,
-/// and binding one is what makes Windows Firewall ask the user a question.
+/// <b>Once per network.</b> A single send to the limited broadcast address (255.255.255.255)
+/// leaves by one interface only, whichever Windows prefers for its default route, so a PC with
+/// Wi-Fi and Ethernet, a VPN, or a virtual-machine adapter could announce onto the wrong network
+/// and no console would ever see it. Each announcement is therefore sent once for every IPv4
+/// address of every network interface that is up (and is not loopback), each time from a socket
+/// bound to that address. The interfaces are looked at again every
+/// <see cref="RefreshEveryAnnouncements"/> announcements, so a PC that joins Wi-Fi after the
+/// beacon started begins announcing there, and one that leaves a network stops using it. A
+/// failure on one interface (it cannot be bound, a send throws) is that interface's alone: the
+/// others carry on, and a failed bind is tried again at the next look.
 ///
-/// A send that fails (the network cable is out, the adapter is resetting) is skipped and tried
-/// again at the next interval; a laptop that loses its network for a minute resumes announcing
-/// by itself. The announcement says only where to dial: see <see cref="DiscoveryAnnouncement"/>.
+/// Tests pass their own interface list (see <see cref="IAnnouncementInterfaces"/>) and a
+/// loopback destination, so that nothing ever goes onto a real network. The sockets are opened
+/// by <see cref="Start"/>, not by the constructor.
+///
+/// The announcement says only where to dial: see <see cref="DiscoveryAnnouncement"/>.
 /// </remarks>
 public sealed class LanDiscoveryBeacon : IDisposable
 {
+    /// <summary>How many announcements go out between two looks at the network interfaces.</summary>
+    internal const int RefreshEveryAnnouncements = 10;
+
     private readonly byte[] _datagram;
     private readonly int _discoveryPort;
     private readonly int _intervalMs;
     private readonly Lock _gate = new();
     private readonly CancellationTokenSource _cts = new();
-    private UdpClient? _socket;
     private Task? _loop;
+    private bool _started;
     private bool _disposed;
 
     /// <param name="deviceId">The install's device id (32 lowercase hex characters).</param>
@@ -36,9 +45,6 @@ public sealed class LanDiscoveryBeacon : IDisposable
     /// <param name="certificateThumbprint">The device certificate's thumbprint, 40 or 64 hex characters.</param>
     /// <param name="discoveryPort">The UDP port the console listens on.</param>
     /// <param name="intervalMs">How often to announce.</param>
-    /// <param name="destination">
-    /// Where to send. <see langword="null"/> (what production uses) is the LAN broadcast address.
-    /// </param>
     /// <exception cref="ArgumentException">
     /// The announcement would be refused by every scanner (a malformed id, port or thumbprint),
     /// which is a bug in the caller rather than something to discover on the network later.
@@ -49,9 +55,32 @@ public sealed class LanDiscoveryBeacon : IDisposable
         int quicPort,
         string certificateThumbprint,
         int discoveryPort,
-        int intervalMs = 2000,
-        IPAddress? destination = null)
+        int intervalMs = 2000)
+        : this(
+            deviceId,
+            displayName,
+            quicPort,
+            certificateThumbprint,
+            discoveryPort,
+            intervalMs,
+            new SystemAnnouncementInterfaces(),
+            IPAddress.Broadcast)
     {
+    }
+
+    /// <summary>The same, with the network interfaces and the destination supplied (by tests).</summary>
+    internal LanDiscoveryBeacon(
+        string deviceId,
+        string displayName,
+        int quicPort,
+        string certificateThumbprint,
+        int discoveryPort,
+        int intervalMs,
+        IAnnouncementInterfaces interfaces,
+        IPAddress destination)
+    {
+        ArgumentNullException.ThrowIfNull(interfaces);
+        ArgumentNullException.ThrowIfNull(destination);
         ArgumentOutOfRangeException.ThrowIfLessThan(discoveryPort, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(discoveryPort, 65535);
         ArgumentOutOfRangeException.ThrowIfLessThan(intervalMs, 1);
@@ -65,11 +94,15 @@ public sealed class LanDiscoveryBeacon : IDisposable
 
         _discoveryPort = discoveryPort;
         _intervalMs = intervalMs;
-        Destination = destination ?? IPAddress.Broadcast;
+        Interfaces = interfaces;
+        Destination = destination;
     }
 
     /// <summary>The address announcements are sent to.</summary>
     internal IPAddress Destination { get; }
+
+    /// <summary>Where the addresses to announce from come from.</summary>
+    internal IAnnouncementInterfaces Interfaces { get; }
 
     /// <summary>Begins announcing: once straight away, then every interval, until disposed.</summary>
     public void Start()
@@ -77,38 +110,49 @@ public sealed class LanDiscoveryBeacon : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_socket is not null)
+            if (_started)
             {
                 throw new InvalidOperationException("The beacon has already been started.");
             }
 
-            var local = IPAddress.IsLoopback(Destination) ? IPAddress.Loopback : IPAddress.Any;
-            _socket = new UdpClient(new IPEndPoint(local, 0)) { EnableBroadcast = true };
-
-            var socket = _socket;
+            _started = true;
             var token = _cts.Token;
-            _loop = Task.Run(() => RunAsync(socket, token));
+            _loop = Task.Run(() => RunAsync(token));
         }
     }
 
-    private async Task RunAsync(UdpClient socket, CancellationToken ct)
+    private async Task RunAsync(CancellationToken ct)
     {
         var destination = new IPEndPoint(Destination, _discoveryPort);
-
-        while (!ct.IsCancellationRequested)
+        var sockets = new Dictionary<IPAddress, UdpClient>();
+        try
         {
-            try
+            for (var round = 0; !ct.IsCancellationRequested; round++)
             {
-                await socket.SendAsync(_datagram, destination, ct).ConfigureAwait(false);
-                await Task.Delay(_intervalMs, ct).ConfigureAwait(false);
-            }
-            catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException)
-            {
-                return;
-            }
-            catch (SocketException)
-            {
-                // No network right now. Try again at the next interval rather than going quiet.
+                if (round % RefreshEveryAnnouncements == 0)
+                {
+                    Refresh(sockets);
+                }
+
+                foreach (var (_, socket) in sockets.ToArray())
+                {
+                    try
+                    {
+                        await socket.SendAsync(_datagram, destination, ct).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                    catch (Exception e) when (e is SocketException or ObjectDisposedException)
+                    {
+                        // This interface cannot send right now (its cable is out, its adapter is
+                        // resetting). The others still go out, and the next look at the network
+                        // drops it if it has gone for good. (This beacon's own disposal arrives as
+                        // the cancellation above, never as a disposed socket.)
+                    }
+                }
+
                 try
                 {
                     await Task.Delay(_intervalMs, ct).ConfigureAwait(false);
@@ -117,6 +161,51 @@ public sealed class LanDiscoveryBeacon : IDisposable
                 {
                     return;
                 }
+            }
+        }
+        finally
+        {
+            foreach (var socket in sockets.Values)
+            {
+                socket.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Brings the open sockets in line with the interfaces there are now: closes those of
+    /// addresses that have gone, opens one for each address that is new or whose last bind
+    /// failed. Never throws: when the interfaces cannot be listed, the ones in use stay in use.
+    /// </summary>
+    private void Refresh(Dictionary<IPAddress, UdpClient> sockets)
+    {
+        IReadOnlyList<IPAddress> current;
+        try
+        {
+            current = Interfaces.GetLocalAddresses();
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        foreach (var gone in sockets.Keys.Where(address => !current.Contains(address)).ToArray())
+        {
+            if (sockets.Remove(gone, out var socket))
+            {
+                socket.Dispose();
+            }
+        }
+
+        foreach (var address in current.Where(address => !sockets.ContainsKey(address)))
+        {
+            try
+            {
+                sockets[address] = Interfaces.Bind(address);
+            }
+            catch (Exception e) when (e is SocketException or ObjectDisposedException)
+            {
+                // Tried again at the next look.
             }
         }
     }
@@ -133,21 +222,17 @@ public sealed class LanDiscoveryBeacon : IDisposable
 
             _disposed = true;
             _cts.Cancel();
-            _socket?.Dispose();
             loop = _loop;
         }
 
         try
         {
-            // (Not from inside the loop itself, which a subscriber disposing the object would be.)
-            if (loop is not null && Task.CurrentId != loop.Id)
-            {
-                loop.Wait(TimeSpan.FromSeconds(2));
-            }
+            // The loop closes its own sockets on the way out.
+            loop?.Wait(TimeSpan.FromSeconds(2));
         }
         catch (AggregateException)
         {
-            // The loop only ever ends by cancellation or disposal.
+            // The loop only ever ends by cancellation.
         }
 
         _cts.Dispose();

@@ -19,11 +19,23 @@ namespace Educast.Protocol.Discovery;
 /// broadcast is only delivered to a socket bound to the wildcard. Tests bind loopback.
 ///
 /// <see cref="DeviceDiscovered"/> is raised on a thread-pool thread, one datagram at a time. A
-/// handler that throws is ignored: one faulty subscriber must not stop discovery.
+/// handler that throws is ignored: one faulty subscriber must not stop discovery. A handler may
+/// dispose the scanner ("found it, stop looking"); that returns at once and does not wait for
+/// the receive loop, which is the thing running the handler.
+///
+/// Datagrams are received into one fixed buffer of <see cref="DiscoveryAnnouncement.MaxDatagramBytes"/>
+/// plus one byte, so a flood of large datagrams costs no allocation; a datagram that does not
+/// fit is refused.
 /// </remarks>
 public sealed class LanDiscoveryScanner : IDisposable
 {
-    private readonly UdpClient _socket;
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>True on the thread that is running a subscriber, which is the receive loop's own thread.</summary>
+    [ThreadStatic]
+    private static bool t_inHandler;
+
+    private readonly Socket _socket;
     private readonly Lock _gate = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _loop;
@@ -41,14 +53,23 @@ public sealed class LanDiscoveryScanner : IDisposable
         ArgumentOutOfRangeException.ThrowIfNegative(discoveryPort);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(discoveryPort, 65535);
 
-        _socket = new UdpClient(new IPEndPoint(bindAddress ?? IPAddress.Any, discoveryPort));
+        _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        try
+        {
+            _socket.Bind(new IPEndPoint(bindAddress ?? IPAddress.Any, discoveryPort));
+        }
+        catch
+        {
+            _socket.Dispose();
+            throw;
+        }
     }
 
     /// <summary>Raised for each well-formed announcement, with the address it was sent from.</summary>
     public event Action<DiscoveryAnnouncement, IPAddress>? DeviceDiscovered;
 
     /// <summary>The port actually bound, which resolves port 0 to the one the OS chose.</summary>
-    public int LocalPort => ((IPEndPoint)_socket.Client.LocalEndPoint!).Port;
+    public int LocalPort => ((IPEndPoint)_socket.LocalEndPoint!).Port;
 
     public void Start()
     {
@@ -68,31 +89,48 @@ public sealed class LanDiscoveryScanner : IDisposable
 
     private async Task RunAsync(CancellationToken ct)
     {
+        // One byte more than the largest datagram worth reading: a datagram that fills it is too big.
+        var buffer = new byte[DiscoveryAnnouncement.MaxDatagramBytes + 1];
+        EndPoint anySender = new IPEndPoint(IPAddress.Any, 0);
+
         while (!ct.IsCancellationRequested)
         {
-            UdpReceiveResult received;
+            SocketReceiveFromResult received;
             try
             {
-                received = await _socket.ReceiveAsync(ct).ConfigureAwait(false);
+                received = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, anySender, ct).ConfigureAwait(false);
             }
             catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException)
             {
                 return;
             }
-            catch (SocketException e) when (e.SocketErrorCode == SocketError.ConnectionReset)
+            catch (SocketException e) when (e.SocketErrorCode is SocketError.ConnectionReset or SocketError.MessageSize)
             {
-                // Windows reports an ICMP "port unreachable" from an earlier send as a failed
-                // receive on a UDP socket. It says nothing about incoming datagrams.
+                // ConnectionReset: Windows reports an ICMP "port unreachable" from an earlier send
+                // as a failed receive on a UDP socket; it says nothing about incoming datagrams.
+                // MessageSize: a datagram too big for the buffer, which is refused and gone.
                 continue;
             }
             catch (SocketException)
             {
-                return;
+                // Something else is wrong with the socket. Wait a moment and try again rather than
+                // going deaf for good, and rather than spinning.
+                try
+                {
+                    await Task.Delay(RetryDelay, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                continue;
             }
 
-            if (DiscoveryAnnouncement.TryDecode(received.Buffer, out var announcement))
+            if (received.RemoteEndPoint is IPEndPoint sender
+                && DiscoveryAnnouncement.TryDecode(buffer.AsSpan(0, received.ReceivedBytes), out var announcement))
             {
-                Raise(announcement, received.RemoteEndPoint.Address);
+                Raise(announcement, sender.Address);
             }
         }
     }
@@ -107,6 +145,7 @@ public sealed class LanDiscoveryScanner : IDisposable
 
         foreach (var handler in handlers.GetInvocationList().Cast<Action<DiscoveryAnnouncement, IPAddress>>())
         {
+            t_inHandler = true;
             try
             {
                 handler(announcement, from);
@@ -114,6 +153,10 @@ public sealed class LanDiscoveryScanner : IDisposable
             catch (Exception)
             {
                 // A faulty subscriber must not stop discovery, nor starve the other subscribers.
+            }
+            finally
+            {
+                t_inHandler = false;
             }
         }
     }
@@ -136,8 +179,9 @@ public sealed class LanDiscoveryScanner : IDisposable
 
         try
         {
-            // (Not from inside the loop itself, which a subscriber disposing the object would be.)
-            if (loop is not null && Task.CurrentId != loop.Id)
+            // Not from inside a subscriber: that is the loop itself, and it cannot finish while the
+            // subscriber is still waiting for Dispose to return.
+            if (loop is not null && !t_inHandler)
             {
                 loop.Wait(TimeSpan.FromSeconds(2));
             }

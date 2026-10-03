@@ -17,8 +17,19 @@ public class LanDiscoveryLoopbackTests
     private const string Thumbprint = DiscoveryAnnouncementTests.ValidThumbprint;
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);
 
+    /// <summary>The adapters of a machine whose only network is loopback.</summary>
+    private sealed class LoopbackOnly : IAnnouncementInterfaces
+    {
+        public IReadOnlyList<IPAddress> GetLocalAddresses() => [IPAddress.Loopback];
+
+        public UdpClient Bind(IPAddress local) => new(new IPEndPoint(local, 0));
+    }
+
+    private static LanDiscoveryBeacon BeaconAt(int port, int intervalMs = 50) =>
+        new(DeviceId, "PC-04", quicPort: 17843, Thumbprint, port, intervalMs, new LoopbackOnly(), IPAddress.Loopback);
+
     private static LanDiscoveryBeacon BeaconTo(LanDiscoveryScanner scanner, int intervalMs = 50) =>
-        new(DeviceId, "PC-04", quicPort: 17843, Thumbprint, scanner.LocalPort, intervalMs, IPAddress.Loopback);
+        BeaconAt(scanner.LocalPort, intervalMs);
 
     private static void SendRaw(int port, byte[] datagram)
     {
@@ -172,6 +183,28 @@ public class LanDiscoveryLoopbackTests
         Assert.Throws<ObjectDisposedException>(() => scanner.Start());
     }
 
+    /// <summary>
+    /// "Found it, stop scanning" is the obvious thing for a handler to do. The receive loop is
+    /// what is running the handler, so Dispose must not wait for the loop to finish.
+    /// </summary>
+    [Fact]
+    public async Task DisposingTheScanner_FromItsOwnHandler_ReturnsPromptly()
+    {
+        var scanner = new LanDiscoveryScanner(0, IPAddress.Loopback);
+        var elapsed = new TaskCompletionSource<TimeSpan>();
+        scanner.DeviceDiscovered += (_, _) =>
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            scanner.Dispose();
+            elapsed.TrySetResult(clock.Elapsed);
+        };
+        scanner.Start();
+
+        SendRaw(scanner.LocalPort, new DiscoveryAnnouncement(DeviceId, "PC-04", 17843, Thumbprint).Encode());
+
+        Assert.True(await elapsed.Task.WaitAsync(Patience) < TimeSpan.FromMilliseconds(500));
+    }
+
     [Fact]
     public void Scanner_ReportsTheEphemeralPortItBound()
     {
@@ -194,8 +227,7 @@ public class LanDiscoveryLoopbackTests
     {
         using var listener = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
         var port = ((IPEndPoint)listener.Client.LocalEndPoint!).Port;
-        var beacon = new LanDiscoveryBeacon(
-            DeviceId, "PC-04", 17843, Thumbprint, port, intervalMs: 20, IPAddress.Loopback);
+        var beacon = BeaconAt(port, intervalMs: 20);
         beacon.Start();
         await listener.ReceiveAsync().WaitAsync(Patience);   // it is sending
 
@@ -211,15 +243,6 @@ public class LanDiscoveryLoopbackTests
         Assert.Equal(0, listener.Available);
     }
 
-    [Fact]
-    public void Beacon_ByDefault_AnnouncesToTheLanBroadcastAddress()
-    {
-        // Never started, so nothing is sent: this only reads what production would do.
-        using var beacon = new LanDiscoveryBeacon(DeviceId, "PC-04", 17843, Thumbprint, EducastPorts.Discovery);
-
-        Assert.Equal(IPAddress.Broadcast, beacon.Destination);
-    }
-
     [Theory]
     [InlineData("agent-1", 17843, Thumbprint)]
     [InlineData(DeviceId, 0, Thumbprint)]
@@ -228,7 +251,7 @@ public class LanDiscoveryLoopbackTests
     public void Beacon_RefusesToAnnounceSomethingNoScannerWouldAccept(string deviceId, int quicPort, string thumbprint)
     {
         Assert.Throws<ArgumentException>(
-            () => new LanDiscoveryBeacon(deviceId, "PC-04", quicPort, thumbprint, 1234, 50, IPAddress.Loopback));
+            () => new LanDiscoveryBeacon(deviceId, "PC-04", quicPort, thumbprint, 1234, 50));
     }
 
     [Theory]
@@ -237,14 +260,14 @@ public class LanDiscoveryLoopbackTests
     public void Beacon_RefusesADiscoveryPortOutOfRange(int port)
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => new LanDiscoveryBeacon(DeviceId, "PC-04", 17843, Thumbprint, port, 50, IPAddress.Loopback));
+            () => new LanDiscoveryBeacon(DeviceId, "PC-04", 17843, Thumbprint, port, 50));
     }
 
     [Fact]
     public void Beacon_RefusesAZeroInterval()
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => new LanDiscoveryBeacon(DeviceId, "PC-04", 17843, Thumbprint, 1234, 0, IPAddress.Loopback));
+            () => new LanDiscoveryBeacon(DeviceId, "PC-04", 17843, Thumbprint, 1234, 0));
     }
 
     [Fact]
