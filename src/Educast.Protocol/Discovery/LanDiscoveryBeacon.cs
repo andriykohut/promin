@@ -175,16 +175,23 @@ public sealed class LanDiscoveryBeacon : IDisposable
     /// <summary>
     /// Brings the open sockets in line with the interfaces there are now: closes those of
     /// addresses that have gone, opens one for each address that is new or whose last bind
-    /// failed. Never throws: when the interfaces cannot be listed, the ones in use stay in use.
+    /// failed. Whatever the seam throws, this does not: when the interfaces cannot be listed
+    /// the ones in use stay in use, and an address that cannot be bound is skipped and tried
+    /// again at the next listing. One bad interface never ends the beacon loop.
     /// </summary>
     private void Refresh(Dictionary<IPAddress, UdpClient> sockets)
     {
-        IReadOnlyList<IPAddress> current;
+        IReadOnlyList<IPAddress>? current;
         try
         {
             current = Interfaces.GetLocalAddresses();
         }
         catch (Exception)
+        {
+            return;
+        }
+
+        if (current is null)
         {
             return;
         }
@@ -197,15 +204,15 @@ public sealed class LanDiscoveryBeacon : IDisposable
             }
         }
 
-        foreach (var address in current.Where(address => !sockets.ContainsKey(address)))
+        foreach (var address in current.Where(address => address is not null && !sockets.ContainsKey(address)).ToArray())
         {
             try
             {
                 sockets[address] = Interfaces.Bind(address);
             }
-            catch (Exception e) when (e is SocketException or ObjectDisposedException)
+            catch (Exception)
             {
-                // Tried again at the next look.
+                // This interface only: tried again at the next listing.
             }
         }
     }

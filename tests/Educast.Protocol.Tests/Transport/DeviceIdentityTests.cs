@@ -9,8 +9,15 @@ namespace Educast.Protocol.Tests.Transport;
 /// <summary>
 /// Every test in this class creates real, persisted keys in the current Windows user's key
 /// store, so the class runs alone (nothing else in the run is creating keys while a test counts
-/// them) and every key a test makes is deleted in <see cref="Dispose"/>, which xunit runs
-/// whether the test passed or failed.
+/// them).
+/// <para>
+/// Clean-up does not depend on the code under test having worked. A test gets its identities
+/// through <see cref="Load"/>, which records the id the moment it is returned, and records the
+/// name of any key it creates itself; <see cref="Dispose"/> (which xunit runs whether the test
+/// passed or failed) deletes every recorded name whatever any directory says by then. A killed
+/// run leaves its directories behind, and the next run sweeps them (see
+/// <see cref="IdentityTestCleanup.SweepOnce"/>).
+/// </para>
 /// </summary>
 [Collection(KeyStoreCollection.Name)]
 public sealed partial class DeviceIdentityTests : IDisposable
@@ -18,103 +25,78 @@ public sealed partial class DeviceIdentityTests : IDisposable
     private readonly List<string> _directories = [];
     private readonly List<string> _keyNamesToDelete = [];
 
+    public DeviceIdentityTests()
+    {
+        IdentityTestCleanup.SweepOnce();
+    }
+
     [GeneratedRegex("^[0-9a-f]{32}$")]
     private static partial Regex ThirtyTwoLowercaseHex();
 
     /// <summary>The key name the identity design promises: stable, derived from the id.</summary>
-    internal static string KeyNameFor(string deviceId) => $"Educast-Device-{deviceId}";
+    internal static string KeyNameFor(string deviceId) => IdentityTestCleanup.KeyNameFor(deviceId);
 
     private string NewDirectory()
     {
-        var path = Path.Combine(Path.GetTempPath(), "educast-identity-tests", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(IdentityTestCleanup.TempRoot("educast-identity-tests"), Guid.NewGuid().ToString("N"));
         _directories.Add(path);
         return path;
     }
 
+    /// <summary>
+    /// <see cref="DeviceIdentity.LoadOrCreate"/>, recording the id (and so the key name) of what
+    /// comes back before the test does anything else with it.
+    /// </summary>
+    private DeviceIdentity Load(string directory)
+    {
+        var identity = DeviceIdentity.LoadOrCreate(directory);
+        _keyNamesToDelete.Add(KeyNameFor(identity.DeviceId));
+        return identity;
+    }
+
+    /// <summary>Records the name of a key a test is about to create itself.</summary>
+    private string TrackKeyOf(string deviceId)
+    {
+        var name = KeyNameFor(deviceId);
+        _keyNamesToDelete.Add(name);
+        return name;
+    }
+
     public void Dispose()
     {
-        // Whatever ids the directories name now, whether or not the test is still holding the
-        // identity, is a key this test may have created.
-        foreach (var directory in _directories)
+        // Backstop only: ids a directory still names, in case a failure came before Load returned.
+        foreach (var directory in _directories.Where(Directory.Exists))
         {
-            if (!Directory.Exists(directory))
-            {
-                continue;
-            }
-
-            foreach (var file in Directory.GetFiles(directory, "*", SearchOption.AllDirectories))
-            {
-                try
-                {
-                    var text = File.ReadAllText(file).Trim();
-                    if (ThirtyTwoLowercaseHex().IsMatch(text))
-                    {
-                        _keyNamesToDelete.Add(KeyNameFor(text));
-                    }
-                }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-                {
-                }
-
-                try
-                {
-                    using var certificate = X509CertificateLoader.LoadCertificateFromFile(file);
-                    _keyNamesToDelete.Add(KeyNameFor(certificate.GetNameInfo(X509NameType.SimpleName, forIssuer: false)));
-                }
-                catch (Exception e) when (e is CryptographicException or IOException)
-                {
-                }
-            }
+            _keyNamesToDelete.AddRange(IdentityTestCleanup.IdsOnDisk(directory).Select(KeyNameFor));
         }
 
-        var failures = new List<Exception>();
-        foreach (var name in _keyNamesToDelete.Distinct())
+        try
         {
-            try
-            {
-                DeleteKeyNamed(name);
-            }
-            catch (Exception e)
-            {
-                failures.Add(e);
-            }
+            IdentityTestCleanup.DeleteAll(_keyNamesToDelete);
         }
-
-        foreach (var directory in _directories)
+        finally
         {
-            if (Directory.Exists(directory))
+            foreach (var directory in _directories.Where(Directory.Exists))
             {
                 Directory.Delete(directory, recursive: true);
             }
-        }
 
-        var parent = Path.Combine(Path.GetTempPath(), "educast-identity-tests");
-        if (Directory.Exists(parent) && !Directory.EnumerateFileSystemEntries(parent).Any())
-        {
-            try
+            var parent = IdentityTestCleanup.TempRoot("educast-identity-tests");
+            if (Directory.Exists(parent) && !Directory.EnumerateFileSystemEntries(parent).Any())
             {
-                Directory.Delete(parent);
+                try
+                {
+                    Directory.Delete(parent);
+                }
+                catch (IOException)
+                {
+                    // Another test is using it at this moment.
+                }
             }
-            catch (IOException)
-            {
-                // Another test is using it at this moment.
-            }
-        }
-
-        if (failures.Count > 0)
-        {
-            throw new AggregateException("A test key could not be deleted from the key store.", failures);
         }
     }
 
-    private static void DeleteKeyNamed(string name)
-    {
-        if (CngKey.Exists(name))
-        {
-            using var key = CngKey.Open(name);
-            key.Delete();
-        }
-    }
+    private static void DeleteKeyNamed(string name) => IdentityTestCleanup.DeleteKeyNamed(name);
 
     private static bool KeyExists(string deviceId) => CngKey.Exists(KeyNameFor(deviceId));
 
@@ -126,7 +108,7 @@ public sealed partial class DeviceIdentityTests : IDisposable
     [Fact]
     public void DeviceIdentity_FirstCall_CreatesAnIdOf32LowercaseHex()
     {
-        using var identity = DeviceIdentity.LoadOrCreate(NewDirectory());
+        using var identity = Load(NewDirectory());
 
         Assert.Matches(ThirtyTwoLowercaseHex(), identity.DeviceId);
     }
@@ -134,7 +116,7 @@ public sealed partial class DeviceIdentityTests : IDisposable
     [Fact]
     public void DeviceIdentity_FirstCall_UsesTheIdAsTheCertificatesSubjectNameExactly()
     {
-        using var identity = DeviceIdentity.LoadOrCreate(NewDirectory());
+        using var identity = Load(NewDirectory());
 
         // Task 5's pairing refuses a certificate whose common name is not the id it dialled,
         // and reads that name the way CertificateIdentity does.
@@ -148,8 +130,8 @@ public sealed partial class DeviceIdentityTests : IDisposable
     {
         var directory = NewDirectory();
 
-        using var first = DeviceIdentity.LoadOrCreate(directory);
-        using var second = DeviceIdentity.LoadOrCreate(directory);
+        using var first = Load(directory);
+        using var second = Load(directory);
 
         Assert.Equal(first.DeviceId, second.DeviceId);
         Assert.Equal(first.Certificate.Thumbprint, second.Certificate.Thumbprint);
@@ -167,8 +149,8 @@ public sealed partial class DeviceIdentityTests : IDisposable
     public void DeviceIdentity_SecondCall_ReturnsACertificateWhoseKeyStillSignsForTheSamePublicKey()
     {
         var directory = NewDirectory();
-        using var first = DeviceIdentity.LoadOrCreate(directory);
-        using var second = DeviceIdentity.LoadOrCreate(directory);
+        using var first = Load(directory);
+        using var second = Load(directory);
 
         Assert.True(second.Certificate.HasPrivateKey);
 
@@ -190,11 +172,11 @@ public sealed partial class DeviceIdentityTests : IDisposable
     public async Task ReloadedIdentity_CompletesARealTlsHandshake()
     {
         var directory = NewDirectory();
-        using (DeviceIdentity.LoadOrCreate(directory))
+        using (Load(directory))
         {
         }
 
-        using var reloaded = DeviceIdentity.LoadOrCreate(directory);
+        using var reloaded = Load(directory);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
         // Port 0 on loopback: no fixed port and no wildcard bind, so no firewall prompt.
@@ -209,8 +191,8 @@ public sealed partial class DeviceIdentityTests : IDisposable
     public void TheKey_CannotBeExported()
     {
         var directory = NewDirectory();
-        using var fresh = DeviceIdentity.LoadOrCreate(directory);
-        using var reloaded = DeviceIdentity.LoadOrCreate(directory);
+        using var fresh = Load(directory);
+        using var reloaded = Load(directory);
 
         foreach (var certificate in new[] { fresh.Certificate, reloaded.Certificate })
         {
@@ -232,8 +214,8 @@ public sealed partial class DeviceIdentityTests : IDisposable
     [Fact]
     public void DeviceIdentity_TwoDirectories_GetDifferentIds()
     {
-        using var one = DeviceIdentity.LoadOrCreate(NewDirectory());
-        using var two = DeviceIdentity.LoadOrCreate(NewDirectory());
+        using var one = Load(NewDirectory());
+        using var two = Load(NewDirectory());
 
         Assert.NotEqual(one.DeviceId, two.DeviceId);
         Assert.NotEqual(one.Certificate.Thumbprint, two.Certificate.Thumbprint);
@@ -244,14 +226,14 @@ public sealed partial class DeviceIdentityTests : IDisposable
     {
         var directory = NewDirectory();
         string firstId;
-        using (var first = DeviceIdentity.LoadOrCreate(directory))
+        using (var first = Load(directory))
         {
             firstId = first.DeviceId;
         }
 
         File.Delete(Path.Combine(directory, DeviceIdentity.CertificateFileName));
 
-        using var second = DeviceIdentity.LoadOrCreate(directory);
+        using var second = Load(directory);
 
         Assert.NotEqual(firstId, second.DeviceId);
         Assert.Matches(ThirtyTwoLowercaseHex(), second.DeviceId);
@@ -259,7 +241,7 @@ public sealed partial class DeviceIdentityTests : IDisposable
         Assert.False(KeyExists(firstId), "the replaced identity's key must not be left in the key store");
 
         // And it is a stable identity from here on.
-        using var third = DeviceIdentity.LoadOrCreate(directory);
+        using var third = Load(directory);
         Assert.Equal(second.DeviceId, third.DeviceId);
     }
 
@@ -268,14 +250,14 @@ public sealed partial class DeviceIdentityTests : IDisposable
     {
         var directory = NewDirectory();
         string firstId;
-        using (var first = DeviceIdentity.LoadOrCreate(directory))
+        using (var first = Load(directory))
         {
             firstId = first.DeviceId;
         }
 
         File.Delete(Path.Combine(directory, DeviceIdentity.IdFileName));
 
-        using var second = DeviceIdentity.LoadOrCreate(directory);
+        using var second = Load(directory);
 
         Assert.NotEqual(firstId, second.DeviceId);
         Assert.Equal($"CN={second.DeviceId}", second.Certificate.Subject);
@@ -287,14 +269,51 @@ public sealed partial class DeviceIdentityTests : IDisposable
     {
         var directory = NewDirectory();
         string firstId;
-        using (var first = DeviceIdentity.LoadOrCreate(directory))
+        using (var first = Load(directory))
         {
             firstId = first.DeviceId;
         }
 
         File.WriteAllBytes(Path.Combine(directory, DeviceIdentity.CertificateFileName), [1, 2, 3, 4]);
 
-        using var second = DeviceIdentity.LoadOrCreate(directory);
+        using var second = Load(directory);
+
+        Assert.NotEqual(firstId, second.DeviceId);
+        Assert.True(second.Certificate.HasPrivateKey);
+        Assert.False(KeyExists(firstId), "the replaced identity's key must not be left in the key store");
+    }
+
+    /// <summary>
+    /// A certificate file that is valid DER but whose subject name cannot be decoded (here a
+    /// common name that is not UTF-8) is a damaged identity like any other, not a reason for
+    /// LoadOrCreate to throw at every start.
+    /// </summary>
+    [Fact]
+    public void DeviceIdentity_CertificateWhoseNameCannotBeDecoded_IsRecreated()
+    {
+        var directory = NewDirectory();
+        string firstId;
+        using (var first = Load(directory))
+        {
+            firstId = first.DeviceId;
+        }
+
+        // Name ::= SEQUENCE { SET { SEQUENCE { OID 2.5.4.3 (commonName), UTF8String with invalid bytes } } }
+        byte[] undecodableName = [0x30, 0x0F, 0x31, 0x0D, 0x30, 0x0B, 0x06, 0x03, 0x55, 0x04, 0x03, 0x0C, 0x04, 0xFF, 0xFE, 0xC0, 0x80];
+        using (var key = ECDsa.Create(ECCurve.NamedCurves.nistP256))
+        {
+            var request = new CertificateRequest(new X500DistinguishedName(undecodableName), key, HashAlgorithmName.SHA256);
+            using var odd = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+            File.WriteAllBytes(Path.Combine(directory, DeviceIdentity.CertificateFileName), odd.Export(X509ContentType.Cert));
+        }
+
+        // The reader really cannot decode it (otherwise this test would prove nothing).
+        using (var odd = X509CertificateLoader.LoadCertificateFromFile(Path.Combine(directory, DeviceIdentity.CertificateFileName)))
+        {
+            Assert.ThrowsAny<CryptographicException>(() => CertificateIdentity.ReadDeviceId(odd));
+        }
+
+        using var second = Load(directory);
 
         Assert.NotEqual(firstId, second.DeviceId);
         Assert.True(second.Certificate.HasPrivateKey);
@@ -309,17 +328,21 @@ public sealed partial class DeviceIdentityTests : IDisposable
     {
         var directory = NewDirectory();
         string firstId;
-        using (var first = DeviceIdentity.LoadOrCreate(directory))
+        using (var first = Load(directory))
         {
             firstId = first.DeviceId;
         }
 
         File.WriteAllText(Path.Combine(directory, DeviceIdentity.IdFileName), content);
 
-        using var second = DeviceIdentity.LoadOrCreate(directory);
+        using var second = Load(directory);
 
         Assert.NotEqual(firstId, second.DeviceId);
         Assert.Matches(ThirtyTwoLowercaseHex(), second.DeviceId);
+
+        // The certificate beside the unusable id file still names the old identity, whose key is
+        // therefore not left behind.
+        Assert.False(KeyExists(firstId), "the replaced identity's key must not be left in the key store");
     }
 
     /// <summary>
@@ -332,10 +355,12 @@ public sealed partial class DeviceIdentityTests : IDisposable
         var directoryOne = NewDirectory();
         var directoryTwo = NewDirectory();
         string idOne;
-        using (var one = DeviceIdentity.LoadOrCreate(directoryOne))
-        using (var two = DeviceIdentity.LoadOrCreate(directoryTwo))
+        string idTwo;
+        using (var one = Load(directoryOne))
+        using (var two = Load(directoryTwo))
         {
             idOne = one.DeviceId;
+            idTwo = two.DeviceId;
         }
 
         // Directory two now holds directory one's id beside directory two's certificate.
@@ -344,10 +369,15 @@ public sealed partial class DeviceIdentityTests : IDisposable
             Path.Combine(directoryTwo, DeviceIdentity.IdFileName),
             overwrite: true);
 
-        using var recreated = DeviceIdentity.LoadOrCreate(directoryTwo);
+        using var recreated = Load(directoryTwo);
 
         Assert.NotEqual(idOne, recreated.DeviceId);
+        Assert.NotEqual(idTwo, recreated.DeviceId);
         Assert.Equal($"CN={recreated.DeviceId}", recreated.Certificate.Subject);
+
+        // The key of the certificate that was replaced is not left behind. (What happens to the key
+        // of the id that the id file named is not pinned here: it is another directory's identity.)
+        Assert.False(KeyExists(idTwo), "the replaced certificate's key must not be left in the key store");
     }
 
     [Fact]
@@ -355,14 +385,14 @@ public sealed partial class DeviceIdentityTests : IDisposable
     {
         var directory = NewDirectory();
         string firstId;
-        using (var first = DeviceIdentity.LoadOrCreate(directory))
+        using (var first = Load(directory))
         {
             firstId = first.DeviceId;
         }
 
         DeleteKeyNamed(KeyNameFor(firstId));
 
-        using var second = DeviceIdentity.LoadOrCreate(directory);
+        using var second = Load(directory);
 
         Assert.NotEqual(firstId, second.DeviceId);
         Assert.True(second.Certificate.HasPrivateKey);
@@ -378,12 +408,12 @@ public sealed partial class DeviceIdentityTests : IDisposable
     {
         var directory = NewDirectory();
         string firstId;
-        using (var first = DeviceIdentity.LoadOrCreate(directory))
+        using (var first = Load(directory))
         {
             firstId = first.DeviceId;
         }
 
-        var name = KeyNameFor(firstId);
+        var name = TrackKeyOf(firstId);
         DeleteKeyNamed(name);
         using (CngKey.Create(CngAlgorithm.ECDsaP256, name, new CngKeyCreationParameters
         {
@@ -394,7 +424,7 @@ public sealed partial class DeviceIdentityTests : IDisposable
         {
         }
 
-        using var second = DeviceIdentity.LoadOrCreate(directory);
+        using var second = Load(directory);
 
         Assert.NotEqual(firstId, second.DeviceId);
         Assert.False(KeyExists(firstId), "the mismatched key must be deleted with the identity it belonged to");
@@ -419,7 +449,7 @@ public sealed partial class DeviceIdentityTests : IDisposable
 
         File.WriteAllText(Path.Combine(directory, DeviceIdentity.IdFileName), plantedId);
 
-        using var loaded = DeviceIdentity.LoadOrCreate(directory);
+        using var loaded = Load(directory);
 
         Assert.NotEqual(plantedId, loaded.DeviceId);
         Assert.Equal(loaded.DeviceId, File.ReadAllText(Path.Combine(directory, DeviceIdentity.IdFileName)).Trim());
@@ -429,11 +459,11 @@ public sealed partial class DeviceIdentityTests : IDisposable
     public void TheIdentityDirectory_HoldsNoPrivateKey()
     {
         var directory = NewDirectory();
-        using (DeviceIdentity.LoadOrCreate(directory))
+        using (Load(directory))
         {
         }
 
-        using (DeviceIdentity.LoadOrCreate(directory))
+        using (Load(directory))
         {
         }
 
@@ -483,13 +513,13 @@ public sealed partial class DeviceIdentityTests : IDisposable
         var directory = NewDirectory();
         var baseline = KeyFileCount();
 
-        DeviceIdentity created = DeviceIdentity.LoadOrCreate(directory);
+        DeviceIdentity created = Load(directory);
         var afterCreation = KeyFileCount();
 
         var held = new List<DeviceIdentity> { created };
         for (var i = 0; i < 20; i++)
         {
-            held.Add(DeviceIdentity.LoadOrCreate(directory));    // deliberately never disposed
+            held.Add(Load(directory));    // deliberately never disposed
         }
 
         var afterLoads = KeyFileCount();
@@ -515,8 +545,8 @@ public sealed partial class DeviceIdentityTests : IDisposable
     {
         var directory = Path.Combine(NewDirectory(), "nested", "identity");
 
-        using var identity = DeviceIdentity.LoadOrCreate(directory);
-        using var again = DeviceIdentity.LoadOrCreate(directory);
+        using var identity = Load(directory);
+        using var again = Load(directory);
 
         var names = Directory.GetFileSystemEntries(directory).Select(Path.GetFileName).Order().ToArray();
         Assert.Equal(
@@ -528,7 +558,7 @@ public sealed partial class DeviceIdentityTests : IDisposable
     public void DeviceIdentity_StoresTheIdAsPlainText_AndTheCertificateAsItsPublicPartOnly()
     {
         var directory = NewDirectory();
-        using var identity = DeviceIdentity.LoadOrCreate(directory);
+        using var identity = Load(directory);
 
         Assert.Equal(identity.DeviceId, File.ReadAllText(Path.Combine(directory, DeviceIdentity.IdFileName)).Trim());
 
@@ -541,7 +571,7 @@ public sealed partial class DeviceIdentityTests : IDisposable
     [Fact]
     public void DeviceIdentity_Dispose_ReleasesTheCertificate_ButNotTheKey()
     {
-        var identity = DeviceIdentity.LoadOrCreate(NewDirectory());
+        var identity = Load(NewDirectory());
         var certificate = identity.Certificate;
         var id = identity.DeviceId;
 

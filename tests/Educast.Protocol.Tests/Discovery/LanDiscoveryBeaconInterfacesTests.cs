@@ -32,6 +32,9 @@ public class LanDiscoveryBeaconInterfacesTests
         /// <summary>Addresses whose bind throws, as an adapter that has just gone away does.</summary>
         public HashSet<IPAddress> FailToBind { get; } = [];
 
+        /// <summary>Addresses whose bind throws something other than a socket error (a bug in the seam, say).</summary>
+        public HashSet<IPAddress> FailToBindUnexpectedly { get; } = [];
+
         /// <summary>Addresses whose socket is dead on arrival, so every send from it throws.</summary>
         public HashSet<IPAddress> FailToSend { get; } = [];
 
@@ -61,6 +64,11 @@ public class LanDiscoveryBeaconInterfacesTests
             if (FailToBind.Contains(local))
             {
                 throw new SocketException((int)SocketError.AddressNotAvailable);
+            }
+
+            if (FailToBindUnexpectedly.Contains(local))
+            {
+                throw new InvalidOperationException("the seam failed in a way nobody planned for");
             }
 
             var client = new UdpClient(new IPEndPoint(local, 0));
@@ -200,6 +208,24 @@ public class LanDiscoveryBeaconInterfacesTests
         await listener.WaitToHearFromAsync(IPAddress.Loopback, Second);
         Assert.Contains(unbindable, interfaces.BindAttempts);
         Assert.False(listener.HasHeardFrom(unbindable));
+    }
+
+    /// <summary>
+    /// "A failure on one interface does not stop the others" has to hold for whatever the seam
+    /// throws, or one bad interface ends the loop silently and the PC stops announcing anywhere.
+    /// </summary>
+    [Fact]
+    public async Task Beacon_AnAddressWhoseBindThrowsSomethingUnexpected_DoesNotStopTheOthers()
+    {
+        using var listener = new Listener();
+        var unexpected = IPAddress.Parse("192.0.2.78");
+        var interfaces = new FakeInterfaces(unexpected, IPAddress.Loopback, Second);
+        interfaces.FailToBindUnexpectedly.Add(unexpected);
+        using var beacon = BeaconOn(listener, interfaces);
+
+        beacon.Start();
+
+        await listener.WaitToHearFromAsync(IPAddress.Loopback, Second);
     }
 
     [Fact]

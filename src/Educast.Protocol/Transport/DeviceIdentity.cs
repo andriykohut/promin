@@ -23,9 +23,12 @@ namespace Educast.Protocol.Transport;
 ///
 /// <b>What is on disk.</b> Two files in the directory: <see cref="IdFileName"/> (the id as text)
 /// and <see cref="CertificateFileName"/> (the certificate's public part, DER). That is public
-/// data; no private key material is written to any file, ever, so the directory needs no special
-/// protection and a planted or copied file is not a risk: an id and certificate are only accepted
-/// when a key by that name exists in this user's key store and is the certificate's own key.
+/// data; no private key material is written to any file, ever, so a planted or copied file
+/// cannot impersonate this device: an id and certificate are only accepted when a key by that
+/// name exists in this user's key store and is the certificate's own key. (That is about secrecy
+/// and impersonation, not availability: whoever can write the directory can still make the next
+/// start replace the identity, which unpairs the PC, so the directory should be one only the
+/// account that owns the identity can write.)
 ///
 /// <b>Anything that does not all agree is replaced.</b> An id with no certificate is useless,
 /// and so is a certificate with no id, a certificate that will not load, one whose name is not
@@ -64,9 +67,11 @@ public sealed record DeviceIdentity(string DeviceId, X509Certificate2 Certificat
     /// </summary>
     /// <remarks>
     /// <b>The identity belongs to the Windows account the app runs under</b>, because that is
-    /// whose key store holds the key. A different account on the same PC has its own identity,
-    /// even if it is given the same directory (the id and certificate it finds there name a key it
-    /// does not have, so it replaces them). The directory holds only public data.
+    /// whose key store holds the key: use one identity directory per Windows account. Two
+    /// accounts sharing one directory is not supported. They would not each get their own
+    /// identity; each would find an id and certificate naming a key it does not have, replace
+    /// them, and so overwrite the other's files at every start, leaving the other's key in its
+    /// key store with nothing naming it. The directory holds only public data.
     /// </remarks>
     public static DeviceIdentity LoadOrCreate(string directory)
     {
@@ -141,7 +146,17 @@ public sealed record DeviceIdentity(string DeviceId, X509Certificate2 Certificat
 
         try
         {
-            var certificateId = CertificateIdentity.ReadDeviceId(publicCertificate);
+            string? certificateId;
+            try
+            {
+                certificateId = CertificateIdentity.ReadDeviceId(publicCertificate);
+            }
+            catch (CryptographicException)
+            {
+                // A subject name that cannot be decoded: a damaged certificate like any other.
+                return null;
+            }
+
             if (IsValidDeviceId(certificateId))
             {
                 staleIds.Add(certificateId!);

@@ -13,27 +13,49 @@ namespace Educast.Protocol.Tests.Transport;
 [Collection(KeyStoreCollection.Name)]
 public sealed class DeviceIdentityTransportTests : IDisposable
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "educast-identity-transport-tests", Guid.NewGuid().ToString("N"));
-    private readonly List<string> _deviceIds = [];
+    private readonly string _root = Path.Combine(
+        IdentityTestCleanup.TempRoot("educast-identity-transport-tests"), Guid.NewGuid().ToString("N"));
+    private readonly List<string> _keyNames = [];
+
+    public DeviceIdentityTransportTests()
+    {
+        IdentityTestCleanup.SweepOnce();
+    }
 
     public void Dispose()
     {
-        // The ids are recorded before anything else can fail, so a failing test still cleans up.
-        foreach (var id in _deviceIds)
+        // The ids are recorded the moment they are obtained, so a failing test still cleans up,
+        // and one failed delete does not skip the other.
+        try
         {
-            DeviceIdentity.DeleteKey(id);
+            IdentityTestCleanup.DeleteAll(_keyNames);
         }
-
-        if (Directory.Exists(_root))
+        finally
         {
-            Directory.Delete(_root, recursive: true);
+            if (Directory.Exists(_root))
+            {
+                Directory.Delete(_root, recursive: true);
+            }
+
+        var parent = Path.GetDirectoryName(_root)!;
+        if (Directory.Exists(parent) && !Directory.EnumerateFileSystemEntries(parent).Any())
+        {
+            try
+            {
+                Directory.Delete(parent);
+            }
+            catch (IOException)
+            {
+                // Another test is using it at this moment.
+            }
+        }
         }
     }
 
     private X509Certificate2 NewIdentityCertificate(string name)
     {
         var identity = DeviceIdentity.LoadOrCreate(Path.Combine(_root, name));
-        _deviceIds.Add(identity.DeviceId);
+        _keyNames.Add(IdentityTestCleanup.KeyNameFor(identity.DeviceId));
         return identity.Certificate;
     }
 

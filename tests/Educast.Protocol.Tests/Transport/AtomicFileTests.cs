@@ -12,6 +12,19 @@ public sealed class AtomicFileTests : IDisposable
         {
             Directory.Delete(_root, recursive: true);
         }
+
+        var parent = Path.GetDirectoryName(_root)!;
+        if (Directory.Exists(parent) && !Directory.EnumerateFileSystemEntries(parent).Any())
+        {
+            try
+            {
+                Directory.Delete(parent);
+            }
+            catch (IOException)
+            {
+                // Another test is using it at this moment.
+            }
+        }
     }
 
     [Fact]
