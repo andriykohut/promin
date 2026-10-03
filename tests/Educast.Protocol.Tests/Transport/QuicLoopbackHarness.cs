@@ -118,8 +118,8 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
         var master = await connector.ConnectAsync(Endpoint, deviceId, ct);
         var agent = await acceptTask;
 
-        _ownedAsync.Add(master);
-        _ownedAsync.Add(agent);
+        Own(master);
+        Own(agent);
         return (master, agent);
     }
 
@@ -151,7 +151,7 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
         };
 
         var connection = await QuicConnection.ConnectAsync(options, ct);
-        _ownedAsync.Add(connection);
+        Own(connection);
         return connection;
     }
 
@@ -241,19 +241,38 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
         }
     }
 
+    /// <summary>Tests dial concurrently, so taking ownership has to be safe from any thread.</summary>
+    private void Own(IAsyncDisposable disposable)
+    {
+        lock (_ownedAsync)
+        {
+            _ownedAsync.Add(disposable);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
-        for (var i = _ownedAsync.Count - 1; i >= 0; i--)
+        IAsyncDisposable[] owned;
+        lock (_ownedAsync)
+        {
+            owned = [.. _ownedAsync];
+        }
+
+        for (var i = owned.Length - 1; i >= 0; i--)
         {
             try
             {
-                await _ownedAsync[i].DisposeAsync();
+                await owned[i].DisposeAsync();
             }
             catch (QuicException)
             {
             }
             catch (ObjectDisposedException)
             {
+            }
+            catch (System.Security.Authentication.AuthenticationException)
+            {
+                // A raw connection the agent refused reports that when it is closed.
             }
         }
 

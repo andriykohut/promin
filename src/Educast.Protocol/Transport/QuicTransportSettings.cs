@@ -52,6 +52,14 @@ public static class QuicTransportSettings
     public static TimeSpan DefaultPairingWindow { get; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
+    /// How many inbound handshakes — completed or refused — the listener holds until the accept
+    /// loop takes them. Stated rather than inherited because the accept loop's spin guard is
+    /// sized against it: a full backlog of refused dials is consumed in at most three guard
+    /// intervals (300 ms), so the guard can never hold a legitimate master back for long.
+    /// </summary>
+    public const int ListenBacklog = 512;
+
+    /// <summary>
     /// Control messages need exactly one bidirectional stream. Four leaves room for a
     /// reconnect whose replacement control stream overlaps the old one briefly (Task 14)
     /// without ever granting enough credit for a peer to open control streams as a DoS.

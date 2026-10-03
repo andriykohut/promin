@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
-using System.Runtime.ExceptionServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.Channels;
 using Educast.Protocol.Messages;
@@ -53,6 +52,7 @@ public sealed class QuicAgentListener : IAsyncDisposable
     private QuicAcceptPump? _pump;
     private Task? _pumpTask;
     private PairingTrustWindow? _pairingWindow;
+    private SelfProbe? _selfProbe;
     private int _disposed;
 
     public QuicAgentListener(
@@ -86,9 +86,26 @@ public sealed class QuicAgentListener : IAsyncDisposable
     /// </summary>
     public int ConsecutiveAcceptFailures => _pump?.ConsecutiveFailures ?? 0;
 
+    /// <summary>
+    /// Binds the port, starts accepting, and proves that this machine's own certificate can
+    /// actually complete a TLS handshake before returning.
+    /// </summary>
+    /// <remarks>
+    /// The proof is a handshake against itself over loopback. It exists because a credential
+    /// that will not load does not fail here by itself: the TLS stack loads it per inbound
+    /// connection, and the failure then comes out of the accept loop as an
+    /// <c>AuthenticationException</c> — indistinguishable from a refused stranger. Without the
+    /// proof, an agent with a broken certificate would start "successfully" and then turn every
+    /// master away for ever. With it, that agent fails to start, and says why.
+    /// </remarks>
+    /// <exception cref="LocalCredentialException">
+    /// The certificate could not be used for a handshake. The listener has been shut down and
+    /// cannot be restarted; fix the certificate and create a new one.
+    /// </exception>
     public async Task StartAsync(CancellationToken ct)
     {
         QuicTransportSettings.EnsureSupported();
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         if (_listener is not null)
         {
@@ -99,13 +116,145 @@ public sealed class QuicAgentListener : IAsyncDisposable
         {
             ListenEndPoint = new IPEndPoint(_bindAddress, _port),
             ApplicationProtocols = [QuicTransportSettings.ApplicationProtocol],
-            ConnectionOptionsCallback = (_, _, _) => ValueTask.FromResult(CreateConnectionOptions()),
+            ListenBacklog = QuicTransportSettings.ListenBacklog,
+            ConnectionOptionsCallback = (_, _, _) =>
+            {
+                if (Volatile.Read(ref _selfProbe) is { } probe)
+                {
+                    Interlocked.Increment(ref probe.OptionsCallbackRuns);
+                }
+
+                return ValueTask.FromResult(CreateConnectionOptions());
+            },
         };
 
         var listener = await QuicListener.ListenAsync(options, ct).ConfigureAwait(false);
         _listener = listener;
-        _pump = new QuicAcceptPump(listener.AcceptConnectionAsync, DeliverAsync, _connectionRejected);
-        _pumpTask = RunPumpAsync(_pump, _shutdown);
+        _pump = new QuicAcceptPump(listener.AcceptConnectionAsync, DeliverAsync, OnAcceptFailed);
+        _pumpTask = _pump.RunAsync(_shutdown);
+
+        try
+        {
+            await ProveOwnCredentialAsync(listener, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // A listener that cannot complete a handshake must not be left bound and "running".
+            await DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Completes one TLS handshake against this listener from this process. The client side
+    /// uses a throwaway certificate, so what is being proved is exactly the thing the agent
+    /// depends on: that <i>this</i> certificate works as a server credential.
+    /// </summary>
+    private async Task ProveOwnCredentialAsync(QuicListener listener, CancellationToken ct)
+    {
+        using var probeCertificate = SelfSignedCertificateFactory.Create("educast-self-probe");
+        var probe = new SelfProbe(PeerCertificateStore.ComputeThumbprint(probeCertificate));
+        var localThumbprint = PeerCertificateStore.ComputeThumbprint(_localCertificate);
+        var target = new IPEndPoint(LoopbackFor(listener.LocalEndPoint.Address), listener.LocalEndPoint.Port);
+
+        Volatile.Write(ref _selfProbe, probe);
+        try
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(QuicTransportSettings.HandshakeTimeout);
+
+            Exception clientFailure;
+            QuicConnection? client = null;
+            try
+            {
+                client = await QuicConnection.ConnectAsync(
+                    new QuicClientConnectionOptions
+                    {
+                        RemoteEndPoint = target,
+                        DefaultStreamErrorCode = 0,
+                        DefaultCloseErrorCode = 0,
+                        HandshakeTimeout = QuicTransportSettings.HandshakeTimeout,
+                        MaxInboundBidirectionalStreams = 0,
+                        MaxInboundUnidirectionalStreams = 0,
+                        ClientAuthenticationOptions = new SslClientAuthenticationOptions
+                        {
+                            TargetHost = target.Address.ToString(),
+                            ApplicationProtocols = [QuicTransportSettings.ApplicationProtocol],
+                            ClientCertificates = [probeCertificate],
+
+                            // It has to be this listener that answered, with this certificate.
+                            RemoteCertificateValidationCallback = (_, certificate, _, _) =>
+                                certificate is not null
+                                && string.Equals(
+                                    PeerCertificateStore.ComputeThumbprint(certificate),
+                                    localThumbprint,
+                                    StringComparison.OrdinalIgnoreCase),
+                        },
+                    },
+                    deadline.Token).ConfigureAwait(false);
+
+                // The client's handshake completing already means the server presented its
+                // certificate and proved it holds the key. Waiting for the server's side to
+                // finish as well keeps the probe from being reported as a refused stranger.
+                await probe.Arrived.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
+                return;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception failure)
+            {
+                clientFailure = failure;
+            }
+            finally
+            {
+                if (client is not null)
+                {
+                    await client.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+
+            // The handshake with ourselves failed. If the listener's side saw the attempt at
+            // all, its own account of why is the informative one; it can arrive seconds after
+            // the client has already been turned away.
+            Exception? serverFailure = null;
+            if (Volatile.Read(ref probe.OptionsCallbackRuns) > 0)
+            {
+                try
+                {
+                    serverFailure = await probe.ServerFailure.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                }
+            }
+
+            throw new LocalCredentialException(
+                "This machine's own certificate could not complete a TLS handshake, so no master could ever " +
+                "connect to it. The listener has been shut down. The inner exception is what the TLS stack " +
+                "reported.",
+                serverFailure ?? clientFailure);
+        }
+        finally
+        {
+            Volatile.Write(ref _selfProbe, null);
+        }
+    }
+
+    private static IPAddress LoopbackFor(IPAddress bound) =>
+        bound.Equals(IPAddress.Any) ? IPAddress.Loopback
+        : bound.Equals(IPAddress.IPv6Any) ? IPAddress.IPv6Loopback
+        : bound;
+
+    /// <summary>
+    /// Every failure out of accept comes through here. While the self-probe is in flight the
+    /// first one is kept as the listener's own account of what went wrong.
+    /// </summary>
+    private void OnAcceptFailed(Exception failure)
+    {
+        Volatile.Read(ref _selfProbe)?.ServerFailure.TrySetResult(failure);
+        _connectionRejected?.Invoke(failure);
     }
 
     /// <summary>
@@ -117,10 +266,9 @@ public sealed class QuicAgentListener : IAsyncDisposable
     /// A peer whose certificate is refused never appears here: the refusal is reported through
     /// the optional <c>connectionRejected</c> callback and the listener carries on. Neither does
     /// a master admitted by a pairing window — that connection belongs to
-    /// <see cref="AcceptPairingAsync"/>. What does come out of this method, besides
-    /// cancellation, is a fault of this machine's own — a credential that will not load, for
-    /// instance. That is thrown to every caller from then on, because a listener in that state
-    /// is broken, not busy.
+    /// <see cref="AcceptPairingAsync"/>. Nothing a remote peer does can make this method throw:
+    /// the only things that come out of it are a connection, the caller's cancellation, and
+    /// <see cref="ObjectDisposedException"/> once the listener has been disposed.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">The listener was disposed.</exception>
     public async Task<QuicChannel> AcceptAsync(CancellationToken ct)
@@ -131,13 +279,9 @@ public sealed class QuicAgentListener : IAsyncDisposable
         {
             return await _established.Reader.ReadAsync(ct).ConfigureAwait(false);
         }
-        catch (ChannelClosedException closed)
+        catch (ChannelClosedException)
         {
-            if (closed.InnerException is { } fault)
-            {
-                ExceptionDispatchInfo.Throw(fault);
-            }
-
+            // The queue is completed by disposal and by nothing else.
             throw new ObjectDisposedException(nameof(QuicAgentListener));
         }
     }
@@ -309,24 +453,6 @@ public sealed class QuicAgentListener : IAsyncDisposable
         }
     }
 
-    private async Task RunPumpAsync(QuicAcceptPump pump, CancellationToken ct)
-    {
-        Exception? fault = null;
-        try
-        {
-            await pump.RunAsync(ct).ConfigureAwait(false);
-        }
-        catch (Exception failure)
-        {
-            // Not swallowed: handed to every AcceptAsync caller through the queue's completion.
-            fault = failure;
-        }
-        finally
-        {
-            _established.Writer.TryComplete(fault);
-        }
-    }
-
     /// <summary>
     /// Routes one established connection. A pinned master goes to <see cref="AcceptAsync"/>. An
     /// unpinned one can only have got through TLS on a pairing window, so it goes to that
@@ -340,6 +466,16 @@ public sealed class QuicAgentListener : IAsyncDisposable
         {
             thumbprint = PeerCertificateStore.ComputeThumbprint(certificate);
             _trustedMasters.TryGetDeviceIdForThumbprint(thumbprint, out deviceId);
+        }
+
+        if (thumbprint is not null
+            && Volatile.Read(ref _selfProbe) is { } probe
+            && string.Equals(thumbprint, probe.ClientThumbprint, StringComparison.OrdinalIgnoreCase))
+        {
+            // This listener's own start-up handshake with itself. It has done its job.
+            probe.Arrived.TrySetResult();
+            await connection.DisposeAsync().ConfigureAwait(false);
+            return;
         }
 
         if (deviceId is null)
@@ -402,13 +538,37 @@ public sealed class QuicAgentListener : IAsyncDisposable
             return false;
         }
 
-        if (_trustedMasters.TryGetDeviceIdForThumbprint(
-                PeerCertificateStore.ComputeThumbprint(certificate), out _))
+        var thumbprint = PeerCertificateStore.ComputeThumbprint(certificate);
+        if (_trustedMasters.TryGetDeviceIdForThumbprint(thumbprint, out _))
+        {
+            return true;
+        }
+
+        // The start-up probe: a throwaway certificate this process generated a moment ago and
+        // holds the only key for, accepted only while that probe is in flight.
+        if (Volatile.Read(ref _selfProbe) is { } probe
+            && string.Equals(thumbprint, probe.ClientThumbprint, StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         return Volatile.Read(ref _pairingWindow)?.TryAdmit(certificate) ?? false;
+    }
+
+    /// <summary>The state of the one handshake this listener makes against itself at start-up.</summary>
+    private sealed class SelfProbe(string clientThumbprint)
+    {
+        public int OptionsCallbackRuns;
+
+        public string ClientThumbprint { get; } = clientThumbprint;
+
+        /// <summary>Completes when the probe connection comes out of the accept loop.</summary>
+        public TaskCompletionSource Arrived { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>The first failure the accept loop saw while the probe was in flight.</summary>
+        public TaskCompletionSource<Exception> ServerFailure { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     public async ValueTask DisposeAsync()
