@@ -185,9 +185,14 @@ public sealed class DxgiScreenCapture : IScreenCapture
             var decision = DecideFrame(info.LastPresentTime, info.LastMouseUpdateTime, _haveDesktop, format);
             if (info.LastPresentTime != 0)
                 FirstRealUpdateAfter ??= System.Diagnostics.Stopwatch.GetElapsedTime(_duplicationStartedAt);
-            TraceAcquire(
-                $"present={(info.LastPresentTime == 0 ? "0" : "set")} mouse={(info.LastMouseUpdateTime == 0 ? "0" : "set")} " +
-                $"accumulated={info.AccumulatedFrames} format={format?.ToString() ?? "none"} haveDesktop={_haveDesktop} -> {decision}");
+            // The line is only built when someone is listening and this is one of the traced acquires:
+            // in production this runs on every frame and must not allocate.
+            if (IsTracing)
+            {
+                TraceAcquire(
+                    $"present={(info.LastPresentTime == 0 ? "0" : "set")} mouse={(info.LastMouseUpdateTime == 0 ? "0" : "set")} " +
+                    $"accumulated={info.AccumulatedFrames} format={format?.ToString() ?? "none"} haveDesktop={_haveDesktop} -> {decision}");
+            }
             if (decision == FrameDecision.NoFrame)
                 return Step.NoFrame;
 
@@ -445,6 +450,8 @@ public sealed class DxgiScreenCapture : IScreenCapture
         using var output1 = output.QueryInterface<IDXGIOutput1>();
         return output1.DuplicateOutput(Device);
     }
+
+    private bool IsTracing => Trace is not null && _acquireCount <= TracedAcquires;
 
     private void TraceAcquire(string what)
     {
