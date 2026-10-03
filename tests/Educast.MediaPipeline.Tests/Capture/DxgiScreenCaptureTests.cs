@@ -2,13 +2,14 @@ using System.Runtime.InteropServices;
 using Educast.MediaPipeline.Capture;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
+using Xunit.Abstractions;
 
 namespace Educast.MediaPipeline.Tests.Capture;
 
 // These tests need an interactive, unlocked desktop session with a GPU driver that supports
 // Desktop Duplication, and they MOVE THE MOUSE POINTER. They cannot run on a headless CI agent;
 // run them by hand on the target machine (remove the Skip text, run, put it back).
-public class DxgiScreenCaptureTests
+public class DxgiScreenCaptureTests(ITestOutputHelper output)
 {
     private const string NeedsDesktop = "Requires an interactive desktop session; moves the pointer; run manually on target hardware.";
 
@@ -42,24 +43,51 @@ public class DxgiScreenCaptureTests
     // PointerOnlyUpdate_StillYieldsAFrame cannot show this, because on a screen that keeps changing a
     // frame arrives for reasons that have nothing to do with the pointer. So this test first insists
     // that the screen really is still (and fails, saying so, if it never becomes still within 15 s:
-    // run it on an idle desktop and leave the mouse and keyboard alone), then starts a NEW capture and
-    // moves the pointer. Whether Desktop Duplication reports the new capture's first update as a
-    // pointer-only one is up to the driver, so this test alone does not prove that branch was taken;
-    // the branch decision itself is pinned offline by DxgiScreenCaptureLogicTests.Decide_*.
+    // run it on an idle desktop and leave the mouse and keyboard alone).
+    //
+    // It then starts a NEW capture and answers two separate questions, both written to the test output:
+    //   1. Does a fresh duplication on a still screen ever deliver a real first image (LastPresentTime
+    //      != 0), and after how long? Nothing moves during this phase.
+    //   2. Once the pointer moves, does a frame arrive? This is the assertion.
+    // If phase 1 produced no frame at all, phase 2 is exactly "pointer move, no desktop image yet".
     [Fact(Skip = NeedsDesktop)]
     public void StillScreen_FreshCapture_PointerMove_StillYieldsAFrame()
     {
         using (var probe = StartCapture())
+        {
+            output.WriteLine("-- probe capture: waiting for the screen to hold still");
             Assert.True(WaitForStillScreen(probe), "The screen never held still for 1.5 s within 15 s: this test needs an idle desktop.");
+        }
 
+        output.WriteLine("-- fresh capture, phase 1: nothing moves");
         using var capture = StartCapture();
         using var pointer = new PointerRestorer();
-        pointer.MoveTo(pointer.Start.X + (pointer.Start.X + 40 < Native.ScreenWidth ? 40 : -40), pointer.Start.Y);
 
-        Assert.True(capture.TryGetNextFrame(TimeSpan.FromSeconds(2), out var frame));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var framesInPhase1 = 0;
+        TimeSpan? firstFrameAfter = null;
+        while (clock.Elapsed < TimeSpan.FromSeconds(3))
+        {
+            if (capture.TryGetNextFrame(TimeSpan.FromMilliseconds(250), out _))
+            {
+                framesInPhase1++;
+                firstFrameAfter ??= clock.Elapsed;
+            }
+        }
+        output.WriteLine(capture.FirstRealUpdateAfter is { } real
+            ? $"phase 1: first REAL screen update (LastPresentTime != 0) arrived {real.TotalMilliseconds:F0} ms after the duplication was made"
+            : "phase 1: NO real screen update arrived within 3 s of the duplication being made");
+        output.WriteLine($"phase 1: {framesInPhase1} frame(s) returned; first after {(firstFrameAfter is { } ff ? $"{ff.TotalMilliseconds:F0} ms" : "never")}");
+
+        output.WriteLine("-- phase 2: moving the pointer");
+        pointer.MoveTo(pointer.Start.X + (pointer.Start.X + 40 < Native.ScreenWidth ? 40 : -40), pointer.Start.Y);
+        var moved = System.Diagnostics.Stopwatch.StartNew();
+        var gotFrame = capture.TryGetNextFrame(TimeSpan.FromSeconds(2), out var frame);
+        output.WriteLine($"phase 2: pointer-move frame {(gotFrame ? $"arrived after {moved.Elapsed.TotalMilliseconds:F0} ms" : "did NOT arrive within 2 s")}");
+
+        Assert.True(gotFrame);
         Assert.True(frame.Width > 0);
     }
-
     [Fact(Skip = NeedsDesktop)]
     public void PointerIsDrawnIntoTheFrame()
     {
@@ -110,10 +138,15 @@ public class DxgiScreenCaptureTests
     // DuplicateOutput1 (how the capture gets an SDR picture when Windows colour management would
     // otherwise give it FP16) needs a per-monitor-v2 DPI-aware process, and the test host is not one.
     // A real application declares this in its manifest; here we declare it before the first capture.
-    private static DxgiScreenCapture StartCapture()
+    //
+    // The capture's first acquires on each new duplication are written to the test output (text only:
+    // which timestamps were zero, accumulated frames, surface format, which call made the duplication).
+    private DxgiScreenCapture StartCapture()
     {
         Native.RequireDpiAwareness();
-        return new DxgiScreenCapture();
+        var capture = new DxgiScreenCapture();
+        capture.Trace = output.WriteLine;
+        return capture;
     }
 
     // True once a 1.5 s wait for the next frame comes back empty, i.e. nothing on screen changed.

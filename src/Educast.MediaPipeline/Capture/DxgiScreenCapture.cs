@@ -51,6 +51,18 @@ public sealed class DxgiScreenCapture : IScreenCapture
     // Which call made the current duplication, for the same error message.
     private string _duplicatedWith = "not yet duplicated";
 
+    // Diagnostics for hardware runs: how a new duplication's first acquires looked. Reset whenever a
+    // duplication is made. Trace receives one line per acquire, for the first few only.
+    private const int TracedAcquires = 8;
+    private long _duplicationStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+    private int _acquireCount;
+
+    /// <summary>Receives a line describing each of a new duplication's first acquires. Null (the default) means no tracing.</summary>
+    internal Action<string>? Trace { get; set; }
+
+    /// <summary>How long after the current duplication was made its first real screen update (LastPresentTime != 0) arrived, or null if none yet.</summary>
+    internal TimeSpan? FirstRealUpdateAfter { get; private set; }
+
     private bool _disposed;
 
     /// <summary>
@@ -144,9 +156,12 @@ public sealed class DxgiScreenCapture : IScreenCapture
         }
 
         var result = _duplication!.AcquireNextFrame(ToMilliseconds(timeout), out var info, out var resource);
-        switch (ClassifyAcquire(result))
+        var outcome = ClassifyAcquire(result);
+        _acquireCount++;
+        switch (outcome)
         {
             case AcquireOutcome.Timeout:
+                TraceAcquire("timed out");
                 return Step.NoFrame;
 
             case AcquireOutcome.AccessLost:
@@ -165,7 +180,14 @@ public sealed class DxgiScreenCapture : IScreenCapture
 
         try
         {
-            var decision = DecideFrame(info.LastPresentTime, info.LastMouseUpdateTime, _haveDesktop);
+            using var source = resource?.QueryInterface<ID3D11Texture2D>();
+            Format? format = source?.Description.Format;
+            var decision = DecideFrame(info.LastPresentTime, info.LastMouseUpdateTime, _haveDesktop, format);
+            if (info.LastPresentTime != 0)
+                FirstRealUpdateAfter ??= System.Diagnostics.Stopwatch.GetElapsedTime(_duplicationStartedAt);
+            TraceAcquire(
+                $"present={(info.LastPresentTime == 0 ? "0" : "set")} mouse={(info.LastMouseUpdateTime == 0 ? "0" : "set")} " +
+                $"accumulated={info.AccumulatedFrames} format={format?.ToString() ?? "none"} haveDesktop={_haveDesktop} -> {decision}");
             if (decision == FrameDecision.NoFrame)
                 return Step.NoFrame;
 
@@ -181,14 +203,19 @@ public sealed class DxgiScreenCapture : IScreenCapture
                 _pointerY = info.PointerPosition.Position.Y;
             }
 
-            if (decision == FrameDecision.CopyAcquiredThenFrame)
+            switch (decision)
             {
-                // Even on a pointer-only update the acquired resource is the current desktop surface.
-                // Defensively, if the driver hands none back and we have no image, keep waiting.
-                if (resource is null)
+                case FrameDecision.RejectSurface:
+                    throw new NotSupportedException(DescribeUnsupportedSurface(
+                        format!.Value, DpiAwareness.IsPerMonitorV2(), _duplicateOutput1Failure, _duplicatedWith));
+
+                case FrameDecision.WaitForRealUpdate:
                     return Step.NeedDesktop;
-                CopyDesktop(resource, pointerOnlyUpdate: info.LastPresentTime == 0);
-                _haveDesktop = true;
+
+                case FrameDecision.CopyAcquiredThenFrame:
+                    CopyDesktop(source!);
+                    _haveDesktop = true;
+                    break;
             }
             return Step.Frame;
         }
@@ -226,13 +253,12 @@ public sealed class DxgiScreenCapture : IScreenCapture
     /// </summary>
     internal static string DescribeUnsupportedSurface(
         Format format, bool processIsPerMonitorV2DpiAware, SharpGen.Runtime.Result? duplicateOutput1Failure,
-        string? duplicatedWith = null, bool pointerOnlyUpdate = false)
+        string? duplicatedWith = null)
     {
         var message = $"The desktop image is {format}; only B8G8R8A8_UNorm is supported.";
         if (duplicatedWith is not null)
             message += $" The duplication was made with {duplicatedWith}.";
-        if (pointerOnlyUpdate)
-            message += " The surface came with a pointer-only update (no screen change), which Windows may not convert.";
+
         if (duplicateOutput1Failure is { } failure)
             message += $" Asking Windows for a B8G8R8A8_UNorm picture (IDXGIOutput5.DuplicateOutput1) failed with 0x{failure.Code:X8}.";
         if (!processIsPerMonitorV2DpiAware)
@@ -250,21 +276,39 @@ public sealed class DxgiScreenCapture : IScreenCapture
 
         /// <summary>The acquired surface is the image to use: copy it into our own texture, then make the frame.</summary>
         CopyAcquiredThenFrame,
+
+        /// <summary>A pointer-only update, no image yet, and its surface is not BGRA8: do not trust it, keep waiting for a real update.</summary>
+        WaitForRealUpdate,
+
+        /// <summary>A real screen update whose surface is still not BGRA8: unsupported, throw.</summary>
+        RejectSurface,
     }
 
     /// <summary>
-    /// What to do with an acquired frame, from its two timestamps (0 means "did not change") and
-    /// whether this duplication has delivered a desktop image yet. A pointer-only update with no
-    /// image yet copies the acquired surface (it still holds the current screen) rather than
-    /// waiting for a screen change that, on a still slide, never comes.
+    /// What to do with an acquired frame, from its two timestamps (0 means "did not change"),
+    /// whether this duplication has delivered a desktop image yet, and the acquired surface's format
+    /// (<c>null</c>: none handed back).
+    /// A real update's surface must be BGRA8 or it is rejected. A pointer-only update's surface is not
+    /// trusted: Windows converts to the requested format for real updates but may hand the raw
+    /// (FP16) surface back with a pointer-only one. With no image yet it is used only if it happens to
+    /// be BGRA8, otherwise we wait for a real update; with an image already, it is ignored.
     /// </summary>
-    internal static FrameDecision DecideFrame(long lastPresentTime, long lastMouseUpdateTime, bool haveDesktop)
+    internal static FrameDecision DecideFrame(long lastPresentTime, long lastMouseUpdateTime, bool haveDesktop, Format? surfaceFormat)
     {
         if (lastPresentTime != 0)
-            return FrameDecision.CopyAcquiredThenFrame;
+        {
+            if (surfaceFormat is not { } realFormat)
+                return FrameDecision.WaitForRealUpdate; // nothing to copy
+            return IsAcceptableSurfaceFormat(realFormat) ? FrameDecision.CopyAcquiredThenFrame : FrameDecision.RejectSurface;
+        }
+
         if (lastMouseUpdateTime == 0)
             return FrameDecision.NoFrame;
-        return haveDesktop ? FrameDecision.FromExistingImage : FrameDecision.CopyAcquiredThenFrame;
+        if (haveDesktop)
+            return FrameDecision.FromExistingImage;
+        return surfaceFormat is { } pointerFormat && IsAcceptableSurfaceFormat(pointerFormat)
+            ? FrameDecision.CopyAcquiredThenFrame
+            : FrameDecision.WaitForRealUpdate;
     }
 
     /// <summary>
@@ -371,6 +415,9 @@ public sealed class DxgiScreenCapture : IScreenCapture
     // fall back to DuplicateOutput, and CopyDesktop then rejects whatever non-BGRA8 surface results.
     private IDXGIOutputDuplication DuplicatePrimaryOutput()
     {
+        _duplicationStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        _acquireCount = 0;
+        FirstRealUpdateAfter = null;
         using var output = FindPrimaryOutput(_adapter)
             ?? throw new InvalidOperationException("The primary display is not attached to the adapter this capture was created on.");
 
@@ -397,6 +444,12 @@ public sealed class DxgiScreenCapture : IScreenCapture
             : "IDXGIOutput1.DuplicateOutput (after DuplicateOutput1 failed)";
         using var output1 = output.QueryInterface<IDXGIOutput1>();
         return output1.DuplicateOutput(Device);
+    }
+
+    private void TraceAcquire(string what)
+    {
+        if (Trace is { } trace && _acquireCount <= TracedAcquires)
+            trace($"acquire #{_acquireCount} +{System.Diagnostics.Stopwatch.GetElapsedTime(_duplicationStartedAt).TotalMilliseconds:F0} ms via {_duplicatedWith}: {what}");
     }
 
     private void DropDuplication()
@@ -448,13 +501,9 @@ public sealed class DxgiScreenCapture : IScreenCapture
         }
     }
 
-    private void CopyDesktop(IDXGIResource resource, bool pointerOnlyUpdate)
+    private void CopyDesktop(ID3D11Texture2D source)
     {
-        using var source = resource.QueryInterface<ID3D11Texture2D>();
         var description = source.Description;
-        if (!IsAcceptableSurfaceFormat(description.Format))
-            throw new NotSupportedException(DescribeUnsupportedSurface(
-                description.Format, DpiAwareness.IsPerMonitorV2(), _duplicateOutput1Failure, _duplicatedWith, pointerOnlyUpdate));
 
         if (_desktop is null || _width != description.Width || _height != description.Height)
         {

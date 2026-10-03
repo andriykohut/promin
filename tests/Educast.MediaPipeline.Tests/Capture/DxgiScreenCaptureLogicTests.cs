@@ -94,31 +94,67 @@ public class DxgiScreenCaptureLogicTests
         Assert.Equal(4, (int)PointerShapeType.MaskedColor);
     }
 
-    // DecideFrame(lastPresentTime, lastMouseUpdateTime, haveDesktop)
+    // DecideFrame(lastPresentTime, lastMouseUpdateTime, haveDesktop, surfaceFormat)
+    private const Format Bgra = Format.B8G8R8A8_UNorm;
+    private const Format Fp16 = Format.R16G16B16A16_Float;
+
     [Theory]
-    [InlineData(0L, 0L, false)]
-    [InlineData(0L, 0L, true)]
-    public void Decide_NothingChanged_IsNoFrame(long present, long mouse, bool haveDesktop) =>
-        Assert.Equal(DxgiScreenCapture.FrameDecision.NoFrame, DxgiScreenCapture.DecideFrame(present, mouse, haveDesktop));
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(false, Bgra)]
+    [InlineData(true, Fp16)]
+    public void Decide_NothingChanged_IsNoFrame(bool haveDesktop, Format? format) =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.NoFrame, DxgiScreenCapture.DecideFrame(0, 0, haveDesktop, format));
 
     [Theory]
     [InlineData(5L, 0L, false)]
     [InlineData(5L, 0L, true)]
     [InlineData(5L, 7L, false)]
     [InlineData(5L, 7L, true)]
-    public void Decide_ScreenChanged_CopiesTheAcquiredSurface(long present, long mouse, bool haveDesktop) =>
-        Assert.Equal(DxgiScreenCapture.FrameDecision.CopyAcquiredThenFrame, DxgiScreenCapture.DecideFrame(present, mouse, haveDesktop));
+    public void Decide_RealUpdate_WithBgra8_CopiesTheAcquiredSurface(long present, long mouse, bool haveDesktop) =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.CopyAcquiredThenFrame, DxgiScreenCapture.DecideFrame(present, mouse, haveDesktop, Bgra));
+
+    // The only way NotSupportedException is raised: a REAL update whose surface is still not BGRA8.
+    [Theory]
+    [InlineData(5L, 0L, false)]
+    [InlineData(5L, 7L, true)]
+    public void Decide_RealUpdate_WithAnotherFormat_IsRejected(long present, long mouse, bool haveDesktop)
+    {
+        Assert.Equal(DxgiScreenCapture.FrameDecision.RejectSurface, DxgiScreenCapture.DecideFrame(present, mouse, haveDesktop, Fp16));
+        Assert.Equal(DxgiScreenCapture.FrameDecision.RejectSurface, DxgiScreenCapture.DecideFrame(present, mouse, haveDesktop, Format.R8G8B8A8_UNorm));
+    }
 
     [Fact]
-    public void Decide_PointerOnly_WithAnImage_RedrawsTheExistingImage() =>
-        Assert.Equal(DxgiScreenCapture.FrameDecision.FromExistingImage, DxgiScreenCapture.DecideFrame(0, 7, haveDesktop: true));
+    public void Decide_RealUpdate_WithNoSurface_WaitsRatherThanThrows() =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.WaitForRealUpdate, DxgiScreenCapture.DecideFrame(5, 0, false, null));
 
-    // Regression: a pointer-only update on a fresh duplication (or after a rebuild) used to wait for a
-    // screen change. On a still slide none comes, so no frame was ever produced.
+    [Theory]
+    [InlineData(Bgra)]
+    [InlineData(Fp16)]
+    public void Decide_PointerOnly_WithAnImage_RedrawsTheExistingImageWhateverTheSurface(Format format) =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.FromExistingImage, DxgiScreenCapture.DecideFrame(0, 7, haveDesktop: true, format));
+
     [Fact]
-    public void Decide_PointerOnly_WithNoImageYet_CopiesTheAcquiredSurfaceInsteadOfWaiting() =>
-        Assert.Equal(DxgiScreenCapture.FrameDecision.CopyAcquiredThenFrame, DxgiScreenCapture.DecideFrame(0, 7, haveDesktop: false));
+    public void Decide_PointerOnly_WithAnImage_AndNoSurface_StillRedraws() =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.FromExistingImage, DxgiScreenCapture.DecideFrame(0, 7, haveDesktop: true, null));
 
+    // Regression (round 1, I2): a pointer-only update on a fresh duplication used to wait for a
+    // screen change, and on a still slide none comes. Its surface is used when it is BGRA8.
+    [Fact]
+    public void Decide_PointerOnly_NoImageYet_Bgra8_CopiesTheAcquiredSurface() =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.CopyAcquiredThenFrame, DxgiScreenCapture.DecideFrame(0, 7, haveDesktop: false, Bgra));
+
+    // Round 1, I4: a pointer-only update's surface is not trusted; Windows hands back the raw FP16 surface here.
+    // Neither throw nor copy: wait for a real update.
+    [Theory]
+    [InlineData(Fp16)]
+    [InlineData(Format.R8G8B8A8_UNorm)]
+    public void Decide_PointerOnly_NoImageYet_WrongFormat_WaitsForARealUpdate(Format format) =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.WaitForRealUpdate, DxgiScreenCapture.DecideFrame(0, 7, haveDesktop: false, format));
+
+    [Fact]
+    public void Decide_PointerOnly_NoImageYet_NoSurface_Waits() =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.WaitForRealUpdate, DxgiScreenCapture.DecideFrame(0, 7, haveDesktop: false, null));
     [Fact]
     public void RetryPause_InfiniteTimeout_IsTheCapNotForever() =>
         Assert.Equal(TimeSpan.FromMilliseconds(100), DxgiScreenCapture.RetryPauseFor(Timeout.InfiniteTimeSpan));
@@ -170,14 +206,13 @@ public class DxgiScreenCaptureLogicTests
         Assert.Contains("DuplicateOutput1", message);
         Assert.Contains(ResultCode.AccessDenied.Code.ToString("X8"), message);
     }
+
     [Fact]
-    public void UnsupportedSurface_SaysHowTheDuplicationWasMadeAndWhetherItWasPointerOnly()
+    public void UnsupportedSurface_SaysHowTheDuplicationWasMade()
     {
         var message = DxgiScreenCapture.DescribeUnsupportedSurface(
-            Format.R16G16B16A16_Float, true, null, "IDXGIOutput5.DuplicateOutput1", pointerOnlyUpdate: true);
+            Format.R16G16B16A16_Float, true, null, "IDXGIOutput5.DuplicateOutput1");
 
         Assert.Contains("IDXGIOutput5.DuplicateOutput1", message);
-        Assert.Contains("pointer-only", message);
-        Assert.DoesNotContain("pointer-only",
-            DxgiScreenCapture.DescribeUnsupportedSurface(Format.R16G16B16A16_Float, true, null, "x", pointerOnlyUpdate: false));
-    }}
+    }
+}
