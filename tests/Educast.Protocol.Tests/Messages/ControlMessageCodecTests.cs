@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using Educast.Protocol.Messages;
+using Educast.Protocol.Pairing;
 
 namespace Educast.Protocol.Tests.Messages;
 
@@ -20,6 +21,65 @@ public class ControlMessageCodecTests
         Assert.Equal(encoded.Length, consumed);
         var result = Assert.IsType<PairChallengeRequest>(message);
         Assert.Equal(original.MasterNonce, result.MasterNonce);
+    }
+
+    /// <summary>
+    /// The two J-PAKE messages survive the wire with every byte array intact, including the
+    /// jagged proofs. Fails a message that was added without its type discriminator, and a field
+    /// the serializer drops or reorders.
+    /// </summary>
+    [Fact]
+    public void EncodeThenDecode_RoundTripsTheJPakeMessages()
+    {
+        var round1 = new PairJPakeRound1(
+            Gx1: [1, 2, 3],
+            Gx2: [4, 5, 6, 7],
+            ProofX1: [[8, 9], [10, 11, 12]],
+            ProofX2: [[13], [14, 15, 16, 17, 18]]);
+        var decoded1 = Assert.IsType<PairJPakeRound1>(RoundTrip(round1));
+        Assert.Equal(round1.Gx1, decoded1.Gx1);
+        Assert.Equal(round1.Gx2, decoded1.Gx2);
+        AssertJagged(round1.ProofX1, decoded1.ProofX1);
+        AssertJagged(round1.ProofX2, decoded1.ProofX2);
+
+        var round2 = new PairJPakeRound2(A: [21, 22, 23], ProofX2s: [[24, 25], [26, 27, 28]]);
+        var decoded2 = Assert.IsType<PairJPakeRound2>(RoundTrip(round2));
+        Assert.Equal(round2.A, decoded2.A);
+        AssertJagged(round2.ProofX2s, decoded2.ProofX2s);
+
+        static void AssertJagged(byte[][] expected, byte[][] actual)
+        {
+            Assert.Equal(expected.Length, actual.Length);
+            for (var i = 0; i < expected.Length; i++)
+            {
+                Assert.Equal(expected[i], actual[i]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Round 1 is the largest message pairing sends. The control channel refuses frames over
+    /// <see cref="ControlMessageCodec.MaxFrameSize"/>, so a real one must fit with room to spare.
+    /// </summary>
+    [Fact]
+    public void RealJPakeRound1_FitsInOneControlFrame()
+    {
+        var round1 = new JPakeExchange(JPakeRole.Master, "482913"u8).CreateRound1();
+
+        var encoded = ControlMessageCodec.Encode(round1);
+
+        Assert.True(encoded.Length < ControlMessageCodec.MaxFrameSize,
+            $"round 1 encodes to {encoded.Length} bytes; the frame limit is {ControlMessageCodec.MaxFrameSize}.");
+        Assert.IsType<PairJPakeRound1>(RoundTrip(round1));
+    }
+
+    private static ControlMessage RoundTrip(ControlMessage message)
+    {
+        var encoded = ControlMessageCodec.Encode(message);
+        Assert.True(ControlMessageCodec.TryDecode(
+            new ReadOnlySequence<byte>(encoded), out var decoded, out var consumed));
+        Assert.Equal(encoded.Length, consumed);
+        return decoded!;
     }
 
     /// <summary>

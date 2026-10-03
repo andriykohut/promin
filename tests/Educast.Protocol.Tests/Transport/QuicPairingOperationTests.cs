@@ -129,6 +129,9 @@ public class QuicPairingOperationTests
         var rogue = await harness.ConnectRawAsync(deadline.Token, rogueCertificate, pairing: true);
         await using var stream = await rogue.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, deadline.Token);
 
+        // The rogue does not hold the code: it runs J-PAKE with a guess.
+        await RawPairing.MasterJPakeAsync(stream, WrongKey, deadline.Token);
+
         byte[] chosenNonce = [.. Enumerable.Repeat((byte)0xAB, PairingCrypto.NonceLength)];
         await RawPairing.WriteAsync(stream, new PairChallengeRequest(chosenNonce), deadline.Token);
 
@@ -204,8 +207,7 @@ public class QuicPairingOperationTests
         using var firstCertificate = SelfSignedCertificateFactory.Create("master-first");
         var first = await harness.ConnectRawAsync(deadline.Token, firstCertificate, pairing: true);
         await using var stream = await first.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, deadline.Token);
-        await RawPairing.WriteAsync(stream, new PairChallengeRequest(PairingCrypto.CreateNonce()), deadline.Token);
-        Assert.IsType<PairChallengeResponse>(await RawPairing.ReadAsync(stream, deadline.Token));
+        await RawPairing.ChallengeAsync(stream, PresharedKey, deadline.Token);
 
         // The second is not, even though the window's operation is still running.
         using var secondCertificate = SelfSignedCertificateFactory.Create("master-second");
@@ -365,10 +367,9 @@ public class QuicPairingOperationTests
         using var unproven = SelfSignedCertificateFactory.Create("master-unproven");
         var connection = await harness.ConnectRawAsync(deadline.Token, unproven, pairing: true);
         await using var control = await connection.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, deadline.Token);
-        await RawPairing.WriteAsync(control, new PairChallengeRequest(PairingCrypto.CreateNonce()), deadline.Token);
 
         // It is in: the agent answered its challenge.
-        Assert.IsType<PairChallengeResponse>(await RawPairing.ReadAsync(control, deadline.Token));
+        await RawPairing.ChallengeAsync(control, PresharedKey, deadline.Token);
 
         using var attempt = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
         attempt.CancelAfter(TimeSpan.FromSeconds(1.5));
@@ -647,19 +648,20 @@ public class QuicPairingOperationTests
             agentCertificate,
             async (connection, stream, ct) =>
             {
+                var sessionKey = await RawPairing.AgentJPakeAsync(stream, PresharedKey, ct);
                 var challenge = Assert.IsType<PairChallengeRequest>(await RawPairing.ReadAsync(stream, ct));
                 var binding = CertificateBinding.Compute(connection.RemoteCertificate!, agentCertificate);
                 var agentNonce = PairingCrypto.CreateNonce();
                 await RawPairing.WriteAsync(
                     stream,
                     new PairChallengeResponse(
-                        PairingCrypto.ComputeAgentProof(PresharedKey, challenge.MasterNonce, agentNonce, binding),
+                        PairingCrypto.ComputeAgentProof(sessionKey, challenge.MasterNonce, agentNonce, binding),
                         agentNonce),
                     ct);
 
                 var ack = Assert.IsType<PairAck>(await RawPairing.ReadAsync(stream, ct));
                 masterProofWasValid = PairingCrypto.VerifyMasterProof(
-                    PresharedKey, challenge.MasterNonce, agentNonce, binding, ack.MasterProof);
+                    sessionKey, challenge.MasterNonce, agentNonce, binding, ack.MasterProof);
 
                 // ...and here its deadline fires, before it has confirmed anything.
                 switch (givingUp)
@@ -706,12 +708,11 @@ public class QuicPairingOperationTests
         var before = QuicLoopbackHarness.PersistedBytes(harness.AgentTrust);
 
         var agentPairing = harness.Listener.AcceptPairingAsync(
-            PresharedKey, deadline.Token, handshakeTimeout: TimeSpan.FromSeconds(1));
+            PresharedKey, deadline.Token, handshakeTimeout: TimeSpan.FromSeconds(2));
 
         var master = await harness.ConnectRawAsync(deadline.Token, pairing: true);
         await using var stream = await master.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, deadline.Token);
-        await RawPairing.WriteAsync(stream, new PairChallengeRequest(PairingCrypto.CreateNonce()), deadline.Token);
-        Assert.IsType<PairChallengeResponse>(await RawPairing.ReadAsync(stream, deadline.Token));
+        await RawPairing.ChallengeAsync(stream, PresharedKey, deadline.Token);
 
         // The master now says nothing. What it reads next is whatever the agent does on timing out.
         var whatTheMasterSees = await Record.ExceptionAsync(() => RawPairing.ReadAsync(stream, deadline.Token));
@@ -747,14 +748,12 @@ public class QuicPairingOperationTests
         var master = await harness.ConnectRawAsync(deadline.Token, pairing: true);
         await using var stream = await master.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, deadline.Token);
 
-        var masterNonce = PairingCrypto.CreateNonce();
-        await RawPairing.WriteAsync(stream, new PairChallengeRequest(masterNonce), deadline.Token);
-        var answer = Assert.IsType<PairChallengeResponse>(await RawPairing.ReadAsync(stream, deadline.Token));
+        var (sessionKey, masterNonce, answer) = await RawPairing.ChallengeAsync(stream, PresharedKey, deadline.Token);
         await RawPairing.WriteAsync(
             stream,
             new PairAck(
                 Success: true,
-                PairingCrypto.ComputeMasterProof(PresharedKey, masterNonce, answer.AgentNonce, harness.Binding)),
+                PairingCrypto.ComputeMasterProof(sessionKey, masterNonce, answer.AgentNonce, harness.Binding)),
             deadline.Token);
         Assert.IsType<PairConfirm>(await RawPairing.ReadAsync(stream, deadline.Token));
 
@@ -788,16 +787,15 @@ public class QuicPairingOperationTests
         await using (var stream = await forgetful.OpenOutboundStreamAsync(
                          QuicStreamType.Bidirectional, deadline.Token))
         {
-            var masterNonce = PairingCrypto.CreateNonce();
-            await RawPairing.WriteAsync(stream, new PairChallengeRequest(masterNonce), deadline.Token);
-            var answer = Assert.IsType<PairChallengeResponse>(await RawPairing.ReadAsync(stream, deadline.Token));
+            var (sessionKey, masterNonce, answer) =
+                await RawPairing.ChallengeAsync(stream, PresharedKey, deadline.Token);
             Assert.True(PairingCrypto.VerifyAgentProof(
-                PresharedKey, masterNonce, answer.AgentNonce, harness.Binding, answer.AgentProof));
+                sessionKey, masterNonce, answer.AgentNonce, harness.Binding, answer.AgentProof));
             await RawPairing.WriteAsync(
                 stream,
                 new PairAck(
                     Success: true,
-                    PairingCrypto.ComputeMasterProof(PresharedKey, masterNonce, answer.AgentNonce, harness.Binding)),
+                    PairingCrypto.ComputeMasterProof(sessionKey, masterNonce, answer.AgentNonce, harness.Binding)),
                 deadline.Token);
             Assert.IsType<PairConfirm>(await RawPairing.ReadAsync(stream, deadline.Token));
         }

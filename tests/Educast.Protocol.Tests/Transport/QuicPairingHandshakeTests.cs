@@ -111,19 +111,22 @@ public class QuicPairingHandshakeTests
 
         await using var rawStream = await rawMaster.OpenOutboundStreamAsync(
             QuicStreamType.Bidirectional, deadline.Token);
-        await RawPairing.WriteAsync(rawStream, new PairChallengeRequest(PairingCrypto.CreateNonce()), deadline.Token);
+        var rawJPake = await RawPairing.StartMasterJPakeAsync(rawStream, PresharedKey, deadline.Token);
         await using var agentControl = await agent.AcceptControlChannelAsync(deadline.Token);
 
-        // The master answers nothing further, so the agent's handshake runs out of time.
+        // The master answers nothing once the J-PAKE rounds and its challenge are done, so the
+        // agent's handshake runs out of time. The budget has to cover the rounds' arithmetic.
         using var callers = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
-        callers.CancelAfter(callersTokenFires ? TimeSpan.FromMilliseconds(500) : TimeSpan.FromSeconds(20));
+        callers.CancelAfter(callersTokenFires ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(20));
         var agentTask = QuicPairingHandshake.RunAsAgentAsync(
             agentControl,
             PresharedKey,
             harness.Binding,
             callers.Token,
-            callersTokenFires ? TimeSpan.FromSeconds(20) : TimeSpan.FromMilliseconds(500));
+            callersTokenFires ? TimeSpan.FromSeconds(20) : TimeSpan.FromSeconds(2));
 
+        await rawJPake.FinishAsync(deadline.Token);
+        await RawPairing.WriteAsync(rawStream, new PairChallengeRequest(PairingCrypto.CreateNonce()), deadline.Token);
         Assert.IsType<PairChallengeResponse>(await RawPairing.ReadAsync(rawStream, deadline.Token));
 
         if (callersTokenFires)
@@ -159,19 +162,17 @@ public class QuicPairingHandshakeTests
 
         await using var rawStream = await rawMaster.OpenOutboundStreamAsync(
             QuicStreamType.Bidirectional, deadline.Token);
-        await rawStream.WriteAsync(
-            ControlMessageCodec.Encode(new PairChallengeRequest(PairingCrypto.CreateNonce())), deadline.Token);
+        var rawJPake = await RawPairing.StartMasterJPakeAsync(rawStream, PresharedKey, deadline.Token);
 
         await using var agentControl = await agent.AcceptControlChannelAsync(deadline.Token);
         var agentTask = harness.HandshakeAsAgentAsync(agentControl, PresharedKey, deadline.Token);
 
-        // Read the agent's answer off the wire, then claim success with a proof that is not one.
-        var answer = new byte[4096];
-        var read = await rawStream.ReadAsync(answer, deadline.Token);
-        Assert.True(ControlMessageCodec.TryDecode(
-            new ReadOnlySequence<byte>(answer.AsMemory(0, read)), out var decoded, out _));
-        Assert.IsType<PairChallengeResponse>(decoded);
+        // Take the agent's answer to a challenge, then claim success with a proof that is not one.
+        await rawJPake.FinishAsync(deadline.Token);
+        await RawPairing.WriteAsync(rawStream, new PairChallengeRequest(PairingCrypto.CreateNonce()), deadline.Token);
+        Assert.IsType<PairChallengeResponse>(await RawPairing.ReadAsync(rawStream, deadline.Token));
 
+        var answer = new byte[4096];
         await rawStream.WriteAsync(
             ControlMessageCodec.Encode(new PairAck(Success: true, new byte[PairingCrypto.ProofLength])),
             deadline.Token);

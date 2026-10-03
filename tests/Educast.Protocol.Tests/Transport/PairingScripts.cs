@@ -5,6 +5,7 @@ using System.Net.Quic;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using Educast.Protocol.Messages;
+using Educast.Protocol.Pairing;
 using Educast.Protocol.Transport;
 
 namespace Educast.Protocol.Tests.Transport;
@@ -31,6 +32,70 @@ internal static class RawPairing
 
         Assert.True(ControlMessageCodec.TryDecode(new ReadOnlySequence<byte>(frame), out var message, out _));
         return message!;
+    }
+
+    /// <summary>
+    /// The master's half of the J-PAKE rounds, over a raw stream, in one go. Returns the session
+    /// key this side ends up with, which is the agent's too if and only if the codes match. Use
+    /// <see cref="StartMasterJPakeAsync"/> instead when the agent's end is not running yet: the
+    /// first write is also what makes the stream visible to the agent.
+    /// </summary>
+    public static async Task<byte[]> MasterJPakeAsync(QuicStream stream, byte[] code, CancellationToken ct) =>
+        await (await StartMasterJPakeAsync(stream, code, ct)).FinishAsync(ct);
+
+    /// <summary>Sends round 1 and returns the rest of the exchange, to be finished once the agent runs.</summary>
+    public static async Task<RawJPakeMaster> StartMasterJPakeAsync(QuicStream stream, byte[] code, CancellationToken ct)
+    {
+        var exchange = new JPakeExchange(JPakeRole.Master, code);
+        await WriteAsync(stream, exchange.CreateRound1(), ct);
+        return new RawJPakeMaster(stream, exchange);
+    }
+
+    /// <summary>The agent's half: take the master's round 1, send round 1, take round 2, send round 2.</summary>
+    public static async Task<byte[]> AgentJPakeAsync(QuicStream stream, byte[] code, CancellationToken ct)
+    {
+        var exchange = new JPakeExchange(JPakeRole.Agent, code);
+
+        // BouncyCastle wants an agent's own round created before the peer's is validated.
+        var peerRound1 = Assert.IsType<PairJPakeRound1>(await ReadAsync(stream, ct));
+        var round1 = exchange.CreateRound1();
+        Assert.True(exchange.TryAcceptRound1(peerRound1));
+        await WriteAsync(stream, round1, ct);
+
+        var peerRound2 = Assert.IsType<PairJPakeRound2>(await ReadAsync(stream, ct));
+        var round2 = exchange.CreateRound2();
+        Assert.True(exchange.TryAcceptRound2(peerRound2));
+        await WriteAsync(stream, round2, ct);
+
+        return exchange.DeriveSessionKey();
+    }
+
+    /// <summary>
+    /// What a stranger who has been admitted to pair does: J-PAKE with <paramref name="code"/>,
+    /// then a challenge of its own, then reading the agent's answer. The agent's answer is the
+    /// proof that it was admitted. Returns what the stranger holds afterwards.
+    /// </summary>
+    public static async Task<(byte[] SessionKey, byte[] MasterNonce, PairChallengeResponse Answer)> ChallengeAsync(
+        QuicStream stream, byte[] code, CancellationToken ct)
+    {
+        var sessionKey = await MasterJPakeAsync(stream, code, ct);
+        var masterNonce = PairingCrypto.CreateNonce();
+        await WriteAsync(stream, new PairChallengeRequest(masterNonce), ct);
+        var answer = Assert.IsType<PairChallengeResponse>(await ReadAsync(stream, ct));
+        return (sessionKey, masterNonce, answer);
+    }
+}
+
+/// <summary>A master's J-PAKE exchange that has sent round 1 and is waiting for the agent to start.</summary>
+internal sealed class RawJPakeMaster(QuicStream stream, JPakeExchange exchange)
+{
+    /// <summary>Takes the agent's round 1, sends round 2, takes the agent's round 2; returns the session key.</summary>
+    public async Task<byte[]> FinishAsync(CancellationToken ct)
+    {
+        Assert.True(exchange.TryAcceptRound1(Assert.IsType<PairJPakeRound1>(await RawPairing.ReadAsync(stream, ct))));
+        await RawPairing.WriteAsync(stream, exchange.CreateRound2(), ct);
+        Assert.True(exchange.TryAcceptRound2(Assert.IsType<PairJPakeRound2>(await RawPairing.ReadAsync(stream, ct))));
+        return exchange.DeriveSessionKey();
     }
 }
 

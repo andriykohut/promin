@@ -3,6 +3,8 @@ using System.Text.Json.Serialization;
 namespace Educast.Protocol.Messages;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
+[JsonDerivedType(typeof(PairJPakeRound1), "pairJPakeRound1")]
+[JsonDerivedType(typeof(PairJPakeRound2), "pairJPakeRound2")]
 [JsonDerivedType(typeof(PairChallengeRequest), "pairChallengeRequest")]
 [JsonDerivedType(typeof(PairChallengeResponse), "pairChallengeResponse")]
 [JsonDerivedType(typeof(PairAck), "pairAck")]
@@ -13,7 +15,24 @@ namespace Educast.Protocol.Messages;
 public abstract record ControlMessage;
 
 /// <summary>
-/// First message of the mutual pairing handshake: the master's challenge nonce.
+/// J-PAKE round 1 (RFC 8236), sent by each side: two public group elements and a Schnorr
+/// proof of knowledge for each exponent (each proof is two big-endian unsigned integers).
+/// </summary>
+/// <remarks>
+/// Every field is a <c>byte[]</c>/<c>byte[][]</c>: reference equality, so compare element-wise.
+/// This is the largest message pairing sends (about 3 KB after base64) and must stay well
+/// under <c>ControlMessageCodec.MaxFrameSize</c>.
+/// </remarks>
+public sealed record PairJPakeRound1(byte[] Gx1, byte[] Gx2, byte[][] ProofX1, byte[][] ProofX2) : ControlMessage;
+
+/// <summary>
+/// J-PAKE round 2 (RFC 8236), sent by each side: the group element <c>A</c> that carries the
+/// room code, and a Schnorr proof of knowledge for the exponent behind it.
+/// </summary>
+public sealed record PairJPakeRound2(byte[] A, byte[][] ProofX2s) : ControlMessage;
+
+/// <summary>
+/// First message of the mutual pairing handshake after J-PAKE: the master's challenge nonce.
 /// </summary>
 /// <remarks>
 /// Note: <c>MasterNonce</c> is a <c>byte[]</c>, which has reference equality semantics.
