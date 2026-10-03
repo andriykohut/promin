@@ -56,33 +56,34 @@ public sealed class DxgiScreenCapture : IScreenCapture
     /// <summary>Starts duplicating the primary display, the output whose desktop rectangle starts at (0, 0).</summary>
     public DxgiScreenCapture()
     {
-        using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
-        _adapter = FindAdapterOfPrimaryOutput(factory)
-            ?? throw new InvalidOperationException("No display output is attached at the desktop origin (0, 0); there is no primary display to capture.");
-
-        // The adapter must be the one that drives the primary display, or DuplicateOutput fails.
-        // VideoSupport and multithread protection are for the H.264 encoder that will share this device.
-        var hr = D3D11.D3D11CreateDevice(
-            _adapter,
-            DriverType.Unknown,
-            DeviceCreationFlags.BgraSupport | DeviceCreationFlags.VideoSupport,
-            [FeatureLevel.Level_11_0],
-            out var device,
-            out _,
-            out var context);
-        hr.CheckError();
-        Device = device!;
-        _context = context!;
-
-        using (var multithread = Device.QueryInterface<ID3D11Multithread>())
-            multithread.SetMultithreadProtected(true);
-
         try
         {
+            using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+            _adapter = FindAdapterOfPrimaryOutput(factory)
+                ?? throw new InvalidOperationException("No display output is attached at the desktop origin (0, 0); there is no primary display to capture.");
+
+            // The adapter must be the one that drives the primary display, or DuplicateOutput fails.
+            // VideoSupport and multithread protection are for the H.264 encoder that will share this device.
+            var hr = D3D11.D3D11CreateDevice(
+                _adapter,
+                DriverType.Unknown,
+                DeviceCreationFlags.BgraSupport | DeviceCreationFlags.VideoSupport,
+                [FeatureLevel.Level_11_0],
+                out var device,
+                out _,
+                out var context);
+            Device = device!;
+            _context = context!;
+            hr.CheckError();
+
+            using (var multithread = Device.QueryInterface<ID3D11Multithread>())
+                multithread.SetMultithreadProtected(true);
+
             _duplication = DuplicatePrimaryOutput();
         }
         catch
         {
+            // Whatever was created before the failure is released; Dispose tolerates the rest being null.
             Dispose();
             throw;
         }
@@ -132,7 +133,7 @@ public sealed class DxgiScreenCapture : IScreenCapture
     {
         if (_duplication is null && !TryRecreateDuplication())
         {
-            Thread.Sleep(timeout < RetryPause ? timeout : RetryPause);
+            Thread.Sleep(RetryPauseFor(timeout));
             return Step.NoFrame;
         }
 
@@ -158,28 +159,32 @@ public sealed class DxgiScreenCapture : IScreenCapture
 
         try
         {
-            var desktopChanged = info.LastPresentTime != 0;
-            var pointerChanged = info.LastMouseUpdateTime != 0;
-            if (!desktopChanged && !pointerChanged)
+            var decision = DecideFrame(info.LastPresentTime, info.LastMouseUpdateTime, _haveDesktop);
+            if (decision == FrameDecision.NoFrame)
                 return Step.NoFrame;
 
             // The shape must be read before ReleaseFrame. A new shape is only reported when the
-            // pointer's appearance changes; otherwise the last one stays in force.
-            if (info.PointerShapeBufferSize > 0)
-                _shape = ReadPointerShape(info.PointerShapeBufferSize);
-            if (pointerChanged)
+            // pointer's appearance changes; otherwise the last one stays in force (and an
+            // unrecognised type must not wipe a good one).
+            if (info.PointerShapeBufferSize > 0 && ReadPointerShape(info.PointerShapeBufferSize) is { } shape)
+                _shape = shape;
+            if (info.LastMouseUpdateTime != 0)
             {
                 _pointerVisible = info.PointerPosition.Visible;
                 _pointerX = info.PointerPosition.Position.X;
                 _pointerY = info.PointerPosition.Position.Y;
             }
 
-            if (desktopChanged)
+            if (decision == FrameDecision.CopyAcquiredThenFrame)
             {
-                CopyDesktop(resource!);
+                // Even on a pointer-only update the acquired resource is the current desktop surface.
+                // Defensively, if the driver hands none back and we have no image, keep waiting.
+                if (resource is null)
+                    return Step.NeedDesktop;
+                CopyDesktop(resource);
                 _haveDesktop = true;
             }
-            return _haveDesktop ? Step.Frame : Step.NeedDesktop;
+            return Step.Frame;
         }
         finally
         {
@@ -204,6 +209,41 @@ public sealed class DxgiScreenCapture : IScreenCapture
         _adapter?.Dispose();
     }
 
+    internal enum FrameDecision
+    {
+        /// <summary>Neither the screen nor the pointer changed.</summary>
+        NoFrame,
+
+        /// <summary>Only the pointer moved and we hold the desktop image: redraw it with the pointer.</summary>
+        FromExistingImage,
+
+        /// <summary>The acquired surface is the image to use: copy it into our own texture, then make the frame.</summary>
+        CopyAcquiredThenFrame,
+    }
+
+    /// <summary>
+    /// What to do with an acquired frame, from its two timestamps (0 means "did not change") and
+    /// whether this duplication has delivered a desktop image yet. A pointer-only update with no
+    /// image yet copies the acquired surface (it still holds the current screen) rather than
+    /// waiting for a screen change that, on a still slide, never comes.
+    /// </summary>
+    internal static FrameDecision DecideFrame(long lastPresentTime, long lastMouseUpdateTime, bool haveDesktop)
+    {
+        if (lastPresentTime != 0)
+            return FrameDecision.CopyAcquiredThenFrame;
+        if (lastMouseUpdateTime == 0)
+            return FrameDecision.NoFrame;
+        return haveDesktop ? FrameDecision.FromExistingImage : FrameDecision.CopyAcquiredThenFrame;
+    }
+
+    /// <summary>
+    /// How long to sleep when there is no duplication to acquire from: the caller's timeout, capped
+    /// at <see cref="RetryPause"/>. An infinite timeout means "as long as it takes", so it gets the
+    /// cap too (it is -1 ms, which must not be compared as if it were short).
+    /// </summary>
+    internal static TimeSpan RetryPauseFor(TimeSpan timeout) =>
+        timeout == Timeout.InfiniteTimeSpan || timeout > RetryPause ? RetryPause : timeout;
+
     internal enum AcquireOutcome
     {
         Frame,
@@ -225,9 +265,9 @@ public sealed class DxgiScreenCapture : IScreenCapture
 
     /// <summary>
     /// Where the part of a pointer that lies on the display goes: the rectangle on the display
-    /// (<c>X</c>, <c>Y</c>, <c>Width</c>, <c>Height</c>) and where that rectangle's top-left sits
-    /// relative to the shape's top-left (<c>ShapeX</c>, <c>ShapeY</c>, always &lt;= 0 when expressed
-    /// as the blend offset). Returns <c>false</c> when the pointer is wholly off the display.
+    /// (<c>X</c>, <c>Y</c>, <c>Width</c>, <c>Height</c>), clipped to the display. The caller derives
+    /// the blend offset as (pointer position - region origin). Returns <c>false</c> when the pointer
+    /// is wholly off the display.
     /// </summary>
     internal static bool TryClipPointer(
         int pointerX, int pointerY, int shapeWidth, int shapeHeight, int displayWidth, int displayHeight,
@@ -247,17 +287,14 @@ public sealed class DxgiScreenCapture : IScreenCapture
     }
 
     /// <summary>Turns what Desktop Duplication reports about a pointer into a <see cref="PointerShape"/>.</summary>
-    internal static PointerShape? ToPointerShape(uint type, int width, int height, int pitch, byte[] buffer)
-    {
-        // DXGI_OUTDUPL_POINTER_SHAPE_TYPE_{MONOCHROME,COLOR,MASKED_COLOR}
-        return type switch
+    internal static PointerShape? ToPointerShape(PointerShapeType type, int width, int height, int pitch, byte[] buffer) =>
+        type switch
         {
-            1 => new PointerShape(PointerShapeKind.Monochrome, width, height / 2, pitch, buffer), // DXGI reports twice the height
-            2 => new PointerShape(PointerShapeKind.Color, width, height, pitch, buffer),
-            4 => new PointerShape(PointerShapeKind.MaskedColor, width, height, pitch, buffer),
+            PointerShapeType.Monochrome => new PointerShape(PointerShapeKind.Monochrome, width, height / 2, pitch, buffer), // DXGI reports twice the height
+            PointerShapeType.Color => new PointerShape(PointerShapeKind.Color, width, height, pitch, buffer),
+            PointerShapeType.MaskedColor => new PointerShape(PointerShapeKind.MaskedColor, width, height, pitch, buffer),
             _ => null,
         };
-    }
 
     private static uint ToMilliseconds(TimeSpan timeout)
     {
@@ -345,7 +382,7 @@ public sealed class DxgiScreenCapture : IScreenCapture
         try
         {
             _duplication!.GetFramePointerShape(bufferSize, pin.AddrOfPinnedObject(), out _, out var shapeInfo).CheckError();
-            return ToPointerShape((uint)shapeInfo.Type, (int)shapeInfo.Width, (int)shapeInfo.Height, (int)shapeInfo.Pitch, buffer);
+            return ToPointerShape((PointerShapeType)shapeInfo.Type, (int)shapeInfo.Width, (int)shapeInfo.Height, (int)shapeInfo.Pitch, buffer);
         }
         finally
         {

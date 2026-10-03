@@ -57,7 +57,7 @@ public class DxgiScreenCaptureLogicTests
     {
         // DXGI reports a 32x32 monochrome pointer as 32 wide and 64 high (AND mask + XOR mask).
         var buffer = new byte[4 * 64];
-        var shape = DxgiScreenCapture.ToPointerShape(type: 1, width: 32, height: 64, pitch: 4, buffer);
+        var shape = DxgiScreenCapture.ToPointerShape(PointerShapeType.Monochrome, width: 32, height: 64, pitch: 4, buffer);
 
         Assert.NotNull(shape);
         Assert.Equal(PointerShapeKind.Monochrome, shape.Kind);
@@ -68,9 +68,9 @@ public class DxgiScreenCaptureLogicTests
     }
 
     [Theory]
-    [InlineData(2u, PointerShapeKind.Color)]
-    [InlineData(4u, PointerShapeKind.MaskedColor)]
-    public void ToPointerShape_ColourKinds_KeepTheReportedSize(uint type, PointerShapeKind kind)
+    [InlineData(PointerShapeType.Color, PointerShapeKind.Color)]
+    [InlineData(PointerShapeType.MaskedColor, PointerShapeKind.MaskedColor)]
+    public void ToPointerShape_ColourKinds_KeepTheReportedSize(PointerShapeType type, PointerShapeKind kind)
     {
         var shape = DxgiScreenCapture.ToPointerShape(type, width: 32, height: 32, pitch: 128, new byte[128 * 32]);
 
@@ -82,5 +82,52 @@ public class DxgiScreenCaptureLogicTests
 
     [Fact]
     public void ToPointerShape_UnknownType_IsNull() =>
-        Assert.Null(DxgiScreenCapture.ToPointerShape(type: 3, width: 1, height: 1, pitch: 4, new byte[4]));
-}
+        Assert.Null(DxgiScreenCapture.ToPointerShape((PointerShapeType)3, width: 1, height: 1, pitch: 4, new byte[4]));
+
+    // The numbers Desktop Duplication reports (DXGI_OUTDUPL_POINTER_SHAPE_TYPE) are what the
+    // capture casts the raw field to; pin them so a binding change cannot silently remap shapes.
+    [Fact]
+    public void PointerShapeType_HasTheValuesDxgiReports()
+    {
+        Assert.Equal(1, (int)PointerShapeType.Monochrome);
+        Assert.Equal(2, (int)PointerShapeType.Color);
+        Assert.Equal(4, (int)PointerShapeType.MaskedColor);
+    }
+
+    // DecideFrame(lastPresentTime, lastMouseUpdateTime, haveDesktop)
+    [Theory]
+    [InlineData(0L, 0L, false)]
+    [InlineData(0L, 0L, true)]
+    public void Decide_NothingChanged_IsNoFrame(long present, long mouse, bool haveDesktop) =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.NoFrame, DxgiScreenCapture.DecideFrame(present, mouse, haveDesktop));
+
+    [Theory]
+    [InlineData(5L, 0L, false)]
+    [InlineData(5L, 0L, true)]
+    [InlineData(5L, 7L, false)]
+    [InlineData(5L, 7L, true)]
+    public void Decide_ScreenChanged_CopiesTheAcquiredSurface(long present, long mouse, bool haveDesktop) =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.CopyAcquiredThenFrame, DxgiScreenCapture.DecideFrame(present, mouse, haveDesktop));
+
+    [Fact]
+    public void Decide_PointerOnly_WithAnImage_RedrawsTheExistingImage() =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.FromExistingImage, DxgiScreenCapture.DecideFrame(0, 7, haveDesktop: true));
+
+    // Regression: a pointer-only update on a fresh duplication (or after a rebuild) used to wait for a
+    // screen change. On a still slide none comes, so no frame was ever produced.
+    [Fact]
+    public void Decide_PointerOnly_WithNoImageYet_CopiesTheAcquiredSurfaceInsteadOfWaiting() =>
+        Assert.Equal(DxgiScreenCapture.FrameDecision.CopyAcquiredThenFrame, DxgiScreenCapture.DecideFrame(0, 7, haveDesktop: false));
+
+    [Fact]
+    public void RetryPause_InfiniteTimeout_IsTheCapNotForever() =>
+        Assert.Equal(TimeSpan.FromMilliseconds(100), DxgiScreenCapture.RetryPauseFor(Timeout.InfiniteTimeSpan));
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(30, 30)]
+    [InlineData(100, 100)]
+    [InlineData(101, 100)]
+    [InlineData(5000, 100)]
+    public void RetryPause_FiniteTimeout_IsCappedAtTheRetryPause(int timeoutMs, int expectedMs) =>
+        Assert.Equal(TimeSpan.FromMilliseconds(expectedMs), DxgiScreenCapture.RetryPauseFor(TimeSpan.FromMilliseconds(timeoutMs)));}

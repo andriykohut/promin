@@ -38,6 +38,28 @@ public class DxgiScreenCaptureTests
         Assert.True(capture.TryGetNextFrame(TimeSpan.FromSeconds(2), out _));
     }
 
+    // Requirement 2 at its hardest: a teacher pointing at a still slide, with the capture just started.
+    // PointerOnlyUpdate_StillYieldsAFrame cannot show this, because on a screen that keeps changing a
+    // frame arrives for reasons that have nothing to do with the pointer. So this test first insists
+    // that the screen really is still (and fails, saying so, if it never becomes still within 15 s:
+    // run it on an idle desktop and leave the mouse and keyboard alone), then starts a NEW capture and
+    // moves the pointer. Whether Desktop Duplication reports the new capture's first update as a
+    // pointer-only one is up to the driver, so this test alone does not prove that branch was taken;
+    // the branch decision itself is pinned offline by DxgiScreenCaptureLogicTests.Decide_*.
+    [Fact(Skip = NeedsDesktop)]
+    public void StillScreen_FreshCapture_PointerMove_StillYieldsAFrame()
+    {
+        using (var probe = new DxgiScreenCapture())
+            Assert.True(WaitForStillScreen(probe), "The screen never held still for 1.5 s within 15 s: this test needs an idle desktop.");
+
+        using var capture = new DxgiScreenCapture();
+        using var pointer = new PointerRestorer();
+        pointer.MoveTo(pointer.Start.X + (pointer.Start.X + 40 < Native.ScreenWidth ? 40 : -40), pointer.Start.Y);
+
+        Assert.True(capture.TryGetNextFrame(TimeSpan.FromSeconds(2), out var frame));
+        Assert.True(frame.Width > 0);
+    }
+
     [Fact(Skip = NeedsDesktop)]
     public void PointerIsDrawnIntoTheFrame()
     {
@@ -83,6 +105,19 @@ public class DxgiScreenCaptureTests
         }
         Assert.True(got, "no frame arrived after the pointer moved");
         return ReadRegion(capture.Device, last.Texture, x, y, size);
+    }
+
+    // True once a 1.5 s wait for the next frame comes back empty, i.e. nothing on screen changed.
+    private static bool WaitForStillScreen(DxgiScreenCapture capture)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.Elapsed < TimeSpan.FromSeconds(15))
+        {
+            Drain(capture);
+            if (!capture.TryGetNextFrame(TimeSpan.FromMilliseconds(1500), out _))
+                return true;
+        }
+        return false;
     }
 
     private static void Drain(DxgiScreenCapture capture)
