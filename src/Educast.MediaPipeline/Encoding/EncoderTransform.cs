@@ -11,17 +11,22 @@ internal sealed class EncoderSetupException(string message) : InvalidOperationEx
 
 /// <summary>
 /// One H.264 encoder Media Foundation transform, activated and configured for low delay and no frame
-/// reordering, with the difference between the synchronous and the event-driven (asynchronous) kinds
-/// hidden behind <see cref="TryInput"/> and <see cref="CollectOutputs"/>. Hardware encoders are usually
-/// asynchronous; the software one is synchronous. Not thread-safe.
+/// reordering. It only does what the transform does (hand a picture in, ask for one out, report events); the
+/// accounting that decides when to do which, and how synchronous and event-driven transforms differ, is in
+/// <see cref="EncoderPipeline{TInput}"/>. Hardware encoders are usually asynchronous; the software one is
+/// synchronous. Not thread-safe.
 /// </summary>
-internal sealed class EncoderTransform : IDisposable
+internal sealed class EncoderTransform : IEncoderMft<IMFSample>
 {
     // MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER (mfapi.h).
     private const uint EnumHardware = 0x00000004 | 0x00000040;
 
     // MF_EVENT_FLAG_NO_WAIT: GetEvent returns at once, with MF_E_NO_EVENTS_AVAILABLE when there is none.
     private const int EventNoWait = 1;
+    private const int NoEventsAvailable = unchecked((int)0xC00D3E80);
+
+    // IMFMediaEventGenerator::GetEvent is slot 3 (IUnknown takes 0 to 2).
+    private const int GetEventSlot = 3;
 
     // MFT_OUTPUT_STREAM_PROVIDES_SAMPLES (mftransform.h): the transform allocates its own output samples.
     private const int OutputProvidesSamples = 0x100;
@@ -29,9 +34,6 @@ internal sealed class EncoderTransform : IDisposable
     // The software encoder Windows ships: CLSID_CMSH264EncoderMFT (wmcodecdsp.h).
     private static readonly Guid MicrosoftSoftwareEncoderClsid = new("6ca50344-051a-4ded-9779-a43305165e35");
     private const string MicrosoftSoftwareEncoderName = "Microsoft H264 Encoder MFT (software)";
-
-    private static readonly TimeSpan InputWait = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan OutputWait = TimeSpan.FromMilliseconds(500);
 
     // Colour description written into the types (mfobjects.h): BT.709 primaries, transfer and matrix, limited range.
     private const uint ColorPrimariesBt709 = 2;
@@ -52,21 +54,18 @@ internal sealed class EncoderTransform : IDisposable
     private readonly IMFActivate? _activate;
     private readonly IMFMediaEventGenerator? _events;
     private readonly CodecApi _codec;
-    private IMFDXGIDeviceManager? _deviceManager;
+    private readonly IMFDXGIDeviceManager? _deviceManager;
+    private readonly uint? _profile;
+    private readonly List<string> _notes;
+    private IReadOnlyList<(string Name, string Reason)> _rejected = [];
     private IMFSample? _ownOutputSample;
     private bool _providesSamples;
     private int _outputBufferSize;
-
-    private int _inputRequests;
-    private int _outputsReady;
-    private readonly Queue<RawOutput> _outputs = new();
     private bool _disposed;
-
-    internal readonly record struct RawOutput(byte[] Data, bool IsCleanPoint);
 
     internal string Name { get; }
     internal bool IsHardware { get; }
-    internal bool IsAsynchronous => _events is not null;
+    public bool IsAsynchronous => _events is not null;
 
     /// <summary>True when input samples are Direct3D textures; false when they are NV12 bytes in memory.</summary>
     internal bool UsesGpuInput { get; }
@@ -74,14 +73,15 @@ internal sealed class EncoderTransform : IDisposable
     /// <summary>The first SPS+PPS (Annex B) the transform published in its output type, or null.</summary>
     internal byte[]? ParameterSets { get; private set; }
 
-    /// <summary>What was configured and what the transform said about each setting, for diagnostics.</summary>
-    internal string Notes { get; }
-
-    internal int PendingOutputs => _outputs.Count;
+    /// <summary>
+    /// Why each hardware encoder that was passed over was passed over, then what was configured and what
+    /// the transform said about each setting.
+    /// </summary>
+    internal string Notes => EncoderConfigurationText.Compose(_rejected, _notes);
 
     private EncoderTransform(
         IMFTransform transform, IMFActivate? activate, IMFMediaEventGenerator? events, CodecApi codec,
-        IMFDXGIDeviceManager? deviceManager, bool gpuInput, bool hardware, string name, string notes)
+        IMFDXGIDeviceManager? deviceManager, bool gpuInput, bool hardware, string name, uint? profile, List<string> notes)
     {
         _transform = transform;
         _activate = activate;
@@ -91,7 +91,8 @@ internal sealed class EncoderTransform : IDisposable
         UsesGpuInput = gpuInput;
         IsHardware = hardware;
         Name = name;
-        Notes = notes;
+        _profile = profile;
+        _notes = notes;
     }
 
     // ---- finding and opening an encoder ---------------------------------------------------
@@ -114,11 +115,12 @@ internal sealed class EncoderTransform : IDisposable
     /// <summary>
     /// Opens the first encoder that can be set up: the hardware ones (those on the device's own graphics
     /// vendor first), then Windows' software encoder (only that one when <paramref name="allowHardware"/> is
-    /// false). Throws when none can, naming each failure.
+    /// false). Throws when none can, naming each failure. When one does open after others were passed over,
+    /// its <see cref="Notes"/> say which and why.
     /// </summary>
-    internal static EncoderTransform Open(ID3D11Device device, int width, int height, int fps, bool allowHardware = true)
+    internal static EncoderTransform Open(ID3D11Device device, int width, int height, int fps, int bitsPerSecond, bool allowHardware = true)
     {
-        var failures = new List<string>();
+        var rejected = new List<(string Name, string Reason)>();
         var vendor = AdapterVendorId(device);
 
         var hardware = allowHardware ? EnumerateHardwareEncoders() : [];
@@ -130,53 +132,41 @@ internal sealed class EncoderTransform : IDisposable
                 try
                 {
                     var transform = activate.ActivateObject<IMFTransform>();
-                    try
-                    {
-                        // The transform now owns this activation object's lifetime: removing it from the
-                        // list keeps the clean-up below from releasing it a second time.
-                        hardware.Remove(activate);
-                        return Configure(transform, activate, hardware: true, name, device, width, height, fps);
-                    }
-                    catch
-                    {
-                        activate.ShutdownObject();
-                        transform.Dispose();
-                        activate.Dispose();
-                        throw;
-                    }
+
+                    // Configure takes over the transform and the activation object, on success and on failure:
+                    // removing the latter from the list keeps the clean-up below from releasing it again.
+                    hardware.Remove(activate);
+                    var opened = Configure(transform, activate, hardware: true, name, device, width, height, fps, bitsPerSecond);
+                    opened._rejected = rejected;
+                    return opened;
                 }
                 catch (Exception ex) when (IsSetupFailure(ex))
                 {
-                    failures.Add($"{name}: {ex.Message}");
+                    rejected.Add((name, ex.Message));
                 }
             }
         }
         finally
         {
             foreach (var leftover in hardware)
-                leftover.Dispose();
+                Guard(leftover.Dispose);
         }
 
         try
         {
             var transform = CreateSoftwareTransform();
-            try
-            {
-                return Configure(transform, null, hardware: false, MicrosoftSoftwareEncoderName, device, width, height, fps);
-            }
-            catch
-            {
-                transform.Dispose();
-                throw;
-            }
+            var opened = Configure(transform, null, hardware: false, MicrosoftSoftwareEncoderName, device, width, height, fps, bitsPerSecond);
+            opened._rejected = rejected;
+            return opened;
         }
         catch (Exception ex) when (IsSetupFailure(ex))
         {
-            failures.Add($"{MicrosoftSoftwareEncoderName}: {ex.Message}");
+            rejected.Add((MicrosoftSoftwareEncoderName, ex.Message));
         }
 
         throw new InvalidOperationException(
-            "No H.264 encoder (hardware or software) could be set up on this machine. " + string.Join(" | ", failures));
+            "No H.264 encoder (hardware or software) could be set up on this machine. " +
+            string.Join(" | ", rejected.Select(r => $"{r.Name}: {r.Reason}")));
     }
 
     private static bool IsSetupFailure(Exception ex) =>
@@ -263,20 +253,35 @@ internal sealed class EncoderTransform : IDisposable
         }
     }
 
+    // Disposal must run to the end: one step failing must not skip the releases after it.
+    private static void Guard(Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch (Exception)
+        {
+        }
+    }
+
     // ---- configuring a transform ----------------------------------------------------------
 
+    // Takes over the transform and the activation object: whatever happens, both are released.
     private static EncoderTransform Configure(
         IMFTransform transform, IMFActivate? activate, bool hardware, string name,
-        ID3D11Device device, int width, int height, int fps)
+        ID3D11Device device, int width, int height, int fps, int bitsPerSecond)
     {
         var notes = new List<string>();
+        IMFAttributes? attributes = null;
         IMFMediaEventGenerator? events = null;
         CodecApi? codec = null;
         IMFDXGIDeviceManager? deviceManager = null;
+        EncoderTransform? result = null;
         try
         {
             // 1. Asynchronous transforms stay locked until told otherwise, and nothing else works first.
-            var attributes = TryGetAttributes(transform);
+            attributes = TryGetAttributes(transform);
             var isAsync = attributes is not null
                 && attributes.GetUInt32(TransformAttributeKeys.TransformAsync, out var asyncValue).Success
                 && asyncValue != 0;
@@ -325,34 +330,54 @@ internal sealed class EncoderTransform : IDisposable
                 notes.Add("input: memory");
             }
 
-            // 3. ICodecAPI: forced keyframes are not optional, the session depends on them.
+            // 3. ICodecAPI, for low delay, bitrate and forced keyframes.
             codec = CodecApi.TryCreate(transform)
                 ?? throw new EncoderSetupException("The encoder has no ICodecAPI, so it cannot be told to produce a keyframe on demand.");
-            if (!codec.IsSupported(CodecApi.ForceKeyFrame))
-                throw new EncoderSetupException("The encoder does not support forced keyframes.");
-
-            var bitrate = EncoderSettings.BitrateFor(width, height, fps);
-            var bFramesZero = ConfigureCodec(codec, bitrate, fps, notes);
+            var bFramesZero = ConfigureCodec(codec, (uint)bitsPerSecond, notes);
 
             // 4. Media types: output first, then input, as encoders expect.
-            SetOutputType(transform, width, height, fps, bitrate, bFramesZero, notes);
+            var profile = SetOutputType(transform, width, height, fps, (uint)bitsPerSecond, bFramesZero, notes);
             SetInputType(transform, width, height, fps, notes);
 
-            var result = new EncoderTransform(transform, activate, events, codec, deviceManager, gpuInput, hardware, name, string.Join("; ", notes));
+            result = new EncoderTransform(transform, activate, events, codec, deviceManager, gpuInput, hardware, name, profile, notes);
             result.ReadOutputStreamInfo();
             result.ParameterSets = result.ReadParameterSets();
 
             // 5. Start. Asynchronous transforms answer by asking for input.
             result.SendMessage(TMessageType.MessageNotifyBeginStreaming);
             result.SendMessage(TMessageType.MessageNotifyStartOfStream);
+
+            // 6. Forced keyframes are not optional, the session depends on them. Ask for one now, before the
+            // first picture (which is a keyframe anyway, so the request does no harm): an encoder that cannot
+            // take the request is passed over. Asking "is it supported" is not the test, since some encoders
+            // answer that badly and take the request all the same.
+            var forced = codec.SetUInt32(CodecApi.ForceKeyFrame, 1);
+            if (forced.Failure)
+                throw new EncoderSetupException($"The encoder refused a forced-keyframe request (0x{forced.Code:X8}).");
+            notes.Add("forced keyframes: accepted");
+
             return result;
         }
         catch
         {
-            codec?.Dispose();
-            events?.Dispose();
-            deviceManager?.Dispose();
+            if (result is not null)
+            {
+                result.Dispose(); // it owns everything created so far
+            }
+            else
+            {
+                Guard(() => codec?.Dispose());
+                Guard(() => events?.Dispose());
+                Guard(() => activate?.ShutdownObject());
+                Guard(transform.Dispose);
+                Guard(() => activate?.Dispose());
+                Guard(() => deviceManager?.Dispose());
+            }
             throw;
+        }
+        finally
+        {
+            attributes?.Dispose();
         }
     }
 
@@ -370,7 +395,7 @@ internal sealed class EncoderTransform : IDisposable
 
     // Returns true when the transform accepted "no B-frames", which together with the baseline profile
     // below is what keeps pictures in display order.
-    private static bool ConfigureCodec(CodecApi codec, uint bitrate, int fps, List<string> notes)
+    private static bool ConfigureCodec(CodecApi codec, uint bitrate, List<string> notes)
     {
         notes.Add($"low latency: {Describe(Try(codec, CodecApi.LowLatencyMode, c => c.SetBool(CodecApi.LowLatencyMode, true)))}");
         Try(codec, CodecApi.CommonLowLatency, c => c.SetBool(CodecApi.CommonLowLatency, true));
@@ -387,7 +412,21 @@ internal sealed class EncoderTransform : IDisposable
         }
 
         notes.Add($"bitrate {bitrate}: {Describe(Try(codec, CodecApi.MeanBitRate, c => c.SetUInt32(CodecApi.MeanBitRate, bitrate)))}");
-        notes.Add($"keyframe interval: {Describe(Try(codec, CodecApi.GopSize, c => c.SetUInt32(CodecApi.GopSize, EncoderSettings.KeyframeIntervalFor(fps))))}");
+
+        // The session decides when a keyframe is wanted. Ask for the longest spacing the encoder accepts, so
+        // it adds none of its own.
+        uint? spacing = null;
+        foreach (var candidate in EncoderSettings.KeyframeSpacingLadder)
+        {
+            if (Try(codec, CodecApi.GopSize, c => c.SetUInt32(CodecApi.GopSize, candidate)) == Outcome.Set)
+            {
+                spacing = candidate;
+                break;
+            }
+        }
+        notes.Add(spacing is { } accepted
+            ? $"keyframe spacing: {accepted} pictures"
+            : "keyframe spacing: the encoder's own (no value was accepted)");
 
         var bFrames = Try(codec, CodecApi.DefaultBPictureCount, c => c.SetUInt32(CodecApi.DefaultBPictureCount, 0));
         notes.Add($"B-frames 0: {Describe(bFrames)}");
@@ -413,7 +452,8 @@ internal sealed class EncoderTransform : IDisposable
     // The output type is tried with the baseline profile (which has no B-frames at all). If the
     // transform will not take that, it is tried without, but only when B-frames were switched off by
     // the property instead; and the colour description is dropped before giving up on a type.
-    private static void SetOutputType(
+    // Returns the profile the accepted type carries (null: the encoder's default).
+    private static uint? SetOutputType(
         IMFTransform transform, int width, int height, int fps, uint bitrate, bool bFramesZero, List<string> notes)
     {
         (bool Baseline, bool Colour)[] attempts = bFramesZero
@@ -440,7 +480,7 @@ internal sealed class EncoderTransform : IDisposable
             {
                 transform.SetOutputType(0, type, 0);
                 notes.Add($"output H.264 {(baseline ? "baseline" : "default profile")}{(colour ? ", BT.709 limited range" : ", no colour description")}");
-                return;
+                return baseline ? H264ProfileBaseline : null;
             }
             catch (SharpGenException ex)
             {
@@ -526,156 +566,72 @@ internal sealed class EncoderTransform : IDisposable
         }
     }
 
-    // ---- running ----------------------------------------------------------------------------
+    // ---- running (IEncoderMft) ---------------------------------------------------------------
 
-    /// <summary>
-    /// Gives the transform one input picture. When <paramref name="forceKeyframe"/> is set the picture is
-    /// encoded as an IDR picture. Returns false when the transform would not take the picture in time
-    /// (the picture is then dropped, and no keyframe request is left pending).
-    /// </summary>
-    internal bool TryInput(IMFSample sample, bool forceKeyframe)
+    public InputResult ProcessInput(IMFSample sample)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (_events is not null)
-        {
-            if (!WaitUntil(() => _inputRequests > 0, InputWait))
-                return false;
-            _inputRequests--;
-        }
-
-        if (forceKeyframe)
-        {
-            // The request applies to the next picture given to the transform, which is this one.
-            var result = _codec.SetUInt32(CodecApi.ForceKeyFrame, 1);
-            if (result.Failure)
-                throw new InvalidOperationException($"The encoder refused a forced keyframe (0x{result.Code:X8}).");
-        }
-
         try
         {
             _transform.ProcessInput(0, sample, 0);
-            return true;
+            return InputResult.Accepted;
         }
-        catch (SharpGenException ex) when (ex.ResultCode == ResultCode.Notaccepting && _events is null)
+        catch (SharpGenException ex) when (ex.ResultCode == ResultCode.Notaccepting)
         {
-            // A synchronous transform with a picture waiting to be collected refuses more input until
-            // it is: collect it, then try once more.
-            CollectOutputs(waitForOne: false);
-            try
-            {
-                _transform.ProcessInput(0, sample, 0);
-                return true;
-            }
-            catch (SharpGenException again) when (again.ResultCode == ResultCode.Notaccepting)
-            {
-                return false;
-            }
+            return InputResult.NotAccepting;
         }
+    }
+
+    public void RequestKeyframe()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var result = _codec.SetUInt32(CodecApi.ForceKeyFrame, 1);
+        if (result.Failure)
+            throw new InvalidOperationException($"The encoder refused a forced keyframe (0x{result.Code:X8}).");
     }
 
     /// <summary>
-    /// Moves every picture the transform has finished into the queue read by <see cref="TryTakeOutput"/>.
-    /// With <paramref name="waitForOne"/>, an asynchronous transform is given a short while to finish one
-    /// (the picture just fed in); a synchronous transform has its answer at once.
+    /// The next event from an asynchronous transform, without waiting and without throwing when there is
+    /// none: the queue is polled several times per picture, and an exception for each empty poll would be
+    /// hundreds of first-chance exceptions a second. <c>GetEvent</c> is called through its vtable for that.
     /// </summary>
-    internal void CollectOutputs(bool waitForOne)
+    public unsafe MftEvent PollEvent()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (_events is not null)
-        {
-            if (waitForOne && _outputsReady == 0)
-                WaitUntil(() => _outputsReady > 0, OutputWait);
-            else
-                PumpEvents();
-
-            while (_outputsReady > 0)
-            {
-                _outputsReady--;
-                if (!TryProcessOutput(out var output))
-                {
-                    _outputsReady = 0;
-                    break;
-                }
-                _outputs.Enqueue(output);
-            }
-        }
-        else
-        {
-            while (TryProcessOutput(out var output))
-                _outputs.Enqueue(output);
-        }
-    }
-
-    internal bool TryTakeOutput(out RawOutput output) => _outputs.TryDequeue(out output);
-
-    private bool WaitUntil(Func<bool> condition, TimeSpan timeout)
-    {
-        PumpEvents();
-        if (condition())
-            return true;
-
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        while (clock.Elapsed < timeout)
-        {
-            // Hardware answers in a few milliseconds: yield for the first of them, then sleep so a
-            // stalled transform does not burn a core.
-            if (clock.ElapsedMilliseconds < 3)
-                Thread.Yield();
-            else
-                Thread.Sleep(1);
-
-            PumpEvents();
-            if (condition())
-                return true;
-        }
-        return false;
-    }
-
-    private void PumpEvents()
-    {
         if (_events is null)
-            return;
+            return MftEvent.None;
 
-        while (true)
+        var self = _events.NativePointer;
+        nint pointer = 0;
+        var getEvent = (delegate* unmanaged[Stdcall]<nint, int, nint*, int>)((void**)*(void***)self)[GetEventSlot];
+        var hr = getEvent(self, EventNoWait, &pointer);
+        if (hr == NoEventsAvailable)
+            return MftEvent.None;
+        if (hr < 0)
+            throw new InvalidOperationException($"The encoder's event queue failed (0x{hr:X8}).");
+
+        using var mediaEvent = new IMFMediaEvent(pointer);
+        switch (mediaEvent.EventType)
         {
-            IMFMediaEvent mediaEvent;
-            try
-            {
-                mediaEvent = _events.GetEvent(EventNoWait);
-            }
-            catch (SharpGenException ex) when (ex.ResultCode == ResultCode.NoEventsAvailable)
-            {
-                return;
-            }
-
-            using (mediaEvent)
-            {
-                switch (mediaEvent.EventType)
-                {
-                    case MediaEventTypes.TransformNeedInput:
-                        _inputRequests++;
-                        break;
-                    case MediaEventTypes.TransformHaveOutput:
-                        _outputsReady++;
-                        break;
-                    case MediaEventTypes.Error:
-                        throw new InvalidOperationException($"The encoder reported an error (0x{mediaEvent.Status.Code:X8}).");
-                }
-            }
+            case MediaEventTypes.TransformNeedInput:
+                return MftEvent.NeedInput;
+            case MediaEventTypes.TransformHaveOutput:
+                return MftEvent.HaveOutput;
+            case MediaEventTypes.Error:
+                throw new InvalidOperationException($"The encoder reported an error (0x{mediaEvent.Status.Code:X8}).");
+            default:
+                return MftEvent.Other;
         }
     }
 
-    // Asks the transform for one finished picture. False means there is none (a synchronous transform
-    // wants more input first).
-    private bool TryProcessOutput(out RawOutput output)
+    public OutputResult ProcessOutput(out RawOutput output)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         output = default;
         using var assembled = new MemoryStream();
         var cleanPoint = false;
 
-        for (var attempt = 0; attempt < 8; attempt++)
+        for (var piece = 0; piece < 8; piece++)
         {
             var buffer = new OutputDataBuffer { StreamID = 0 };
             IMFSample? lent = null;
@@ -695,17 +651,17 @@ internal sealed class EncoderTransform : IDisposable
             try
             {
                 if (result == ResultCode.TransformNeedMoreInput)
-                    return assembled.Length > 0 && Finish(assembled, cleanPoint, out output);
+                    return Finish(assembled, cleanPoint, out output);
 
                 if (result == ResultCode.TransformStreamChange)
                 {
                     Renegotiate();
-                    continue;
+                    return OutputResult.FormatChanged;
                 }
 
                 result.CheckError();
                 if (returned is null)
-                    return false;
+                    return Finish(assembled, cleanPoint, out output);
 
                 AppendSample(returned, assembled);
                 cleanPoint |= returned.GetUInt32(SampleAttributeKeys.CleanPoint, out var clean).Success && clean != 0;
@@ -721,13 +677,18 @@ internal sealed class EncoderTransform : IDisposable
             }
         }
 
-        throw new InvalidOperationException("The encoder kept changing its output format instead of producing a picture.");
+        throw new InvalidOperationException("The encoder handed over one picture in more than eight pieces.");
     }
 
-    private static bool Finish(MemoryStream assembled, bool cleanPoint, out RawOutput output)
+    private static OutputResult Finish(MemoryStream assembled, bool cleanPoint, out RawOutput output)
     {
+        if (assembled.Length == 0)
+        {
+            output = default;
+            return OutputResult.NeedMoreInput;
+        }
         output = new RawOutput(assembled.ToArray(), cleanPoint);
-        return output.Data.Length > 0;
+        return OutputResult.Produced;
     }
 
     private static void AppendSample(IMFSample sample, MemoryStream destination)
@@ -766,12 +727,41 @@ internal sealed class EncoderTransform : IDisposable
         return _ownOutputSample = sample;
     }
 
-    // The transform changed its output format mid-stream: take the format it now offers first, and
-    // pick up what depends on it again.
+    // The transform changed its output format mid-stream: take the format it now offers, preferring one with
+    // the profile the encoder was configured with (a baseline encoder stays baseline), and pick up what
+    // depends on it again.
     private void Renegotiate()
     {
-        using var offered = _transform.GetOutputAvailableType(0, 0);
-        _transform.SetOutputType(0, offered, 0);
+        var offered = new List<IMFMediaType>();
+        try
+        {
+            var profiles = new List<uint?>();
+            for (var i = 0; i < 32; i++)
+            {
+                IMFMediaType type;
+                try
+                {
+                    type = _transform.GetOutputAvailableType(0, i);
+                }
+                catch (SharpGenException)
+                {
+                    break; // MF_E_NO_MORE_TYPES
+                }
+                offered.Add(type);
+                profiles.Add(type.GetUInt32(MediaTypeAttributeKeys.Mpeg2Profile, out var profile).Success ? profile : null);
+            }
+
+            var index = OutputTypeChoice.Pick(profiles, _profile);
+            if (index < 0)
+                throw new InvalidOperationException("The encoder offered no output type after changing its format.");
+            _transform.SetOutputType(0, offered[index], 0);
+        }
+        finally
+        {
+            foreach (var type in offered)
+                Guard(type.Dispose);
+        }
+
         ReadOutputStreamInfo();
         _ownOutputSample?.Dispose();
         _ownOutputSample = null;
@@ -784,23 +774,17 @@ internal sealed class EncoderTransform : IDisposable
             return;
         _disposed = true;
 
-        try
-        {
-            // Politely, and without caring whether a transform that is already unwell answers.
-            SendMessage(TMessageType.MessageNotifyEndOfStream);
-            SendMessage(TMessageType.MessageNotifyEndStreaming);
-            SendMessage(TMessageType.MessageCommandFlush);
-        }
-        catch (SharpGenException)
-        {
-        }
-
-        _ownOutputSample?.Dispose();
-        _events?.Dispose();
-        _codec.Dispose();
-        _activate?.ShutdownObject();
-        _transform.Dispose();
-        _activate?.Dispose();
-        _deviceManager?.Dispose(); // after the transform that was using it
+        // Politely, and without caring whether a transform that is already unwell answers. Every step runs
+        // whether or not the one before it threw.
+        Guard(() => SendMessage(TMessageType.MessageNotifyEndOfStream));
+        Guard(() => SendMessage(TMessageType.MessageNotifyEndStreaming));
+        Guard(() => SendMessage(TMessageType.MessageCommandFlush));
+        Guard(() => _ownOutputSample?.Dispose());
+        Guard(() => _events?.Dispose());
+        Guard(_codec.Dispose);
+        Guard(() => _activate?.ShutdownObject());
+        Guard(_transform.Dispose);
+        Guard(() => _activate?.Dispose());
+        Guard(() => _deviceManager?.Dispose()); // after the transform that was using it
     }
 }

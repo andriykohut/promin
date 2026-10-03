@@ -4,29 +4,6 @@ namespace Educast.MediaPipeline.Tests.Encoding;
 
 public class EncoderSettingsTests
 {
-    [Theory]
-    [InlineData(1920, 1080, 15, 3_110_400u)]
-    [InlineData(1920, 1080, 10, 2_073_600u)]
-    [InlineData(1280, 720, 10, 921_600u)]
-    [InlineData(1920, 802, 15, 2_309_760u)]
-    public void BitrateFor_IsATenthOfABitPerPixelPerFrame(int width, int height, int fps, uint expected) =>
-        Assert.Equal(expected, EncoderSettings.BitrateFor(width, height, fps));
-
-    [Fact]
-    public void BitrateFor_NeverFallsBelowTheFloor() =>
-        Assert.Equal(EncoderSettings.MinimumBitrate, EncoderSettings.BitrateFor(64, 64, 1));
-
-    [Fact]
-    public void BitrateFor_NeverExceedsTheCeiling_EvenForHugeFrames() =>
-        Assert.Equal(EncoderSettings.MaximumBitrate, EncoderSettings.BitrateFor(7680, 4320, 60));
-
-    [Theory]
-    [InlineData(15, 75u)]
-    [InlineData(10, 50u)]
-    [InlineData(1, 5u)]
-    public void KeyframeInterval_IsFiveSecondsOfFrames(int fps, uint frames) =>
-        Assert.Equal(frames, EncoderSettings.KeyframeIntervalFor(fps));
-
     [Fact]
     public void SampleTime_AdvancesByOneFramePeriod_InHundredNanosecondUnits()
     {
@@ -48,5 +25,17 @@ public class EncoderSettingsTests
     {
         Assert.Equal(0x0000_0780_0000_0438UL, EncoderSettings.Pack(1920, 1080));
         Assert.Equal(0x0000_000F_0000_0001UL, EncoderSettings.Pack(15, 1));
+    }
+
+    [Fact]
+    public void KeyframeSpacingLadder_StartsWithTheLongestSpacingPossible_AndOnlyGetsShorter()
+    {
+        var ladder = EncoderSettings.KeyframeSpacingLadder;
+
+        Assert.Equal(uint.MaxValue, ladder[0]);
+        Assert.True(ladder.Length > 1, "an encoder that refuses the longest spacing needs something to fall back to");
+        for (var i = 1; i < ladder.Length; i++)
+            Assert.True(ladder[i] < ladder[i - 1]);
+        Assert.True(ladder[^1] >= 1000, "even the shortest fallback is far longer than the broadcast session's own two seconds");
     }
 }

@@ -15,7 +15,7 @@ public class MediaFoundationH264EncoderArgumentTests
     public void Constructor_RefusesASizeThatIsOddOrNotPositive(int width, int height)
     {
         // The size is judged before the device, so a null device is enough to reach the check.
-        var ex = Assert.Throws<ArgumentException>(() => new MediaFoundationH264Encoder(null!, width, height, targetFps: 15));
+        var ex = Assert.Throws<ArgumentException>(() => new MediaFoundationH264Encoder(null!, width, height, targetFps: 15, bitsPerSecond: 1_000_000));
 
         Assert.Equal(width <= 0 || width % 2 != 0 ? "width" : "height", ex.ParamName);
     }
@@ -26,14 +26,25 @@ public class MediaFoundationH264EncoderArgumentTests
     [InlineData(241)]
     public void Constructor_RefusesAFrameRateOutsideOneTo240(int fps)
     {
-        var ex = Assert.Throws<ArgumentException>(() => new MediaFoundationH264Encoder(null!, 1280, 720, fps));
+        var ex = Assert.Throws<ArgumentException>(() => new MediaFoundationH264Encoder(null!, 1280, 720, fps, 1_000_000));
 
         Assert.Equal("targetFps", ex.ParamName);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
+    public void Constructor_RefusesABitrateThatIsNotPositive(int bitsPerSecond)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new MediaFoundationH264Encoder(null!, 1280, 720, 15, bitsPerSecond));
+
+        Assert.Equal("bitsPerSecond", ex.ParamName);
+    }
+
     [Fact]
     public void Constructor_RefusesANullDevice() =>
-        Assert.Throws<ArgumentNullException>(() => new MediaFoundationH264Encoder(null!, 1280, 720, 15));
+        Assert.Throws<ArgumentNullException>(() => new MediaFoundationH264Encoder(null!, 1280, 720, 15, 1_000_000));
 
     [Fact]
     public void ValidateEncodeSize_AcceptsEvenPositiveSizes_IncludingTheOnesFrameSizingProduces()

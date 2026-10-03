@@ -1,5 +1,6 @@
 using Educast.MediaPipeline.Capture;
 using Educast.MediaPipeline.Encoding;
+using Educast.Protocol.Video;
 using Xunit.Abstractions;
 
 namespace Educast.MediaPipeline.Tests.Encoding;
@@ -29,7 +30,7 @@ public class MediaFoundationH264EncoderTests(ITestOutputHelper output)
     {
         ScreenTestSupport.RequireDpiAwareness();
         using var capture = new DxgiScreenCapture();
-        using var encoder = new MediaFoundationH264Encoder(capture.Device, width, height, targetFps: 15);
+        using var encoder = new MediaFoundationH264Encoder(capture.Device, width, height, targetFps: 15, Standard(width, height, 15));
         Describe(encoder);
         Assert.True(capture.TryGetNextFrame(TimeSpan.FromSeconds(5), out var frame), "the capture produced no frame within 5 s");
 
@@ -54,6 +55,10 @@ public class MediaFoundationH264EncoderTests(ITestOutputHelper output)
         Assert.True(summary.IsAnnexB);
         Assert.True(summary.HasIdr);
         Assert.True(summary.HasParameterSets);
+
+        Assert.True(H264Stream.TryReadFrameSize(first.Data, out var encodedWidth, out var encodedHeight), "no readable SPS in the keyframe");
+        Assert.Equal((width, height), (encodedWidth, encodedHeight));
+        output.WriteLine($"keyframes the encoder wrote without SPS/PPS and had them added: {encoder.KeyframesCompletedFromMemory}");
     }
 
     [Fact(Skip = NeedsGpu)]
@@ -63,7 +68,7 @@ public class MediaFoundationH264EncoderTests(ITestOutputHelper output)
         output.WriteLine($"adapter: {gpu.AdapterName}");
         output.WriteLine($"IsHardwareEncoderAvailable: {MediaFoundationH264Encoder.IsHardwareEncoderAvailable()}");
 
-        using var encoder = new MediaFoundationH264Encoder(gpu.Device, 1280, 720, 15);
+        using var encoder = new MediaFoundationH264Encoder(gpu.Device, 1280, 720, 15, Standard(1280, 720, 15));
         Describe(encoder);
 
         Assert.False(string.IsNullOrWhiteSpace(encoder.EncoderName));
@@ -77,7 +82,7 @@ public class MediaFoundationH264EncoderTests(ITestOutputHelper output)
     public void SyntheticFrames_FirstIsAKeyframe_TheRestAreNot_IdsHaveNoGaps(bool allowHardware)
     {
         using var gpu = new TestGpu();
-        using var encoder = new MediaFoundationH264Encoder(gpu.Device, 1280, 720, 15, allowHardware);
+        using var encoder = new MediaFoundationH264Encoder(gpu.Device, 1280, 720, 15, Standard(1280, 720, 15), allowHardware);
         Describe(encoder);
 
         var frames = new List<EncodedFrame>();
@@ -105,11 +110,13 @@ public class MediaFoundationH264EncoderTests(ITestOutputHelper output)
     public void SyntheticFrames_ForcedKeyframes_AreHonouredExactly(bool allowHardware)
     {
         using var gpu = new TestGpu();
-        using var encoder = new MediaFoundationH264Encoder(gpu.Device, 1280, 720, 15, allowHardware);
+        using var encoder = new MediaFoundationH264Encoder(gpu.Device, 1280, 720, 15, Standard(1280, 720, 15), allowHardware);
         Describe(encoder);
 
-        var forced = new HashSet<int> { 0, 5, 10, 11, 19 };
-        for (var i = 0; i < 20; i++)
+        // 120 pictures: far past anything a periodic keyframe of the encoder's own would wait for, so one that
+        // was not asked for would fail the comparison below.
+        var forced = new HashSet<int> { 0, 5, 10, 11, 19, 60, 100 };
+        for (var i = 0; i < 120; i++)
         {
             using var picture = gpu.MovingPattern(1280, 720, i);
             var gotOne = encoder.TryEncode(new CapturedFrame(picture, 1280, 720), forceKeyframe: forced.Contains(i), out var encoded);
@@ -128,7 +135,7 @@ public class MediaFoundationH264EncoderTests(ITestOutputHelper output)
     public void SyntheticFrames_OfAnySize_AreScaledToTheEncodeSize(bool allowHardware)
     {
         using var gpu = new TestGpu();
-        using var encoder = new MediaFoundationH264Encoder(gpu.Device, 640, 360, 10, allowHardware);
+        using var encoder = new MediaFoundationH264Encoder(gpu.Device, 640, 360, 10, Standard(640, 360, 10), allowHardware);
         Describe(encoder);
 
         var sizes = new[] { (1280, 720), (800, 600), (1920, 1080), (640, 360), (1366, 768) };
@@ -136,17 +143,43 @@ public class MediaFoundationH264EncoderTests(ITestOutputHelper output)
         {
             var (w, h) = sizes[i];
             using var picture = gpu.MovingPattern(w, h, i);
-            Assert.True(encoder.TryEncode(new CapturedFrame(picture, w, h), forceKeyframe: i == 0, out var encoded), $"{w}x{h} produced no picture");
+            // Every picture is forced to be a keyframe, so each one carries an SPS that says what size was encoded.
+            Assert.True(encoder.TryEncode(new CapturedFrame(picture, w, h), forceKeyframe: true, out var encoded), $"{w}x{h} produced no picture");
             Assert.NotEmpty(encoded.Data);
             Assert.Equal((uint)i, encoded.FrameId);
+            Assert.True(encoded.IsKeyframe);
+            Assert.True(H264Stream.TryReadFrameSize(encoded.Data, out var encodedWidth, out var encodedHeight), $"{w}x{h}: no readable SPS");
+            Assert.Equal((640, 360), (encodedWidth, encodedHeight));
         }
+    }
+
+    [Theory(Skip = NeedsGpu)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TryTakePending_WithNothingHeld_ReturnsFalseAtOnce_AndAfterAnEncode(bool allowHardware)
+    {
+        using var gpu = new TestGpu();
+        using var encoder = new MediaFoundationH264Encoder(gpu.Device, 640, 360, 10, Standard(640, 360, 10), allowHardware);
+        Describe(encoder);
+        using var picture = gpu.MovingPattern(640, 360, 0);
+
+        Assert.False(encoder.TryTakePending(out _)); // before anything was fed
+        Assert.True(encoder.TryEncode(new CapturedFrame(picture, 640, 360), forceKeyframe: true, out _));
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var held = encoder.TryTakePending(out _);
+        clock.Stop();
+        output.WriteLine($"TryTakePending after one picture: {held}, {clock.Elapsed.TotalMilliseconds:F1} ms");
+
+        Assert.False(held);
+        Assert.True(clock.ElapsedMilliseconds < 50);
     }
 
     [Fact(Skip = NeedsGpu)]
     public void Dispose_CanBeCalledTwice_AndTryEncodeAfterItThrows()
     {
         using var gpu = new TestGpu();
-        var encoder = new MediaFoundationH264Encoder(gpu.Device, 640, 360, 10);
+        var encoder = new MediaFoundationH264Encoder(gpu.Device, 640, 360, 10, Standard(640, 360, 10));
         using var picture = gpu.MovingPattern(640, 360, 0);
 
         encoder.Dispose();
@@ -155,8 +188,12 @@ public class MediaFoundationH264EncoderTests(ITestOutputHelper output)
         Assert.Throws<ObjectDisposedException>(() => encoder.TryEncode(new CapturedFrame(picture, 640, 360), false, out _));
     }
 
+    private static int Standard(int width, int height, int fps) =>
+        VideoBitrate.BitsPerSecond(new PixelSize(width, height), fps, Sharpness.Standard);
+
     private void Describe(MediaFoundationH264Encoder encoder)
     {
+        output.WriteLine($"bitrate: {encoder.BitsPerSecond}");
         output.WriteLine($"encoder: {encoder.EncoderName}");
         output.WriteLine($"hardware: {encoder.UsingHardwareEncoder}, asynchronous: {encoder.IsAsynchronous}, GPU input: {encoder.UsesGpuInput}");
         output.WriteLine($"size: {encoder.Width}x{encoder.Height}");

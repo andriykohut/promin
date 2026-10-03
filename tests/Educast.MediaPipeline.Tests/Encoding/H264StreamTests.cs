@@ -110,45 +110,33 @@ public class H264StreamTests
     }
 
     [Fact]
-    public void WithParameterSets_PrependsTheHeader_ToAnIdrThatLacksThem()
+    public void NalUnits_GivesEachUnitsHeaderEndAndType_WithoutTheZeroesOfTheNextStartCode()
     {
-        var header = Stream(Long, Nal(Sps, 1), Nal(Pps, 2));
-        var frame = Stream(Long, Nal(Idr, 9, 9));
+        // 00 00 00 01 | 67 42 | 00 00 00 01 | 68 CE | 00 00 01 | 65 88
+        byte[] data = [0, 0, 0, 1, 0x67, 0x42, 0, 0, 0, 1, 0x68, 0xCE, 0, 0, 1, 0x65, 0x88];
 
-        var result = H264Stream.WithParameterSets(frame, header);
+        var units = H264Stream.NalUnits(data);
 
-        Assert.Equal([.. header, .. frame], result);
-        var summary = H264Stream.Inspect(result);
-        Assert.True(summary.HasIdr);
-        Assert.True(summary.HasParameterSets);
+        Assert.Equal(
+            [new H264Stream.NalUnit(4, 6, 7), new H264Stream.NalUnit(10, 12, 8), new H264Stream.NalUnit(15, 17, 5)],
+            units);
+        Assert.Equal(2, units[0].Length);
     }
 
     [Fact]
-    public void WithParameterSets_LeavesAnIdrThatAlreadyHasThem()
+    public void NalUnits_IsEmpty_ForDataThatIsNotAnnexB()
     {
-        var header = Stream(Long, Nal(Sps, 1), Nal(Pps, 2));
-        var frame = Stream(Long, Nal(Sps, 5), Nal(Pps, 6), Nal(Idr, 9));
-
-        Assert.Same(frame, H264Stream.WithParameterSets(frame, header));
+        Assert.Empty(H264Stream.NalUnits([0, 0, 0, 5, 0x65, 1, 2, 3, 4]));
+        Assert.Empty(H264Stream.NalUnits([0x12, 0, 0, 1, 0x65, 3]));
+        Assert.Empty(H264Stream.NalUnits([]));
     }
 
     [Fact]
-    public void WithParameterSets_LeavesInterFramesAlone()
+    public void NalUnits_SkipsAUnitWhoseForbiddenBitIsSet()
     {
-        var header = Stream(Long, Nal(Sps, 1), Nal(Pps, 2));
-        var frame = Stream(Long, Nal(Slice, 9));
+        byte[] data = [0, 0, 0, 1, 0xE5, 1, 0, 0, 0, 1, 0x65, 2];
 
-        Assert.Same(frame, H264Stream.WithParameterSets(frame, header));
-    }
-
-    [Fact]
-    public void WithParameterSets_LeavesTheFrameAlone_WhenThereIsNoUsableHeader()
-    {
-        var frame = Stream(Long, Nal(Idr, 9));
-
-        Assert.Same(frame, H264Stream.WithParameterSets(frame, null));
-        Assert.Same(frame, H264Stream.WithParameterSets(frame, []));
-        Assert.Same(frame, H264Stream.WithParameterSets(frame, Stream(Long, Nal(Sps, 1)))); // no PPS in it
+        Assert.Equal([new H264Stream.NalUnit(10, 12, 5)], H264Stream.NalUnits(data));
     }
 
     [Fact]

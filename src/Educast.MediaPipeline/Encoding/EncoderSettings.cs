@@ -3,27 +3,14 @@ namespace Educast.MediaPipeline.Encoding;
 /// <summary>The numbers the encoder is configured with, kept apart so they can be tested without a GPU.</summary>
 internal static class EncoderSettings
 {
-    internal const uint MinimumBitrate = 500_000;
-    internal const uint MaximumBitrate = 10_000_000;
-
-    // Bits per pixel per frame. Screen content is mostly still and sharp-edged; this is a starting
-    // point to be tuned on real hardware, not a measured figure.
-    private const long BitsPerPixelDenominator = 10; // 0.1 bit per pixel per frame
-
-    private const int KeyframeIntervalSeconds = 5;
     private const long HundredNanosecondsPerSecond = 10_000_000;
 
-    internal static uint BitrateFor(int width, int height, int fps)
-    {
-        var bits = (long)width * height * fps / BitsPerPixelDenominator;
-        return (uint)Math.Clamp(bits, MinimumBitrate, MaximumBitrate);
-    }
-
     /// <summary>
-    /// The longest the encoder may go without a keyframe of its own, in frames. A student who missed one
-    /// recovers within this even if nobody asks for a keyframe.
+    /// The longest spacing between the encoder's own keyframes, to try in order until the encoder accepts one
+    /// (the property is a count of pictures). The broadcast session decides when a keyframe is wanted and forces
+    /// one; an encoder that adds keyframes of its own only costs bandwidth.
     /// </summary>
-    internal static uint KeyframeIntervalFor(int fps) => (uint)(fps * KeyframeIntervalSeconds);
+    internal static uint[] KeyframeSpacingLadder { get; } = [uint.MaxValue, int.MaxValue, 1_000_000, 100_000, 10_000, 1_000];
 
     /// <summary>The presentation time of frame <paramref name="index"/> at a steady <paramref name="fps"/>, in 100 ns units.</summary>
     internal static long SampleTime(long index, int fps) => index * HundredNanosecondsPerSecond / fps;
