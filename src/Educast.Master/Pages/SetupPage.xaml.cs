@@ -57,6 +57,9 @@ public sealed partial class SetupPage : Page
 
     public bool HasValue(object? value) => value is not null;
 
+    /// <summary>A bar that is not open takes no layout space either (a closed InfoBar still counts as a panel child).</summary>
+    public Visibility VisibilityOf(object? value) => value is null ? Visibility.Collapsed : Visibility.Visible;
+
     /// <summary>Go to This room is offered on the success bar only.</summary>
     public Visibility GoToRoomVisibility(SetupBanner? banner) =>
         banner?.Kind == SetupBannerKind.Success ? Visibility.Visible : Visibility.Collapsed;

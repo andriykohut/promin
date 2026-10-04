@@ -218,13 +218,18 @@
                     Text="Set up devices" />
             </StackPanel>
 
-            <!-- 2. The result bar, when there is a result to report. -->
+            <!--
+                2. The result bar, when there is a result to report. Every bar on this page is
+                also collapsed while closed: a closed InfoBar has no height but is still a child
+                of the panel, which would otherwise leave its 14 px of spacing behind.
+            -->
             <InfoBar
                 IsClosable="False"
                 IsOpen="{x:Bind HasValue(ViewModel.Banner), Mode=OneWay}"
                 Message="{x:Bind MessageOf(ViewModel.Banner), Mode=OneWay}"
                 Severity="{x:Bind SeverityOf(ViewModel.Banner), Mode=OneWay}"
-                Title="{x:Bind TitleOf(ViewModel.Banner), Mode=OneWay}">
+                Title="{x:Bind TitleOf(ViewModel.Banner), Mode=OneWay}"
+                Visibility="{x:Bind VisibilityOf(ViewModel.Banner), Mode=OneWay}">
                 <InfoBar.ActionButton>
                     <Button
                         Click="Back_Click"
@@ -239,13 +244,15 @@
                 IsOpen="{x:Bind HasValue(ViewModel.StoreError), Mode=OneWay}"
                 Message="{x:Bind MessageOf(ViewModel.StoreError), Mode=OneWay}"
                 Severity="Error"
-                Title="{x:Bind TitleOf(ViewModel.StoreError), Mode=OneWay}" />
+                Title="{x:Bind TitleOf(ViewModel.StoreError), Mode=OneWay}"
+                Visibility="{x:Bind VisibilityOf(ViewModel.StoreError), Mode=OneWay}" />
             <InfoBar
                 IsClosable="False"
                 IsOpen="{x:Bind HasValue(ViewModel.DiscoveryError), Mode=OneWay}"
                 Message="{x:Bind MessageOf(ViewModel.DiscoveryError), Mode=OneWay}"
                 Severity="Error"
-                Title="{x:Bind TitleOf(ViewModel.DiscoveryError), Mode=OneWay}" />
+                Title="{x:Bind TitleOf(ViewModel.DiscoveryError), Mode=OneWay}"
+                Visibility="{x:Bind VisibilityOf(ViewModel.DiscoveryError), Mode=OneWay}" />
 
             <!-- 3. The room code card. -->
             <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.ShowCodeCard, Mode=OneWay}">

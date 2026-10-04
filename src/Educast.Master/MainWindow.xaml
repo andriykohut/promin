@@ -36,7 +36,8 @@
             IsOpen="{x:Bind Health.HasLocalFault, Mode=OneWay}"
             Message="{x:Bind Health.LocalFaultMessage, Mode=OneWay}"
             Severity="Error"
-            Title="{x:Bind Health.LocalFaultTitle, Mode=OneWay}" />
+            Title="{x:Bind Health.LocalFaultTitle, Mode=OneWay}"
+            Visibility="{x:Bind Health.HasLocalFault, Mode=OneWay}" />
 
         <Frame x:Name="RootFrame" Grid.Row="2" />
     </Grid>

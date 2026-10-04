@@ -44,7 +44,8 @@
             IsOpen="{x:Bind ViewModel.HasLoadError, Mode=OneWay}"
             Message="{x:Bind ViewModel.LoadErrorMessage, Mode=OneWay}"
             Severity="Error"
-            Title="{x:Bind ViewModel.LoadErrorTitle, Mode=OneWay}" />
+            Title="{x:Bind ViewModel.LoadErrorTitle, Mode=OneWay}"
+            Visibility="{x:Bind ViewModel.HasLoadError, Mode=OneWay}" />
 
         <!-- Empty room (design doc 5.8). -->
         <Grid
