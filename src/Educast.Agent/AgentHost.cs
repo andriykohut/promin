@@ -49,7 +49,8 @@ internal sealed record AgentServices(
         DeviceIdentity.LoadOrCreate,
         (identity, masters, connectionRejected) => new QuicAgentListenerAdapter(
             new QuicAgentListener(
-                identity.Certificate, masters, EducastPorts.Quic, bindAddress: null, connectionRejected: connectionRejected)),
+                identity.Certificate, masters, EducastPorts.Quic, bindAddress: null, connectionRejected: connectionRejected,
+                inboundFrameQueueCapacity: LiveBounds.ReceiveQueueFrames)),
         identity =>
         {
             var beacon = new LanDiscoveryBeacon(

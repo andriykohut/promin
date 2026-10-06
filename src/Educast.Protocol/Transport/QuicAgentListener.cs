@@ -52,6 +52,7 @@ public sealed class QuicAgentListener : IAsyncDisposable
     private readonly int _port;
     private readonly IPAddress _bindAddress;
     private readonly Action<Exception>? _connectionRejected;
+    private readonly int _inboundFrameQueueCapacity;
     private readonly Channel<QuicChannel> _established = Channel.CreateBounded<QuicChannel>(
         new BoundedChannelOptions(AcceptQueueCapacity) { FullMode = BoundedChannelFullMode.Wait });
 
@@ -71,18 +72,21 @@ public sealed class QuicAgentListener : IAsyncDisposable
         PeerCertificateStore trustedMasters,
         int port,
         IPAddress? bindAddress = null,
-        Action<Exception>? connectionRejected = null)
+        Action<Exception>? connectionRejected = null,
+        int inboundFrameQueueCapacity = QuicChannel.DefaultInboundFrameQueueCapacity)
     {
         ArgumentNullException.ThrowIfNull(localCertificate);
         ArgumentNullException.ThrowIfNull(trustedMasters);
         ArgumentOutOfRangeException.ThrowIfNegative(port);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
+        ArgumentOutOfRangeException.ThrowIfLessThan(inboundFrameQueueCapacity, 1);
 
         _localCertificate = localCertificate;
         _trustedMasters = trustedMasters;
         _port = port;
         _bindAddress = bindAddress ?? IPAddress.Any;
         _connectionRejected = connectionRejected;
+        _inboundFrameQueueCapacity = inboundFrameQueueCapacity;
         _shutdown = _pumpCts.Token;
     }
 
@@ -612,7 +616,7 @@ public sealed class QuicAgentListener : IAsyncDisposable
             return;
         }
 
-        var channel = new QuicChannel(connection, deviceId);
+        var channel = new QuicChannel(connection, deviceId, _inboundFrameQueueCapacity);
         if (!_established.Writer.TryWrite(channel))
         {
             // Nobody is accepting and the queue is full. Waiting here would stall the one loop

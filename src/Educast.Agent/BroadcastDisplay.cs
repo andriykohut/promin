@@ -1,4 +1,3 @@
-using System.Threading.Channels;
 using Educast.MediaPipeline.Decoding;
 using Educast.Protocol.Broadcast;
 using Educast.Protocol.Messages;
@@ -34,24 +33,16 @@ internal sealed class BroadcastDisplayFactory(bool windowed, Action<string> log)
 internal sealed class BroadcastDisplay : IBroadcastDisplay
 {
     private const uint FramesAvailable = 1;
-    private const int MailboxCapacity = 4;
 
     private readonly bool _windowed;
     private readonly Action<string> _log;
     private readonly Thread _thread;
     private readonly TaskCompletionSource<bool> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    // Frames, in order; null means "a new stream begins here".
-    private readonly Channel<byte[]?> _mailbox = Channel.CreateBounded<byte[]?>(
-        new BoundedChannelOptions(MailboxCapacity)
-        {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = true,
-        });
+    private readonly DisplayMailbox _mailbox;
 
     private FullscreenRenderWindow? _window;
     private ClientAgentSession? _session;
-    private int _wakePending;
     private int _open;
     private int _disposed;
 
@@ -59,6 +50,7 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
     {
         _windowed = windowed;
         _log = log;
+        _mailbox = new DisplayMailbox(LiveBounds.DisplayMailboxFrames, () => Volatile.Read(ref _window)?.PostAppMessage(FramesAvailable));
         _thread = new Thread(Run) { Name = "Educast display", IsBackground = true };
     }
 
@@ -82,43 +74,11 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
         return null;
     }
 
-    public async ValueTask SubmitFrameAsync(byte[] streamPayload, CancellationToken ct)
-    {
-        if (!IsOpen)
-        {
-            return;
-        }
+    public ValueTask SubmitFrameAsync(byte[] streamPayload, CancellationToken ct) =>
+        IsOpen ? _mailbox.SubmitAsync(streamPayload, ct) : ValueTask.CompletedTask;
 
-        try
-        {
-            await _mailbox.Writer.WriteAsync(streamPayload, ct).ConfigureAwait(false);
-        }
-        catch (ChannelClosedException)
-        {
-            return;
-        }
-
-        Wake();
-    }
-
-    public async ValueTask RestartAsync(CancellationToken ct)
-    {
-        if (!IsOpen)
-        {
-            return;
-        }
-
-        try
-        {
-            await _mailbox.Writer.WriteAsync(null, ct).ConfigureAwait(false);
-        }
-        catch (ChannelClosedException)
-        {
-            return;
-        }
-
-        Wake();
-    }
+    public ValueTask RestartAsync(CancellationToken ct) =>
+        IsOpen ? _mailbox.RestartAsync(ct) : ValueTask.CompletedTask;
 
     /// <summary>Removes the broadcast from the screen and waits for the display thread to release everything.</summary>
     public void Dispose()
@@ -129,21 +89,12 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
         }
 
         Volatile.Write(ref _open, 0);
-        _mailbox.Writer.TryComplete();
+        _mailbox.Complete();
         Volatile.Read(ref _window)?.PostClose();
 
         if (!_thread.Join(TimeSpan.FromSeconds(10)))
         {
             _log("The display did not stop within 10 seconds. It is left to finish by itself.");
-        }
-    }
-
-    // One message in the window's queue at a time is enough: the drain takes everything that is there.
-    private void Wake()
-    {
-        if (Interlocked.Exchange(ref _wakePending, 1) == 0)
-        {
-            Volatile.Read(ref _window)?.PostAppMessage(FramesAvailable);
         }
     }
 
@@ -210,12 +161,13 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
         finally
         {
             Volatile.Write(ref _open, 0);
-            _mailbox.Writer.TryComplete();
+            _mailbox.Complete();
             if (_session is { } session)
             {
                 _log($"The display ended. Pictures shown: {session.PresentedFrameCount}, frames dropped: " +
                      $"{session.DroppedFrameCount}, discarded while waiting for a keyframe: {session.DiscardedFrameCount}, " +
-                     $"refused by the decoder: {session.RefusedFrameCount}.");
+                     $"refused by the decoder: {session.RefusedFrameCount}, decoded but not shown to stay current: " +
+                     $"{session.SkippedPictureCount}.");
             }
 
             // The window first, so nothing can be drawn to it; then what it drew with. Each is released whether or
@@ -245,18 +197,7 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
             return;
         }
 
-        Volatile.Write(ref _wakePending, 0);
-        while (_mailbox.Reader.TryRead(out var item))
-        {
-            if (item is null)
-            {
-                _session!.OnBroadcastStarted();
-            }
-            else
-            {
-                _session!.OnVideoFrameReceived(item);
-            }
-        }
+        _mailbox.Drain(_session!);
     }
 
     // The display failed (the GPU went away, a decoder fault): this broadcast is no longer shown, and the agent goes on.

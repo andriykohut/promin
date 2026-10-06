@@ -76,7 +76,8 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
         bool pinMasterOnAgent = true,
         bool pinAgentOnMaster = true,
         Action<Exception>? connectionRejected = null,
-        Func<string, X509Certificate2>? createCertificate = null)
+        Func<string, X509Certificate2>? createCertificate = null,
+        int? inboundFrameQueueCapacity = null)
     {
         // The harness owns (and disposes) whatever certificates it is given, so a test can run
         // the transport on certificates made some other way than the factory's.
@@ -105,7 +106,8 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
             {
                 Interlocked.Increment(ref rejectedHandshakes.Value);
                 connectionRejected?.Invoke(rejected);
-            });
+            },
+            inboundFrameQueueCapacity ?? QuicChannel.DefaultInboundFrameQueueCapacity);
         await listener.StartAsync(ct);
 
         return new QuicLoopbackHarness(

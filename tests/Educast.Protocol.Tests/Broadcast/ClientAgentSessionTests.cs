@@ -18,12 +18,20 @@ public class ClientAgentSessionTests
         /// <summary>Called for each offer, after it is recorded; returns whether the picture was shown.</summary>
         public Func<Offered, bool> Decide { get; set; } = _ => true;
 
-        public bool TryDecodeAndPresent(uint frameId, bool isKeyframe, ReadOnlyMemory<byte> encodedFrame)
+        public bool TryDecode(uint frameId, bool isKeyframe, ReadOnlyMemory<byte> encodedFrame)
         {
             var offered = new Offered(frameId, isKeyframe, encodedFrame.ToArray());
             Offers.Add(offered);
+            _lastDecoded = offered.FrameId;
             return Decide(offered);
         }
+
+        private uint _lastDecoded;
+
+        /// <summary>The ids of the pictures actually shown, in order.</summary>
+        public List<uint> PresentedIds { get; } = [];
+
+        public void PresentDecoded() => PresentedIds.Add(_lastDecoded);
 
         public uint[] OfferedIds => [.. Offers.Select(o => o.FrameId)];
     }
@@ -291,12 +299,16 @@ public class ClientAgentSessionTests
 
         public List<uint> OfferedIds { get; } = [];
 
-        public bool TryDecodeAndPresent(uint frameId, bool isKeyframe, ReadOnlyMemory<byte> encodedFrame)
+        public bool TryDecode(uint frameId, bool isKeyframe, ReadOnlyMemory<byte> encodedFrame)
         {
             OfferedIds.Add(frameId);
             var pictureComesOut = _holding;
             _holding = true;
             return pictureComesOut;
+        }
+
+        public void PresentDecoded()
+        {
         }
     }
 
@@ -311,7 +323,7 @@ public class ClientAgentSessionTests
 
         public List<uint> OfferedIds { get; } = [];
 
-        public bool TryDecodeAndPresent(uint frameId, bool isKeyframe, ReadOnlyMemory<byte> encodedFrame)
+        public bool TryDecode(uint frameId, bool isKeyframe, ReadOnlyMemory<byte> encodedFrame)
         {
             OfferedIds.Add(frameId);
             if (isKeyframe)
@@ -320,6 +332,10 @@ public class ClientAgentSessionTests
             }
 
             return _usable;
+        }
+
+        public void PresentDecoded()
+        {
         }
     }
 
@@ -429,6 +445,121 @@ public class ClientAgentSessionTests
 
         Assert.Equal([0u, 1u, 2u, 2u, 3u], presenter.OfferedIds);
         Assert.Equal(2, session.DiscardedFrameCount);
+    }
+
+
+    // ---- Staying live: only the newest picture of a waiting batch is shown --------------------------
+
+    [Fact]
+    public void ABatchOfThreeWaitingFrames_IsDecodedInOrder_AndPresentsOnce_TheNewest()
+    {
+        var (session, presenter, shown) = Create();
+
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false), moreWaiting: true);
+        session.OnVideoFrameReceived(Payload(2, isKeyframe: false), moreWaiting: false);
+
+        Assert.Equal([0u, 1u, 2u], presenter.OfferedIds);   // every frame was decoded, in order
+        Assert.Equal([2u], presenter.PresentedIds);          // one picture was shown: the newest
+        Assert.Equal([2u], shown);
+        Assert.Equal(1, session.PresentedFrameCount);
+        Assert.Equal(2, session.SkippedPictureCount);
+        Assert.Equal(0, session.DiscardedFrameCount);
+        Assert.Equal(0, session.RefusedFrameCount);
+    }
+
+    [Fact]
+    public void AKeyframeInTheMiddleOfABatch_IsStillDecoded()
+    {
+        var (session, presenter, shown) = Create();
+
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false), moreWaiting: true);
+        session.OnVideoFrameReceived(Payload(2, isKeyframe: true), moreWaiting: true);
+        session.OnVideoFrameReceived(Payload(3, isKeyframe: false), moreWaiting: false);
+
+        Assert.Equal([0u, 1u, 2u, 3u], presenter.OfferedIds);
+        Assert.True(presenter.Offers[2].IsKeyframe);
+        Assert.Equal([3u], presenter.PresentedIds);
+        Assert.Equal(3, session.SkippedPictureCount);
+    }
+
+    [Fact]
+    public void FramesThatArriveOneAtATime_AreAllShown_AsBefore()
+    {
+        var (session, presenter, shown) = Create();
+
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
+
+        Assert.Equal([0u, 1u], presenter.PresentedIds);
+        Assert.Equal(0, session.SkippedPictureCount);
+    }
+
+    [Fact]
+    public void ABatchThatEndsWithADiscardedFrame_StillShowsThePictureBeforeIt()
+    {
+        var (session, presenter, shown) = Create();
+
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
+        session.OnVideoFrameReceived(Payload(2, isKeyframe: false), moreWaiting: false); // a gap: discarded
+
+        Assert.Equal([0u], presenter.PresentedIds);
+        Assert.Equal(1, session.DiscardedFrameCount);
+        Assert.Equal(0, session.SkippedPictureCount);
+    }
+
+    [Fact]
+    public void ABatchThatEndsWithARefusedFrame_ShowsNothing_AndCountsTheLostPicture()
+    {
+        var (session, presenter, shown) = Create();
+        presenter.Decide = offered => offered.FrameId != 1;
+
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false), moreWaiting: false); // refused: picture 0 is gone with it
+
+        Assert.Empty(presenter.PresentedIds);
+        Assert.Equal(1, session.RefusedFrameCount);
+        Assert.Equal(1, session.SkippedPictureCount);
+        Assert.Equal(0, session.PresentedFrameCount);
+    }
+
+    [Fact]
+    public void AStartBetweenFrames_GivesUpAPictureThatWasWaitingToBeShown()
+    {
+        var (session, presenter, shown) = Create();
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
+
+        session.OnBroadcastStarted();
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
+
+        Assert.Equal([0u], presenter.PresentedIds); // only the new stream's picture
+        Assert.Equal(1, session.SkippedPictureCount);
+    }
+
+    /// <summary>
+    /// What happens when the student PC cannot keep up and the bound on waiting frames is hit: the oldest are
+    /// lost in the receive queue, so the next frame to arrive has a gap before it. The session sees only that:
+    /// it keeps the picture on screen, discards until the next keyframe, and then is live again.
+    /// </summary>
+    [Fact]
+    public void WhenAnOverloadedPcLosesFramesInItsQueue_TheGapIsHandled_LastPictureKept_ThenLiveAtTheNextKeyframe()
+    {
+        var (session, presenter, shown) = Create();
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
+
+        // Frames 2 to 5 were dropped from the receive queue; 6 and 7 are what was left.
+        session.OnVideoFrameReceived(Payload(6, isKeyframe: false), moreWaiting: true);
+        session.OnVideoFrameReceived(Payload(7, isKeyframe: false), moreWaiting: false);
+        session.OnVideoFrameReceived(Payload(8, isKeyframe: true));
+        session.OnVideoFrameReceived(Payload(9, isKeyframe: false));
+
+        Assert.Equal([0u, 1u, 8u, 9u], presenter.PresentedIds); // nothing new on screen between 1 and 8
+        Assert.Equal(2, session.DiscardedFrameCount);           // 6 and 7
+        Assert.Equal(0, session.DroppedFrameCount);             // the loss itself is invisible: only the gap shows
+        Assert.Equal(0, session.RefusedFrameCount);
+        Assert.Equal(0, session.SkippedPictureCount);
     }
 
     [Fact]

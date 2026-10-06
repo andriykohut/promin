@@ -33,16 +33,16 @@ public sealed class QuicChannel : IAsyncDisposable
     public const int MaxVideoFrameBytes = 4 * 1024 * 1024;
 
     /// <summary>
-    /// Inbound frames waiting to be picked up. Deliberately small and DropOldest: if the
-    /// consumer falls behind, the freshest frames are the ones worth keeping — a mirrored
-    /// classroom screen wants to be current, not complete.
+    /// How many inbound frames wait to be picked up unless the creator says otherwise. The queue is
+    /// deliberately small and DropOldest: if the consumer falls behind, the freshest frames are the ones
+    /// worth keeping — a mirrored classroom screen wants to be current, not complete. A frame lost this
+    /// way leaves a gap in the frame ids, which the receiving session treats as a lost frame.
     /// </summary>
-    private const int InboundFrameQueueCapacity = 8;
+    public const int DefaultInboundFrameQueueCapacity = 8;
 
     private readonly QuicConnection _connection;
     private readonly Channel<QuicStream> _inboundControlStreams = Channel.CreateUnbounded<QuicStream>();
-    private readonly Channel<byte[]> _inboundVideoFrames = Channel.CreateBounded<byte[]>(
-        new BoundedChannelOptions(InboundFrameQueueCapacity) { FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly Channel<byte[]> _inboundVideoFrames;
     private readonly SemaphoreSlim _drainSlots = new(
         QuicTransportSettings.MaxConcurrentInboundVideoStreams,
         QuicTransportSettings.MaxConcurrentInboundVideoStreams);
@@ -54,15 +54,22 @@ public sealed class QuicChannel : IAsyncDisposable
     /// <summary>How many inbound video streams are being read into memory right now.</summary>
     internal int ActiveVideoDrains => Volatile.Read(ref _activeVideoDrains);
 
+    /// <summary>Complete inbound frames waiting for <see cref="ReceiveVideoFrameAsync"/>.</summary>
+    internal int QueuedVideoFrames => _inboundVideoFrames.Reader.Count;
+
     /// <summary>
     /// Channels are made by <see cref="QuicMasterConnector"/> and <see cref="QuicAgentListener"/>
     /// only. <paramref name="pinnedDeviceId"/> is what they found by looking the presented
     /// certificate up in their pins; it is not something a caller gets to assert.
     /// </summary>
-    internal QuicChannel(QuicConnection connection, string? pinnedDeviceId)
+    internal QuicChannel(
+        QuicConnection connection, string? pinnedDeviceId, int inboundFrameQueueCapacity = DefaultInboundFrameQueueCapacity)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        ArgumentOutOfRangeException.ThrowIfLessThan(inboundFrameQueueCapacity, 1);
         _connection = connection;
+        _inboundVideoFrames = Channel.CreateBounded<byte[]>(
+            new BoundedChannelOptions(inboundFrameQueueCapacity) { FullMode = BoundedChannelFullMode.DropOldest });
         PinnedDeviceId = pinnedDeviceId;
         if (connection.RemoteCertificate is { } certificate)
         {
