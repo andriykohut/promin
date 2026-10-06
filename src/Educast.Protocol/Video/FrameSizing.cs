@@ -2,6 +2,8 @@ namespace Educast.Protocol.Video;
 
 public readonly record struct PixelSize(int Width, int Height);
 
+public readonly record struct PixelRect(int X, int Y, int Width, int Height);
+
 public static class FrameSizing
 {
     /// <summary>
@@ -32,6 +34,31 @@ public static class FrameSizing
         }
 
         return new PixelSize(Even(width), Even(height));
+    }
+
+    /// <summary>
+    /// Where a picture goes on a screen of a different size: scaled up or down to the
+    /// largest size of the same shape that fits, centred. The rest of the screen is black.
+    /// </summary>
+    public static PixelRect FitRect(PixelSize picture, PixelSize screen)
+    {
+        ThrowIfNotPositive(picture, nameof(picture));
+        ThrowIfNotPositive(screen, nameof(screen));
+
+        long width, height;
+        if ((long)picture.Width * screen.Height >= (long)picture.Height * screen.Width)
+        {
+            width = screen.Width;
+            height = Math.Max(1, (long)picture.Height * screen.Width / picture.Width);
+        }
+        else
+        {
+            height = screen.Height;
+            width = Math.Max(1, (long)picture.Width * screen.Height / picture.Height);
+        }
+
+        return new PixelRect(
+            (int)((screen.Width - width) / 2), (int)((screen.Height - height) / 2), (int)width, (int)height);
     }
 
     private static int Even(long value) => (int)Math.Max(2, value & ~1L);
