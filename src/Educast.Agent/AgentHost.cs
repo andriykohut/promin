@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Educast.Protocol;
@@ -7,28 +8,92 @@ using Educast.Protocol.Transport;
 
 namespace Educast.Agent;
 
+/// <summary>The listener as the agent uses it: what <see cref="QuicAgentListener"/> offers, so that start-up can be tested with a fake.</summary>
+internal interface IAgentListener : IAsyncDisposable
+{
+    IPEndPoint LocalEndPoint { get; }
+
+    Task StartAsync(CancellationToken ct);
+
+    Task<QuicChannel> AcceptAsync(CancellationToken ct);
+
+    Task<PairingOutcome> AcceptPairingAsync(byte[] roomCode, CancellationToken ct, PairingAdmission admission);
+}
+
+internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAgentListener
+{
+    public IPEndPoint LocalEndPoint => listener.LocalEndPoint;
+
+    public Task StartAsync(CancellationToken ct) => listener.StartAsync(ct);
+
+    public Task<QuicChannel> AcceptAsync(CancellationToken ct) => listener.AcceptAsync(ct);
+
+    public Task<PairingOutcome> AcceptPairingAsync(byte[] roomCode, CancellationToken ct, PairingAdmission admission) =>
+        listener.AcceptPairingAsync(roomCode, ct, admission: admission);
+
+    public ValueTask DisposeAsync() => listener.DisposeAsync();
+}
+
+/// <summary>
+/// The parts of start-up that touch this machine (QUIC, the Windows key store, the network), as functions, so
+/// that every way the agent can fail to start, and the exit code and log line for it, can be reached from a test.
+/// </summary>
+internal sealed record AgentServices(
+    Action EnsureQuicSupported,
+    Func<string, DeviceIdentity> LoadIdentity,
+    Func<DeviceIdentity, PeerCertificateStore, Action<Exception>, IAgentListener> CreateListener,
+    Func<DeviceIdentity, IDisposable> StartBeacon)
+{
+    public static AgentServices ForThisMachine() => new(
+        QuicTransportSettings.EnsureSupported,
+        DeviceIdentity.LoadOrCreate,
+        (identity, masters, connectionRejected) => new QuicAgentListenerAdapter(
+            new QuicAgentListener(
+                identity.Certificate, masters, EducastPorts.Quic, bindAddress: null, connectionRejected: connectionRejected)),
+        identity =>
+        {
+            var beacon = new LanDiscoveryBeacon(
+                identity.DeviceId,
+                Environment.MachineName,
+                EducastPorts.Quic,
+                PeerCertificateStore.ComputeThumbprint(identity.Certificate),
+                EducastPorts.Discovery);
+            beacon.Start();
+            return beacon;
+        });
+}
+
 /// <summary>
 /// The agent when it runs: its identity, the listener, the beacon that announces it, and the two loops side by
-/// side over one listener (teacher PCs that are paired, and pairing windows). Composition of parts that are
-/// tested on their own; the real bind and the window are checked by a person-approved run.
+/// side over one listener (teacher PCs that are paired, and pairing windows). It returns the process's exit code
+/// and says why in the log; nothing here ends the process itself. There is deliberately no <c>ProcessExit</c>
+/// handler: it runs after <c>Main</c> has returned and everything it could cancel is already disposed. The agent
+/// is ended by <c>Stop-Process</c> or, in a test, by the token.
 /// </summary>
 internal static class AgentHost
 {
-    /// <summary>Runs until the process is ended. Returns an <see cref="ExitCodes"/> value only when it cannot start or something fails.</summary>
-    public static async Task<int> RunAsync(AgentCommandLine command, AgentPaths paths)
+    /// <summary>Records what nobody catches (a crash on a thread, a task nobody awaited) in the log. Once, from <c>Main</c>.</summary>
+    public static void LogWhatNobodyCatches(AgentLog log)
     {
-        var log = new AgentLog(paths.LogFile);
         AppDomain.CurrentDomain.UnhandledException += (_, e) => log.Write($"Unhandled exception: {e.ExceptionObject}");
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
             log.Write($"A task failed and nobody was waiting for it: {e.Exception}");
             e.SetObserved();
         };
+    }
 
+    /// <summary>
+    /// Runs until <paramref name="stop"/> is cancelled (a process normally runs until it is killed) and returns 0, or
+    /// returns an <see cref="ExitCodes"/> value as soon as it cannot start or something fails.
+    /// </summary>
+    public static async Task<int> RunAsync(
+        AgentCommandLine command, AgentPaths paths, AgentLog log, AgentServices services, CancellationToken stop)
+    {
         log.Write($"Educast agent started ({(command.Windowed ? "windowed" : "full screen")}), process {Environment.ProcessId}.");
         try
         {
-            return await RunCoreAsync(command, paths, log).ConfigureAwait(false);
+            return await RunCoreAsync(command, paths, log, services, stop).ConfigureAwait(false);
         }
         catch (Exception failure)
         {
@@ -37,11 +102,12 @@ internal static class AgentHost
         }
     }
 
-    private static async Task<int> RunCoreAsync(AgentCommandLine command, AgentPaths paths, AgentLog log)
+    private static async Task<int> RunCoreAsync(
+        AgentCommandLine command, AgentPaths paths, AgentLog log, AgentServices services, CancellationToken stop)
     {
         try
         {
-            QuicTransportSettings.EnsureSupported();
+            services.EnsureQuicSupported();
         }
         catch (PlatformNotSupportedException unavailable)
         {
@@ -52,7 +118,7 @@ internal static class AgentHost
         DeviceIdentity identity;
         try
         {
-            identity = DeviceIdentity.LoadOrCreate(paths.IdentityDirectory);
+            identity = services.LoadIdentity(paths.IdentityDirectory);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or CryptographicException)
         {
@@ -78,16 +144,10 @@ internal static class AgentHost
 
             log.Write($"Device {identity.DeviceId} ({Environment.MachineName}); paired teacher PCs: {masters.Count}.");
 
-            using var shutdown = new CancellationTokenSource();
-            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-            {
-                log.Write("Educast agent stopping.");
-                shutdown.Cancel();
-            };
+            using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(stop);
 
             var refusals = new RefusalLog(log.Write, TimeSpan.FromMinutes(1));
-            await using var listener = new QuicAgentListener(
-                identity.Certificate, masters, EducastPorts.Quic, bindAddress: null, connectionRejected: refusals.Record);
+            await using var listener = services.CreateListener(identity, masters, refusals.Record);
             try
             {
                 await listener.StartAsync(shutdown.Token).ConfigureAwait(false);
@@ -105,19 +165,13 @@ internal static class AgentHost
 
             log.Write($"Listening on {listener.LocalEndPoint}; this PC's certificate completed a handshake with itself.");
 
-            using var beacon = new LanDiscoveryBeacon(
-                identity.DeviceId,
-                Environment.MachineName,
-                EducastPorts.Quic,
-                PeerCertificateStore.ComputeThumbprint(identity.Certificate),
-                EducastPorts.Discovery);
-            beacon.Start();
+            using var beacon = services.StartBeacon(identity);
             log.Write($"Announcing this PC on the network (UDP port {EducastPorts.Discovery}).");
 
             var pairing = new AgentPairingLoop(
                 masters,
                 new AgentSettings(paths.RoomCodeFile).Load,
-                (roomCode, admission, ct) => listener.AcceptPairingAsync(roomCode, ct, admission: admission),
+                (roomCode, admission, ct) => listener.AcceptPairingAsync(roomCode, ct, admission),
                 () => masters.Save(paths.MastersFile),
                 log.Write,
                 new PairingBackoff(),
@@ -139,12 +193,13 @@ internal static class AgentHost
                 return ExitCodes.Unexpected;
             }
 
+            log.Write("Educast agent stopping.");
             return ExitCodes.Success;
         }
     }
 
     private static async Task AcceptTeacherPcsAsync(
-        QuicAgentListener listener,
+        IAgentListener listener,
         NewestConnectionWins connections,
         IBroadcastDisplayFactory displays,
         AgentLog log,

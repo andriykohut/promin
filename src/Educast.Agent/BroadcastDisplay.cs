@@ -147,7 +147,23 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
         }
     }
 
+    // The root of the display thread. Whatever happens in the body or in the clean-up, an exception that left this
+    // thread unhandled would end the whole agent; it is logged instead, and only this display is lost.
     private void Run()
+    {
+        try
+        {
+            RunDisplay();
+        }
+        catch (Exception failure)
+        {
+            _log($"The display thread stopped because of an unexpected error ({failure.GetType().Name}: {failure.Message}).");
+            Volatile.Write(ref _open, 0);
+            _ready.TrySetResult(false);
+        }
+    }
+
+    private void RunDisplay()
     {
         GpuDevice? gpu = null;
         MediaFoundationH264Decoder? decoder = null;
@@ -184,11 +200,11 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
             catch (Exception failure)
             {
                 _log($"The broadcast cannot be shown on this PC ({failure.GetType().Name}: {failure.Message}).");
-                _ready.SetResult(false);
+                _ready.TrySetResult(false);
                 return;
             }
 
-            _ready.SetResult(true);
+            _ready.TrySetResult(true);
             window.RunMessageLoop();
         }
         finally
@@ -202,10 +218,23 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
                      $"refused by the decoder: {session.RefusedFrameCount}.");
             }
 
-            // The window first, so nothing can be drawn to it; then what it drew with.
-            window?.Dispose();
-            decoder?.Dispose();
-            gpu?.Dispose();
+            // The window first, so nothing can be drawn to it; then what it drew with. Each is released whether or
+            // not the one before it threw (a removed device can make a dispose throw).
+            Release("the window", () => window?.Dispose());
+            Release("the decoder", () => decoder?.Dispose());
+            Release("the graphics device", () => gpu?.Dispose());
+        }
+    }
+
+    private void Release(string what, Action release)
+    {
+        try
+        {
+            release();
+        }
+        catch (Exception failure)
+        {
+            _log($"Releasing {what} failed ({failure.GetType().Name}: {failure.Message}).");
         }
     }
 

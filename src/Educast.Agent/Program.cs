@@ -16,6 +16,9 @@ internal static class Program
             return exitCode;
         }
 
-        return AgentHost.RunAsync(command, paths).GetAwaiter().GetResult();
+        var log = new AgentLog(paths.LogFile);
+        AgentHost.LogWhatNobodyCatches(log);
+        return AgentHost.RunAsync(command, paths, log, AgentServices.ForThisMachine(), CancellationToken.None)
+            .GetAwaiter().GetResult();
     }
 }
