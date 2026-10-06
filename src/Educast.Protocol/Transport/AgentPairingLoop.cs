@@ -4,6 +4,13 @@ using Educast.Protocol.Pairing;
 namespace Educast.Protocol.Transport;
 
 /// <summary>
+/// What looking for the room code found: the code, or nothing. <paramref name="Problem"/> is set when there is
+/// nothing to use but something is there (a file that exists and cannot be read or does not hold a code), and
+/// says what.
+/// </summary>
+public readonly record struct RoomCodeLookup(string? Code, string? Problem = null);
+
+/// <summary>
 /// When a student PC opens its pairing window, for whom, and how long it waits after a window that went wrong.
 /// </summary>
 /// <remarks>
@@ -12,7 +19,10 @@ namespace Educast.Protocol.Transport;
 /// about guesses:
 /// </para>
 /// <list type="number">
-/// <item>With no room code set no window is opened, and that is said once.</item>
+/// <item>
+/// With no room code set no window is opened, and that is said once; a code that is there and cannot be used is
+/// said once too, in its own words.
+/// </item>
 /// <item>
 /// With no teacher PC pinned, windows are open to <see cref="PairingAdmission.Anyone"/>, one straight after
 /// another: a window that ends with nobody dialling costs nothing and is followed by the next at once.
@@ -43,7 +53,7 @@ public sealed class AgentPairingLoop
     public static readonly TimeSpan NoRoomCodeRecheck = TimeSpan.FromSeconds(10);
 
     private readonly PeerCertificateStore _trustedMasters;
-    private readonly Func<string?> _loadRoomCode;
+    private readonly Func<RoomCodeLookup> _loadRoomCode;
     private readonly Func<byte[], PairingAdmission, CancellationToken, Task<PairingOutcome>> _openWindow;
     private readonly Action _saveTrustedMasters;
     private readonly Action<string> _log;
@@ -51,7 +61,7 @@ public sealed class AgentPairingLoop
     private readonly TimeProvider _timeProvider;
 
     /// <param name="trustedMasters">The pins the listener judges by; empty means no teacher PC is paired.</param>
-    /// <param name="loadRoomCode">The six digits, or null when none is set.</param>
+    /// <param name="loadRoomCode">The six digits, or what was found instead.</param>
     /// <param name="openWindow">
     /// Opens one pairing window for the given code and admission and returns how it ended (in the agent,
     /// <see cref="QuicAgentListener.AcceptPairingAsync"/>).
@@ -60,7 +70,7 @@ public sealed class AgentPairingLoop
     /// <param name="log">One line per event.</param>
     public AgentPairingLoop(
         PeerCertificateStore trustedMasters,
-        Func<string?> loadRoomCode,
+        Func<RoomCodeLookup> loadRoomCode,
         Func<byte[], PairingAdmission, CancellationToken, Task<PairingOutcome>> openWindow,
         Action saveTrustedMasters,
         Action<string> log,
@@ -87,27 +97,30 @@ public sealed class AgentPairingLoop
     /// <summary>Runs until <paramref name="ct"/> is cancelled, and then returns normally.</summary>
     public async Task RunAsync(CancellationToken ct)
     {
-        var saidNoRoomCode = false;
+        string? saidAboutRoomCode = null;
         PairingAdmission? saidAdmission = null;
 
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                var roomCode = _loadRoomCode();
-                if (roomCode is null)
+                var lookup = _loadRoomCode();
+                if (lookup.Code is not { } roomCode)
                 {
-                    if (!saidNoRoomCode)
+                    var message = lookup.Problem is { } problem
+                        ? $"The room code cannot be used: {problem} Run \"Educast.Agent.exe --set-room-code <6 digits>\" to write it again."
+                        : NoRoomCodeMessage;
+                    if (saidAboutRoomCode != message)
                     {
-                        _log(NoRoomCodeMessage);
-                        saidNoRoomCode = true;
+                        _log(message);
+                        saidAboutRoomCode = message;
                     }
 
                     await Task.Delay(NoRoomCodeRecheck, _timeProvider, ct).ConfigureAwait(false);
                     continue;
                 }
 
-                saidNoRoomCode = false;
+                saidAboutRoomCode = null;
 
                 var admission = _trustedMasters.Count == 0 ? PairingAdmission.Anyone : PairingAdmission.PinnedPeersOnly;
                 if (saidAdmission != admission)

@@ -83,6 +83,23 @@ public class BroadcastDisplayTests(ITestOutputHelper output)
         }
     }
 
+    /// <summary>The numbers in the display's closing line, which says what became of every frame.</summary>
+    private readonly record struct Summary(int Shown, int Dropped, int Discarded, int Refused, int Skipped)
+    {
+        public static Summary Parse(string line)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(
+                line,
+                @"Pictures shown: (\d+), frames dropped: (\d+), discarded while waiting for a keyframe: (\d+), " +
+                @"refused by the decoder: (\d+), decoded but not shown to stay current: (\d+)");
+            Assert.True(m.Success, $"not the closing line: {line}");
+            int N(int i) => int.Parse(m.Groups[i].Value);
+            return new Summary(N(1), N(2), N(3), N(4), N(5));
+        }
+
+        public int Decoded => Shown + Skipped;
+    }
+
     [Fact(Skip = NeedsWindow)]
     public async Task AWindowedDisplay_ShowsRealEncodedPictures_AndEndsCleanly()
     {
@@ -91,18 +108,43 @@ public class BroadcastDisplayTests(ITestOutputHelper output)
         var log = await ShowAsync(payloads, output.WriteLine);
 
         Assert.Contains(log, line => line.Contains("The first picture is on screen"));
-        var summary = Assert.Single(log, line => line.Contains("The display ended."));
-        Assert.Contains($"Pictures shown: {payloads.Count},", summary);
-        Assert.Contains("refused by the decoder: 0", summary);
+        var summary = Summary.Parse(Assert.Single(log, line => line.Contains("The display ended.")));
+        Assert.Equal(payloads.Count, summary.Decoded); // every frame was decoded; some pictures may have been skipped to stay current
+        Assert.True(summary.Shown >= payloads.Count / 2, $"only {summary.Shown} of {payloads.Count} pictures were shown");
+        Assert.Equal(0, summary.Refused);
+        Assert.Equal(0, summary.Discarded);
         Assert.DoesNotContain(log, line => line.Contains("failed"));
     }
 
-    /// <summary>Teardown while frames are still queued: it must not hang and must not throw.</summary>
+    /// <summary>
+    /// Teardown while frames are still arriving: it must not hang and must not throw. It is only worth anything
+    /// if the display was working when it was removed, so the test first waits for a picture to be on screen
+    /// and afterwards checks that nothing failed.
+    /// </summary>
     [Fact(Skip = NeedsWindow)]
     public async Task ADisplayRemovedWhileFramesAreStillArriving_EndsWithoutHangingOrThrowing()
     {
         var payloads = EncodedBroadcast(1024, 768, colours: 2);
-        var display = await BroadcastDisplay.StartAsync(new StartBroadcast(1024, 768, 15), windowed: true, output.WriteLine);
+        var log = new List<string>();
+        void Log(string line)
+        {
+            lock (log)
+            {
+                log.Add(line);
+            }
+
+            output.WriteLine(line);
+        }
+
+        bool Logged(string text)
+        {
+            lock (log)
+            {
+                return log.Any(line => line.Contains(text));
+            }
+        }
+
+        var display = await BroadcastDisplay.StartAsync(new StartBroadcast(1024, 768, 15), windowed: true, Log);
         Assert.NotNull(display);
 
         var feeding = Task.Run(async () =>
@@ -110,15 +152,25 @@ public class BroadcastDisplayTests(ITestOutputHelper output)
             foreach (var payload in payloads)
             {
                 await display.SubmitFrameAsync(payload, CancellationToken.None); // never faults, whatever the display is doing
+                await Task.Delay(20);
             }
         });
-        await Task.Delay(150);
+
+        for (var i = 0; i < 500 && !Logged("The first picture is on screen") && !Logged("failed"); i++)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.True(Logged("The first picture is on screen"), "no picture was ever shown, so there was nothing to remove");
+        Assert.True(display.IsOpen);
 
         var stopped = Task.Run(display.Dispose);
 
         await stopped.WaitAsync(TimeSpan.FromSeconds(15));
         await feeding.WaitAsync(TimeSpan.FromSeconds(15));
         Assert.False(display.IsOpen);
+        Assert.False(Logged("failed"), "the display failed");
+        Assert.True(Summary.Parse(log.Single(line => line.Contains("The display ended."))).Shown >= 1);
     }
 
     [Fact(Skip = NeedsWindow)]
@@ -150,14 +202,19 @@ public class BroadcastDisplayTests(ITestOutputHelper output)
             display.Dispose();
         }
 
-        string summary;
+        Summary summary;
         lock (log)
         {
-            summary = Assert.Single(log, line => line.Contains("The display ended."));
+            summary = Summary.Parse(Assert.Single(log, line => line.Contains("The display ended.")));
         }
 
-        // 11 pictures from the first stream and 8 from the second; none dropped as stale.
-        Assert.Contains("Pictures shown: 19,", summary);
-        Assert.Contains("frames dropped: 0,", summary);
+        // 11 frames from the first stream and 8 from the second were all decoded (frames submitted together are
+        // decoded in order and only the newest picture of the batch is shown); none was dropped as stale, which is
+        // what a restart that did not reach the session would have caused, and none had to be discarded.
+        Assert.Equal(19, summary.Decoded);
+        Assert.True(summary.Shown >= 2, "each stream shows at least its newest picture");
+        Assert.Equal(0, summary.Dropped);
+        Assert.Equal(0, summary.Discarded);
+        Assert.Equal(0, summary.Refused);
     }
 }

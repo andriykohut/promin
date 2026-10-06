@@ -416,4 +416,94 @@ public class BroadcastConnectionTests
         Assert.True(rig.Running.IsCompletedSuccessfully);
         Assert.True(rig.Factory.Created[0].Disposed);
     }
+
+    private sealed class HangingFactory : IBroadcastDisplayFactory
+    {
+        public TaskCompletionSource<IBroadcastDisplay?> Pending { get; } = new();
+        public int Asked;
+
+        public Task<IBroadcastDisplay?> StartAsync(StartBroadcast message)
+        {
+            Interlocked.Increment(ref Asked);
+            return Pending.Task;
+        }
+    }
+
+    [Fact(Timeout = 20000)]
+    public async Task ADisplayThatNeverGetsReady_IsGivenUpOn_AndLoggedWithTheTimeLimit_WithoutBlockingTheControlLoop()
+    {
+        var factory = new HangingFactory();
+        var log = new List<string>();
+        var connection = new FakeConnection();
+        var handler = new BroadcastConnection(factory, log.Add, startTimeout: TimeSpan.FromMilliseconds(100));
+        var running = handler.RunAsync(connection, CancellationToken.None);
+
+        connection.Send(new StartBroadcast(1920, 1080, 15));
+        for (var i = 0; i < 500 && !log.Any(line => line.Contains("not ready after")); i++)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.Contains(log, line => line.Contains("not ready after 0.1 seconds"));
+        Assert.Null(handler.Display);
+        Assert.False(running.IsCompleted); // the connection carries on: StopBroadcast and the next start are still heard
+
+        connection.Send(new StopBroadcast());
+        connection.Lose();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact(Timeout = 20000)]
+    public async Task ADisplayThatTurnsUpAfterTheBroadcastWasGivenUpOn_IsRemoved()
+    {
+        var factory = new HangingFactory();
+        var log = new List<string>();
+        var connection = new FakeConnection();
+        var handler = new BroadcastConnection(factory, log.Add, startTimeout: TimeSpan.FromMilliseconds(50));
+        var running = handler.RunAsync(connection, CancellationToken.None);
+        connection.Send(new StartBroadcast(1920, 1080, 15));
+        for (var i = 0; i < 500 && !log.Any(line => line.Contains("not ready after")); i++)
+        {
+            await Task.Delay(10);
+        }
+
+        var late = new FakeDisplay();
+        factory.Pending.SetResult(late);
+        for (var i = 0; i < 500 && !late.Disposed; i++)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.True(late.Disposed);
+        Assert.Null(handler.Display);
+        connection.Lose();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact(Timeout = 20000)]
+    public async Task WhenTheConnectionEndsWhileADisplayIsStarting_TheHandlerEndsAtOnce_AndTheLateDisplayIsRemoved()
+    {
+        var factory = new HangingFactory();
+        var connection = new FakeConnection();
+        using var cts = new CancellationTokenSource();
+        var handler = new BroadcastConnection(factory, _ => { });
+        var running = handler.RunAsync(connection, cts.Token);
+        connection.Send(new StartBroadcast(1920, 1080, 15));
+        for (var i = 0; i < 500 && Volatile.Read(ref factory.Asked) == 0; i++)
+        {
+            await Task.Delay(10);
+        }
+
+        await cts.CancelAsync(); // a newer connection took over
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var late = new FakeDisplay();
+        factory.Pending.SetResult(late);
+        for (var i = 0; i < 500 && !late.Disposed; i++)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.True(late.Disposed);
+    }
 }

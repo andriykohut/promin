@@ -13,8 +13,14 @@ namespace Educast.Agent;
 /// pump (video streams). Frames that arrive while there is no display are read and dropped, so that frames of an
 /// earlier broadcast never wait in the queue to be shown, ahead of the next one's, at its start.
 /// </remarks>
-internal sealed class BroadcastConnection(IBroadcastDisplayFactory displays, Action<string> log)
+internal sealed class BroadcastConnection(
+    IBroadcastDisplayFactory displays, Action<string> log, TimeSpan? startTimeout = null)
 {
+    /// <summary>How long a display may take to get its window up before the broadcast is given up on.</summary>
+    public static readonly TimeSpan DefaultStartTimeout = TimeSpan.FromSeconds(20);
+
+    private readonly TimeSpan _startTimeout = startTimeout ?? DefaultStartTimeout;
+
     private IBroadcastDisplay? _display;
     private int _framesDroppedWithNoDisplay;
 
@@ -97,10 +103,25 @@ internal sealed class BroadcastConnection(IBroadcastDisplayFactory displays, Act
         RemoveDisplay();
         log($"A broadcast started ({start.Width}x{start.Height} at {start.TargetFps} fps).");
 
+        // A graphics driver that hangs while the device is made must not hold up this loop, and through it the
+        // accept loop. The wait is bounded; a display that turns up after it was given up on is removed.
+        Task<IBroadcastDisplay?>? starting = null;
         IBroadcastDisplay? display;
         try
         {
-            display = await displays.StartAsync(start).ConfigureAwait(false);
+            starting = displays.StartAsync(start);
+            display = await starting.WaitAsync(_startTimeout, ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            log($"The broadcast could not be shown: the display was not ready after {_startTimeout.TotalSeconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} seconds.");
+            DisposeWhenReady(starting);
+            return;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            DisposeWhenReady(starting);
+            throw;
         }
         catch (Exception failure)
         {
@@ -116,6 +137,20 @@ internal sealed class BroadcastConnection(IBroadcastDisplayFactory displays, Act
 
         Volatile.Write(ref _display, display);
     }
+
+    // A display that was given up on and then turned up anyway is not wanted.
+    private static void DisposeWhenReady(Task<IBroadcastDisplay?> starting) =>
+        _ = starting.ContinueWith(
+            late =>
+            {
+                if (late.IsCompletedSuccessfully)
+                {
+                    late.Result?.Dispose();
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     private async Task PumpFramesAsync(IAgentConnection connection, CancellationTokenSource ending)
     {

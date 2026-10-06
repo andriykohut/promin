@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Educast.Protocol.Pairing;
+using Educast.Protocol.Transport;
 
 namespace Educast.Agent;
 
@@ -17,16 +18,29 @@ internal sealed class AgentSettings(string path)
     /// The stored code, or null: no file, a file that cannot be read or is not JSON, or a value that is not
     /// exactly six digits.
     /// </summary>
-    public string? Load()
+    public string? Load() => Lookup().Code;
+
+    /// <summary>
+    /// The same, and when there is no usable code but there is a file, what is wrong with it. No file at all is
+    /// not a problem: it is a PC whose room code has not been set.
+    /// </summary>
+    public RoomCodeLookup Lookup()
     {
+        if (!File.Exists(path))
+        {
+            return new RoomCodeLookup(null);
+        }
+
         try
         {
             var stored = JsonSerializer.Deserialize<Stored>(File.ReadAllText(path), Json);
-            return stored?.RoomCode is { } code && RoomCode.IsValid(code) ? code : null;
+            return stored?.RoomCode is { } code && RoomCode.IsValid(code)
+                ? new RoomCodeLookup(code)
+                : new RoomCodeLookup(null, $"{path} exists but does not hold a six-digit room code.");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or NotSupportedException)
         {
-            return null;
+            return new RoomCodeLookup(null, $"{path} exists but could not be read ({e.Message}).");
         }
     }
 

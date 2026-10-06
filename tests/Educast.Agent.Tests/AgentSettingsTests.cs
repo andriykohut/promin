@@ -81,4 +81,42 @@ public class AgentSettingsTests
         Assert.Throws<ArgumentException>(() => new AgentSettings(path).Save(code));
         Assert.False(File.Exists(path));
     }
+
+    [Fact]
+    public void Lookup_SaysNothingIsWrong_WhenThereIsNoFile()
+    {
+        using var temp = new TempDirectory();
+
+        var lookup = new AgentSettings(temp.File("missing.json")).Lookup();
+
+        Assert.Null(lookup.Code);
+        Assert.Null(lookup.Problem);
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("{\"roomCode\":\"12\"}")]
+    [InlineData("{}")]
+    public void Lookup_SaysTheFileIsThereAndCannotBeUsed(string content)
+    {
+        using var temp = new TempDirectory();
+        var path = temp.File("agent.json");
+        File.WriteAllText(path, content);
+
+        var lookup = new AgentSettings(path).Lookup();
+
+        Assert.Null(lookup.Code);
+        Assert.Contains(path, lookup.Problem);
+        Assert.Contains("exists but", lookup.Problem);
+    }
+
+    [Fact]
+    public void Lookup_GivesTheCode_AndNoProblem_ForAGoodFile()
+    {
+        using var temp = new TempDirectory();
+        var settings = new AgentSettings(temp.File("agent.json"));
+        settings.Save("482913");
+
+        Assert.Equal(new Educast.Protocol.Transport.RoomCodeLookup("482913"), settings.Lookup());
+    }
 }

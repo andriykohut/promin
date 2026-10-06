@@ -6,8 +6,10 @@ using Educast.Protocol.Transport;
 namespace Educast.Protocol.Tests.Transport;
 
 /// <summary>
-/// When a student PC opens its pairing window, to whom, and how long it waits after a failure, driven by a clock
-/// that moves only when a test says so. No test here sleeps.
+/// When a student PC opens its pairing window, to whom, and how long it waits after a failure. Every wait the loop
+/// makes is on a clock that moves only when a test says so, so no test waits out a backoff. The helpers do use real
+/// time, in milliseconds: to see that the loop has reached a wait or opened a window, and (for "nothing more
+/// happened") to give it 50 ms in which it could have.
 /// </summary>
 public class AgentPairingLoopTests
 {
@@ -53,7 +55,7 @@ public class AgentPairingLoopTests
             Pins = new PeerCertificateStore();
             Loop = new AgentPairingLoop(
                 Pins,
-                () => RoomCode,
+                () => new RoomCodeLookup(RoomCode, RoomCodeProblem),
                 (code, admission, ct) => OpenWindowAsync(code, admission),
                 () =>
                 {
@@ -73,6 +75,7 @@ public class AgentPairingLoopTests
         public AgentPairingLoop Loop { get; }
         public List<string> Log { get; } = [];
         public string? RoomCode { get; set; } = "482913";
+        public string? RoomCodeProblem { get; set; }
         public bool SaveFails { get; set; }
         public int SaveCalls;
 
@@ -189,6 +192,39 @@ public class AgentPairingLoopTests
         Assert.Equal(
             "No room code is set. Run \"Educast.Agent.exe --set-room-code <6 digits>\".",
             AgentPairingLoop.NoRoomCodeMessage);
+    }
+
+    [Fact]
+    public async Task ARoomCodeFileThatIsThereAndCannotBeUsed_IsSaidOnce_InItsOwnWords_NotAsNoCodeSet()
+    {
+        await using var rig = new Rig { RoomCode = null, RoomCodeProblem = @"C:\ProgramData\Educast\agent.json exists but does not hold a six-digit room code." };
+
+        rig.Start();
+        await rig.WaitingAsync(1);
+        rig.Clock.Advance(AgentPairingLoop.NoRoomCodeRecheck);
+        await rig.WaitingAsync(2);
+
+        Assert.Empty(rig.Calls);
+        var line = Assert.Single(rig.Log);
+        Assert.Contains("exists but does not hold a six-digit room code", line);
+        Assert.Contains("--set-room-code", line);
+        Assert.DoesNotContain("No room code is set", line);
+    }
+
+    [Fact]
+    public async Task WhenTheProblemChanges_ItIsSaidAgain()
+    {
+        await using var rig = new Rig { RoomCode = null, RoomCodeProblem = "the file is not JSON." };
+        rig.Start();
+        await rig.WaitingAsync(1);
+
+        rig.RoomCodeProblem = null; // the file was deleted: now it is simply not set
+        rig.Clock.Advance(AgentPairingLoop.NoRoomCodeRecheck);
+        await rig.WaitingAsync(2);
+
+        Assert.Equal(2, rig.Log.Count);
+        Assert.Contains("the file is not JSON", rig.Log[0]);
+        Assert.Equal(AgentPairingLoop.NoRoomCodeMessage, rig.Log[1]);
     }
 
     [Fact]

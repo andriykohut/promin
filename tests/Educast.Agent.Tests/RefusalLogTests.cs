@@ -21,7 +21,10 @@ public class RefusalLogTests
 
         log.Record(new InvalidOperationException("not pinned"));
 
-        Assert.Contains("not pinned", Assert.Single(lines));
+        var line = Assert.Single(lines);
+        Assert.Contains("not pinned", line);
+        Assert.Contains("could not be accepted", line);
+        Assert.DoesNotContain("was refused", line); // not every failure to accept is a refusal
     }
 
     [Fact]

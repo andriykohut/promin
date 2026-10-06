@@ -171,7 +171,7 @@ internal static class AgentHost
 
             var pairing = new AgentPairingLoop(
                 masters,
-                new AgentSettings(paths.RoomCodeFile).Load,
+                new AgentSettings(paths.RoomCodeFile).Lookup,
                 (roomCode, admission, ct) => listener.AcceptPairingAsync(roomCode, ct, admission),
                 () => masters.Save(paths.MastersFile),
                 log.Write,
