@@ -446,6 +446,106 @@ public class DecoderPipelineTests
         Assert.False(changing.NeedsKeyframe);
     }
 
+    // ---- E1: NeedsKeyframe stays true until a picture has come out ---------------------------------------
+
+    [Fact]
+    public void AKeyframeAcceptedWithNoOutput_LeavesNeedsKeyframeTrue()
+    {
+        var mft = new FakeDecoderMft { SwallowInputs = true };
+        var pipeline = Pipeline(mft);
+
+        Assert.False(pipeline.TryDecode(Frames.Keyframe(0), out _));
+
+        Assert.True(pipeline.NeedsKeyframe);
+        Assert.Equal(1, pipeline.InputsAccepted);
+    }
+
+    [Fact]
+    public void AfterThat_ANonKeyframeIsStillOffered_ToTheTransform()
+    {
+        var mft = new FakeDecoderMft { SwallowInputs = true };
+        var pipeline = Pipeline(mft);
+        pipeline.TryDecode(Frames.Keyframe(0), out _);
+
+        pipeline.TryDecode(Frames.Delta(1), out _);
+
+        Assert.Equal([true, false], mft.Inputs.Select(i => i.IsKeyframe)); // the delta reached the transform
+    }
+
+    [Fact]
+    public void AfterThat_ANonKeyframeThatYieldsAPicture_ClearsNeedsKeyframe_AsForADecoderThatHoldsOneBack()
+    {
+        var pipeline = Pipeline(new FakeDecoderMft { HoldBack = 1 });
+        pipeline.TryDecode(Frames.Keyframe(0), out _);
+        Assert.True(pipeline.NeedsKeyframe); // one call late, which is honest
+
+        Assert.True(pipeline.TryDecode(Frames.Delta(1), out var picture));
+
+        Assert.Equal(0, picture!.Index);
+        Assert.False(pipeline.NeedsKeyframe);
+    }
+
+    [Fact]
+    public void AfterThat_ANonKeyframeThatAlsoYieldsNothing_LeavesItTrue_AndALaterKeyframeThatYieldsAPictureClearsIt()
+    {
+        var mft = new FakeDecoderMft { SwallowInputs = true };
+        var pipeline = Pipeline(mft);
+        pipeline.TryDecode(Frames.Keyframe(0), out _);
+
+        Assert.False(pipeline.TryDecode(Frames.Delta(1), out _));
+        Assert.True(pipeline.NeedsKeyframe);
+
+        mft.SwallowInputs = false;
+        Assert.True(pipeline.TryDecode(Frames.Keyframe(2), out _));
+        Assert.False(pipeline.NeedsKeyframe);
+    }
+
+    [Fact]
+    public void MidStream_AnAcceptedKeyframeWithNoOutput_DoesNotSetNeedsKeyframe()
+    {
+        var mft = new FakeDecoderMft();
+        var pipeline = Pipeline(mft);
+        pipeline.TryDecode(Frames.Keyframe(0), out _);
+        Assert.False(pipeline.NeedsKeyframe);
+
+        mft.SwallowInputs = true;
+        Assert.False(pipeline.TryDecode(Frames.Keyframe(1), out _));
+
+        Assert.False(pipeline.NeedsKeyframe); // a swallowed picture cannot be told from a held-back one here
+    }
+
+    // After each way the stream can break, rule 1 applies again: an accepted keyframe with no output does not
+    // clear the flag.
+    [Theory]
+    [InlineData("garbage")]
+    [InlineData("refused")]
+    [InlineData("failed")]
+    [InlineData("formats")]
+    public void AfterEachBreak_ANewKeyframeAcceptedWithNoOutput_LeavesNeedsKeyframeTrue(string how)
+    {
+        var mft = new FakeDecoderMft();
+        var pipeline = Pipeline(mft);
+        pipeline.TryDecode(Frames.Keyframe(0), out _);
+        Assert.False(pipeline.NeedsKeyframe);
+
+        switch (how)
+        {
+            case "garbage": pipeline.TryDecode([9, 9, 9], out _); break;
+            case "refused": mft.RejectNextInput(); pipeline.TryDecode(Frames.Delta(1), out _); break;
+            case "failed": mft.FailNextOutput(); pipeline.TryDecode(Frames.Delta(1), out _); break;
+            default: mft.AlwaysChangesFormat = true; pipeline.TryDecode(Frames.Delta(1), out _); mft.AlwaysChangesFormat = false; break;
+        }
+        Assert.True(pipeline.NeedsKeyframe);
+
+        mft.SwallowInputs = true;
+        Assert.False(pipeline.TryDecode(Frames.Keyframe(2), out _));
+        Assert.True(pipeline.NeedsKeyframe);
+
+        mft.SwallowInputs = false;
+        Assert.True(pipeline.TryDecode(Frames.Keyframe(3), out _));
+        Assert.False(pipeline.NeedsKeyframe);
+    }
+
     // ---- LastFailure and a returned picture; leaks ---------------------------------------------------
 
     // The doc says so: a call can hand out a picture and still report that the stream broke right after it.

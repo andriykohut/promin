@@ -225,6 +225,11 @@ public class MediaFoundationH264DecoderTests(ITestOutputHelper output)
 
         var before = decoder.TryDecode(new EncodedFrame(WellFramedJunk(random), true, 0), out _);
         output.WriteLine($"junk before the stream: returned {before}, failure: {decoder.LastFailure}, needs keyframe: {decoder.NeedsKeyframe}, held back: {decoder.PicturesHeldBack}");
+        // The stream never started: if nothing came back, the caller must still be told to wait for a keyframe.
+        // (A transform that concealed the junk into a picture is a decoded picture, and true is then correct.)
+        output.WriteLine(before ? "the transform concealed the junk into a picture" : "the transform gave no picture for the junk");
+        if (!before)
+            Assert.True(decoder.NeedsKeyframe, "no picture came out, yet the decoder says it does not need a keyframe");
 
         Assert.True(decoder.TryDecode(frames[0], out _), decoder.LastFailure);
         var during = decoder.TryDecode(new EncodedFrame(WellFramedJunk(random), true, 1), out _);

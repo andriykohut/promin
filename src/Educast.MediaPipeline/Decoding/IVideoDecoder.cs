@@ -10,10 +10,14 @@ namespace Educast.MediaPipeline.Decoding;
 public interface IVideoDecoder : IDisposable
 {
     /// <summary>
-    /// True from construction until a keyframe has been decoded, and true again after anything that makes the
-    /// next delta undecodable (bytes that were refused, a decoder that refused or failed). While it is true,
-    /// everything but a keyframe is refused, so the caller asks the teacher for one. A picture the decoder merely
-    /// held back does not set it.
+    /// What to do about keyframes: while this is true, ask the teacher for one. True from construction and again
+    /// after anything that breaks the stream (bytes that were refused, a decoder that refused or failed). It stays
+    /// true until a picture has come out of a call made after a keyframe was accepted; accepting a keyframe is not
+    /// enough, since a decoder can accept one and give nothing back. A decoder that holds one picture back
+    /// reports true for one call longer. Once it has gone false, a later keyframe that is accepted but gives no
+    /// picture does not set it again: the two cases (a picture held back, a picture swallowed) cannot be told
+    /// apart there, and re-arming would freeze a decoder that legitimately holds pictures. Non-keyframes are
+    /// offered to the decoder as soon as a keyframe has been accepted, whatever this says.
     /// </summary>
     bool NeedsKeyframe { get; }
 
@@ -22,8 +26,9 @@ public interface IVideoDecoder : IDisposable
     /// low delay returns the picture it was just given). Returns false, and throws nothing, when there is no
     /// picture: the stream has not started (a decoder can only start at a keyframe that carries its parameter
     /// sets, so until one arrives every other picture is refused), the framing is malformed (not an H.264 Annex B
-    /// byte stream), the decoder refused or failed, or the decoder kept the picture back. After a refusal or
-    /// failure <see cref="NeedsKeyframe"/> is true. Damage inside well-formed framing is the decoder's to
+    /// byte stream), the decoder refused or failed, or the decoder gave nothing back (held the picture back, or swallowed
+    /// the input). After a refusal or failure <see cref="NeedsKeyframe"/> is true. A call can also return true and
+    /// leave <see cref="NeedsKeyframe"/> true: the picture came out and then the stream broke. Damage inside well-formed framing is the decoder's to
     /// conceal: it may return a smeared picture and true, so loss is for the session to detect from frame ids.
     /// <paramref name="frame"/> is valid until the next call to this method or until <see cref="IDisposable.Dispose"/>
     /// (see <see cref="DecodedFrame"/>).

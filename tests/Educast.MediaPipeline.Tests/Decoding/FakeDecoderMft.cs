@@ -53,6 +53,9 @@ internal sealed class FakeDecoderMft : IDecoderMft<FakePicture>
     /// <summary>Every picture the fake has handed out, so a test can see which were released.</summary>
     public List<FakePicture> Created { get; } = [];
 
+    /// <summary>Accept inputs and produce nothing for them, ever (what the real transform did with a keyframe of well-formed headers over junk).</summary>
+    public bool SwallowInputs { get; set; }
+
     public int FlushCount { get; private set; }
     public bool Disposed { get; private set; }
     public List<Input> Inputs { get; } = [];
@@ -94,7 +97,7 @@ internal sealed class FakeDecoderMft : IDecoderMft<FakePicture>
         }
         _needsKeyframe = false;
 
-        for (var i = 0; i < PicturesPerInput; i++)
+        for (var i = 0; i < (SwallowInputs ? 0 : PicturesPerInput); i++)
             _pending.Enqueue(Frames.IndexOf(data));
         return DecoderInputResult.Accepted;
     }

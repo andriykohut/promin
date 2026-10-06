@@ -25,7 +25,8 @@ internal sealed class DecoderPipeline<TPicture> : IDisposable where TPicture : c
     private const int MaxPicturesPerInput = 64;
 
     private readonly IDecoderMft<TPicture> _mft;
-    private bool _awaitingKeyframe = true;
+    private bool _awaitingKeyframe = true;   // gate: only a keyframe may be offered to the transform
+    private bool _pictureUnconfirmed = true;  // what the caller is told: no picture has come out since the stream (re)started
     private bool _transformHoldsStream; // something was accepted since the start or the last flush
     private bool _nextIsDiscontinuity = true;
     private bool _disposed;
@@ -43,18 +44,26 @@ internal sealed class DecoderPipeline<TPicture> : IDisposable where TPicture : c
     internal string? LastFailure { get; private set; }
 
     /// <summary>
-    /// True from construction until a keyframe has been accepted, and true again after anything that makes the
-    /// next delta undecodable (bytes refused, a transform that refused or failed, a flush). A picture held back
-    /// does not set it: on a decoder that legitimately holds pictures, re-arming would freeze the stream between keyframes.
+    /// What the caller should do about keyframes. True from construction and again after anything that breaks the
+    /// stream (bytes refused, a transform that refused or failed, a flush), and it stays true until a picture has
+    /// come out of a call made after a keyframe was accepted: accepting a keyframe is not enough, because a
+    /// transform can accept one and give nothing back. A decoder that holds one picture back therefore reports
+    /// true for one call longer. Once it has gone false, an accepted keyframe that gives no picture does not set it
+    /// again: the pipeline cannot tell a held-back picture from a swallowed one there, and re-arming would freeze a
+    /// decoder that legitimately holds pictures. A call can return a picture and leave this true (the stream broke after it).
+    /// Whether a non-keyframe is offered to the transform is a separate matter and does not wait for a picture:
+    /// once a keyframe has been accepted, later input is offered.
     /// </summary>
-    internal bool NeedsKeyframe => _awaitingKeyframe;
+    internal bool NeedsKeyframe => _awaitingKeyframe || _pictureUnconfirmed;
 
     /// <summary>Inputs the transform took.</summary>
     internal int InputsAccepted { get; private set; }
 
     /// <summary>
-    /// Calls where the transform took the input and no picture came out of the call (and nothing failed): what a
-    /// decoder that is not one-in one-out shows. Refused input, input never offered and failures are not counted.
+    /// Calls where the transform took the input and no picture came out of the call (and nothing failed). That is
+    /// either a decoder that holds pictures back or input the transform swallowed without complaint (junk under
+    /// well-formed headers); on a clean stream non-zero means the former. Refused input, input never offered and
+    /// failures are not counted.
     /// </summary>
     internal int PicturesHeldBack { get; private set; }
 
@@ -138,6 +147,11 @@ internal sealed class DecoderPipeline<TPicture> : IDisposable where TPicture : c
         InputsAccepted++;
         if (Drain() && _collected is null)
             PicturesHeldBack++;
+
+        // A picture from a call made after a keyframe was accepted: the stream has really started. Not when the
+        // stream broke in the same call (the picture came out, and then it failed).
+        if (_collected is not null && !_awaitingKeyframe)
+            _pictureUnconfirmed = false;
     }
 
     // Collects every picture the transform has ready. False when it failed, in which case the stream is
@@ -197,6 +211,7 @@ internal sealed class DecoderPipeline<TPicture> : IDisposable where TPicture : c
     {
         LastFailure = reason;
         _awaitingKeyframe = true;
+        _pictureUnconfirmed = true;
         if (_transformHoldsStream)
         {
             _mft.Flush();

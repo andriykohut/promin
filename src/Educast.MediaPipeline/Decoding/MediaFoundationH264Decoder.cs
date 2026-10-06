@@ -47,10 +47,11 @@ public sealed class MediaFoundationH264Decoder : IVideoDecoder
     public bool IsAsynchronous => false;
 
     /// <summary>
-    /// How many times the decoder took a picture and gave nothing back from that call (and nothing failed). Zero
-    /// is what one-in one-out looks like; anything else means this machine's decoder holds pictures back, and a
-    /// still teacher's screen would show students a picture late. This, not the low-latency request recorded in
-    /// <see cref="Configuration"/>, is the evidence.
+    /// How many times the decoder took an input and gave nothing back from that call, with no failure. That is
+    /// either a decoder that holds pictures back (a still teacher's screen would then show students a picture
+    /// late) or input the decoder swallowed without complaint (junk under well-formed headers). On a clean stream
+    /// non-zero means the former; zero is what one-in one-out looks like. This, not the low-latency request
+    /// recorded in <see cref="Configuration"/>, is the evidence.
     /// </summary>
     public int PicturesHeldBack => _pipeline!.PicturesHeldBack;
 
