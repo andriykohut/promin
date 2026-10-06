@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Educast.Master.Core.Setup;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -12,7 +13,8 @@ namespace Educast.Master.Pages;
 
 /// <summary>
 /// Set up devices. Everything it shows comes from <see cref="SetupViewModel"/>; this file only
-/// binds, forwards clicks, filters the code field, and opens the three dialogs.
+/// binds, forwards clicks and the code box's content, shows and announces the code hint, and
+/// opens the three dialogs.
 /// </summary>
 /// <remarks>
 /// No <c>async void</c> handler here lets an exception escape: the view model never throws for
@@ -81,9 +83,33 @@ public sealed partial class SetupPage : Page
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(SetupViewModel.CodeText) && CodeBox.Password != ViewModel.CodeText)
+        switch (e.PropertyName)
         {
-            CodeBox.Password = ViewModel.CodeText;
+            case nameof(SetupViewModel.CodeText) when CodeBox.Password != ViewModel.CodeText:
+                CodeBox.Password = ViewModel.CodeText;
+                break;
+            case nameof(SetupViewModel.ShowsCodeHint):
+                ShowHint(CodeHint, ViewModel.ShowsCodeHint);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Shows or hides a code hint without moving anything: the hint keeps its line and is hidden
+    /// by opacity, leaving the automation tree as it goes. It is a polite live region, and the
+    /// change event is raised exactly when it goes from hidden to shown — once, not on every
+    /// keystroke while it stays — after the frame in which it became visible.
+    /// </summary>
+    private void ShowHint(TextBlock hint, bool shown)
+    {
+        var wasShown = hint.Opacity > 0;
+        hint.Opacity = shown ? 1 : 0;
+        AutomationProperties.SetAccessibilityView(hint, shown ? AccessibilityView.Content : AccessibilityView.Raw);
+
+        if (shown && !wasShown)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+                FrameworkElementAutomationPeer.CreatePeerForElement(hint)?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged));
         }
     }
 
@@ -125,8 +151,9 @@ public sealed partial class SetupPage : Page
 
         await Guarded(async () =>
         {
-            // The same stock box and hint as the card; Enter is the dialog's default button,
-            // which is enabled only while the code is valid.
+            // The same stock box and hint as the card, driven by EnterCodeViewModel's change
+            // notifications; the hint keeps its line below the box whether or not it shows.
+            // Enter is the dialog's default button, which is enabled only while the code is valid.
             var code = new EnterCodeViewModel();
             var box = new PasswordBox
             {
@@ -140,8 +167,11 @@ public sealed partial class SetupPage : Page
                 Text = EnterCodeViewModel.HintText,
                 Style = (Style)Resources["SecondaryTextStyle"],
                 Margin = new Thickness(0, 4, 0, 0),
-                Visibility = Visibility.Collapsed,
+                Opacity = 0,
+                IsHitTestVisible = false,
             };
+            AutomationProperties.SetAccessibilityView(hint, AccessibilityView.Raw);
+            AutomationProperties.SetLiveSetting(hint, AutomationLiveSetting.Polite);
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
@@ -152,11 +182,18 @@ public sealed partial class SetupPage : Page
                 DefaultButton = ContentDialogButton.Primary,
                 IsPrimaryButtonEnabled = false,
             };
-            box.PasswordChanged += (_, _) =>
+            box.PasswordChanged += (_, _) => code.CodeText = box.Password;
+            code.PropertyChanged += (_, change) =>
             {
-                code.CodeText = box.Password;
-                hint.Visibility = code.ShowsHint ? Visibility.Visible : Visibility.Collapsed;
-                dialog.IsPrimaryButtonEnabled = code.CanPair;
+                switch (change.PropertyName)
+                {
+                    case nameof(EnterCodeViewModel.ShowsHint):
+                        ShowHint(hint, code.ShowsHint);
+                        break;
+                    case nameof(EnterCodeViewModel.CanPair):
+                        dialog.IsPrimaryButtonEnabled = code.CanPair;
+                        break;
+                }
             };
 
             if (await dialog.ShowAsync() == ContentDialogResult.Primary && code.Code is { } sixDigits)
