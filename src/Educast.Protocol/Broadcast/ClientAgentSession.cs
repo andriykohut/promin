@@ -11,13 +11,6 @@ namespace Educast.Protocol.Broadcast;
 public interface IFramePresenter
 {
     /// <summary>
-    /// True while the presenter cannot use anything but a keyframe: before the first picture, and again after
-    /// the stream broke (bytes it refused, a decoder that failed). The session reads it after each frame it
-    /// offers.
-    /// </summary>
-    bool NeedsKeyframe { get; }
-
-    /// <summary>
     /// Decodes <paramref name="encodedFrame"/> (without its envelope) and puts the picture on screen. True when
     /// a picture was shown. False when none was: the picture on screen stays as it was. Throws only when the
     /// display itself has failed.
@@ -36,14 +29,16 @@ public interface IFramePresenter
 /// separate streams complete independently, and that a frame can be lost on the way.
 /// </para>
 /// <para>
-/// <b>The rule.</b> A frame is offered to the decoder only if the decoder has everything before it. Frame ids
-/// rise by one per frame the master produces, so the next frame after one that was accepted has the id just
-/// after it. Any other id means a frame between them did not arrive; nothing that depends on a missing frame
-/// can be decoded correctly, so every frame is discarded until the next keyframe, which depends on nothing. The
+/// <b>The rule.</b> A frame is offered to the decoder only if the decoder has everything before it. Frame ids rise
+/// by one per frame the master produces, so the next frame after one that arrived has the id just after it. Any
+/// other id means a frame between them did not arrive; nothing that depends on a missing frame can be decoded
+/// correctly, so every frame is discarded until a keyframe, which depends on nothing, has been offered. The
 /// picture already on screen stays (a short freeze, never a smeared decode). The same wait begins at the first
-/// frame ever received, after <see cref="OnBroadcastStarted"/>, and whenever the presenter reports
-/// <see cref="IFramePresenter.NeedsKeyframe"/> after a frame it was offered. A wait ends when a keyframe has
-/// been shown.
+/// frame ever received and after <see cref="OnBroadcastStarted"/>. The session decides this on its own account:
+/// it never asks the decoder whether it wants a keyframe. Once a keyframe has been offered, every later frame in
+/// sequence is offered too, whatever the decoder returned: a decoder that holds one picture back needs the next
+/// frame to give the keyframe's picture, and one that could not use a keyframe refuses what follows by itself
+/// (those calls are counted as refused).
 /// </para>
 /// <para>
 /// <b>What a gap can mean.</b> The master (<see cref="BroadcastSession"/>) stops sending deltas to a client after
@@ -132,22 +127,19 @@ public sealed class ClientAgentSession(IFramePresenter presenter)
             return;
         }
 
+        // A keyframe that is offered ends the wait, whatever the decoder makes of it.
+        if (envelope.IsKeyframe)
+        {
+            _awaitingKeyframe = false;
+        }
+
         if (!presenter.TryDecodeAndPresent(envelope.FrameId, envelope.IsKeyframe, encodedFrame))
         {
             RefusedFrameCount++;
-            if (presenter.NeedsKeyframe)
-            {
-                _awaitingKeyframe = true;
-            }
-
             return;
         }
 
         PresentedFrameCount++;
-
-        // A shown keyframe ends a wait. If the stream broke right after the picture came out, the next delta is
-        // no use either.
-        _awaitingKeyframe = presenter.NeedsKeyframe;
         FramePresented?.Invoke(envelope.FrameId);
     }
 }

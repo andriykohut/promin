@@ -17,8 +17,6 @@ internal sealed class DecoderPresenter(MediaFoundationH264Decoder decoder, Fulls
     private const int ReportEvery = 100;
     private int _refused;
 
-    public bool NeedsKeyframe => decoder.NeedsKeyframe;
-
     public bool TryDecodeAndPresent(uint frameId, bool isKeyframe, ReadOnlyMemory<byte> encodedFrame)
     {
         // The decoder reuses its output, so the last picture is not valid after this call.

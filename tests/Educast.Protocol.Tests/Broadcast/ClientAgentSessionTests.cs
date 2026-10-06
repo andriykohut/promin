@@ -9,14 +9,11 @@ public class ClientAgentSessionTests
     private sealed record Offered(uint FrameId, bool IsKeyframe, byte[] Bytes);
 
     /// <summary>
-    /// A presenter with no GPU. It shows whatever it is offered unless told to refuse, and its
-    /// <see cref="NeedsKeyframe"/> is whatever the test last set (a real decoder's moves with its own state).
+    /// A presenter with no GPU. It shows whatever it is offered unless told to refuse.
     /// </summary>
     private sealed class FakePresenter : IFramePresenter
     {
         public List<Offered> Offers { get; } = [];
-
-        public bool NeedsKeyframe { get; set; }
 
         /// <summary>Called for each offer, after it is recorded; returns whether the picture was shown.</summary>
         public Func<Offered, bool> Decide { get; set; } = _ => true;
@@ -283,55 +280,96 @@ public class ClientAgentSessionTests
         Assert.Equal(1, session.RefusedFrameCount);
     }
 
-    [Fact]
-    public void WhenARefusalLeavesThePresenterNeedingAKeyframe_DeltasAreNotFedToIt()
+    /// <summary>
+    /// A decoder that gives each picture back one call late, as a decoder that holds one picture back does: the
+    /// keyframe gives nothing, the next frame gives the keyframe's picture, and so on. Offered frames and shown
+    /// pictures therefore differ by exactly one.
+    /// </summary>
+    private sealed class OneLatePresenter : IFramePresenter
     {
-        var (session, presenter, shown) = Create();
-        session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
-        presenter.Decide = offered => offered.FrameId != 1;
-        presenter.NeedsKeyframe = true; // what a decoder says after it refused bytes
-        session.OnVideoFrameReceived(Payload(1, isKeyframe: false)); // refused
+        private bool _holding;
 
-        session.OnVideoFrameReceived(Payload(2, isKeyframe: false)); // in order, but the decoder cannot use it
-        session.OnVideoFrameReceived(Payload(3, isKeyframe: false));
-        presenter.NeedsKeyframe = false; // a keyframe came out
-        session.OnVideoFrameReceived(Payload(4, isKeyframe: true));
-        session.OnVideoFrameReceived(Payload(5, isKeyframe: false));
+        public List<uint> OfferedIds { get; } = [];
 
-        Assert.Equal([0u, 1u, 4u, 5u], presenter.OfferedIds);
-        Assert.Equal([0u, 4u, 5u], shown);
-        Assert.Equal(1, session.RefusedFrameCount);
-        Assert.Equal(2, session.DiscardedFrameCount);
-    }
-
-    [Fact]
-    public void WhenARefusedKeyframeLeavesThePresenterNeedingAKeyframe_ItWaitsForTheNextOne()
-    {
-        var (session, presenter, shown) = Create();
-        presenter.NeedsKeyframe = true;
-        presenter.Decide = offered =>
+        public bool TryDecodeAndPresent(uint frameId, bool isKeyframe, ReadOnlyMemory<byte> encodedFrame)
         {
-            presenter.NeedsKeyframe = offered.FrameId == 0; // a picture came out of the second keyframe
-            return offered.FrameId != 0;
-        };
-        session.OnVideoFrameReceived(Payload(0, isKeyframe: true)); // junk keyframe: refused
-        session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
-        session.OnVideoFrameReceived(Payload(2, isKeyframe: true));
-        session.OnVideoFrameReceived(Payload(3, isKeyframe: false));
+            OfferedIds.Add(frameId);
+            var pictureComesOut = _holding;
+            _holding = true;
+            return pictureComesOut;
+        }
+    }
 
-        Assert.Equal([0u, 2u, 3u], presenter.OfferedIds);
-        Assert.Equal(1, session.RefusedFrameCount);
-        Assert.Equal(1, session.DiscardedFrameCount);
+    /// <summary>
+    /// A decoder that behaves like the real one after a keyframe it could not use: it refuses the non-keyframes
+    /// that follow without decoding them, until its next usable keyframe. <paramref name="unusableKeyframes"/>
+    /// are the ids of keyframes it cannot use.
+    /// </summary>
+    private sealed class GatedPresenter(params uint[] unusableKeyframes) : IFramePresenter
+    {
+        private bool _usable;
+
+        public List<uint> OfferedIds { get; } = [];
+
+        public bool TryDecodeAndPresent(uint frameId, bool isKeyframe, ReadOnlyMemory<byte> encodedFrame)
+        {
+            OfferedIds.Add(frameId);
+            if (isKeyframe)
+            {
+                _usable = !unusableKeyframes.Contains(frameId);
+            }
+
+            return _usable;
+        }
     }
 
     [Fact]
-    public void ARefusalThatDoesNotNeedAKeyframe_DoesNotStopTheDeltasThatFollow()
+    public void ADecoderThatHoldsOnePictureBack_IsOfferedEveryFrameAfterTheKeyframe_AndNothingIsDiscarded()
     {
-        // A decoder can swallow an input or hold a picture back without anything being wrong with the stream.
+        var presenter = new OneLatePresenter();
+        var session = new ClientAgentSession(presenter);
+        var shown = new List<uint>();
+        session.FramePresented += shown.Add;
+
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false)); // not discarded: the decoder needs it to give picture 0
+        session.OnVideoFrameReceived(Payload(2, isKeyframe: false));
+        session.OnVideoFrameReceived(Payload(3, isKeyframe: false));
+
+        Assert.Equal([0u, 1u, 2u, 3u], presenter.OfferedIds);
+        Assert.Equal(0, session.DiscardedFrameCount);
+        Assert.Equal(3, session.PresentedFrameCount); // trails the four offered by exactly one
+        Assert.Equal(1, session.RefusedFrameCount);   // the keyframe's own call, which had nothing to give
+        Assert.Equal(3, shown.Count);
+    }
+
+    [Fact]
+    public void AKeyframeTheDecoderRefuses_IsFollowedByOfferedNonKeyframes_CountedAsRefused_NotDiscarded()
+    {
+        var presenter = new GatedPresenter(unusableKeyframes: 0);
+        var session = new ClientAgentSession(presenter);
+        var shown = new List<uint>();
+        session.FramePresented += shown.Add;
+
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true));  // refused outright
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false)); // the decoder refuses it without decoding
+        session.OnVideoFrameReceived(Payload(2, isKeyframe: false));
+        session.OnVideoFrameReceived(Payload(3, isKeyframe: true));  // its next keyframe
+        session.OnVideoFrameReceived(Payload(4, isKeyframe: false));
+
+        Assert.Equal([0u, 1u, 2u, 3u, 4u], presenter.OfferedIds);
+        Assert.Equal([3u, 4u], shown);
+        Assert.Equal(3, session.RefusedFrameCount);
+        Assert.Equal(0, session.DiscardedFrameCount);
+    }
+
+    [Fact]
+    public void ARefusedFrame_DoesNotStopTheFramesThatFollow()
+    {
         var (session, presenter, shown) = Create();
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
         presenter.Decide = offered => offered.FrameId != 1;
-        session.OnVideoFrameReceived(Payload(1, isKeyframe: false)); // refused, NeedsKeyframe stays false
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false)); // refused
 
         session.OnVideoFrameReceived(Payload(2, isKeyframe: false));
 
@@ -341,38 +379,56 @@ public class ClientAgentSessionTests
     }
 
     [Fact]
-    public void WhenAShownPictureLeavesThePresenterNeedingAKeyframe_TheNextDeltaIsDiscarded()
+    public void AfterAGap_AKeyframeThatIsOfferedEndsTheWait_WhateverTheDecoderMadeOfIt()
     {
         var (session, presenter, shown) = Create();
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
-        session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
+        session.OnVideoFrameReceived(Payload(2, isKeyframe: false)); // gap: discarded
+        presenter.Decide = offered => !offered.IsKeyframe;           // refuses the keyframe, shows the rest
+        session.OnVideoFrameReceived(Payload(3, isKeyframe: true));
 
-        presenter.NeedsKeyframe = true; // the picture came out, and then the stream broke
-        session.OnVideoFrameReceived(Payload(2, isKeyframe: false));
-        session.OnVideoFrameReceived(Payload(3, isKeyframe: false));
-        presenter.NeedsKeyframe = false;
-        session.OnVideoFrameReceived(Payload(4, isKeyframe: true));
+        session.OnVideoFrameReceived(Payload(4, isKeyframe: false)); // offered: a keyframe has been offered
 
-        Assert.Equal([0u, 1u, 2u, 4u], shown); // 2 was shown (its picture came out); 3 was not fed
-        Assert.Equal(1, session.DiscardedFrameCount);
+        Assert.Equal([0u, 3u, 4u], presenter.OfferedIds);
+        Assert.Equal([0u, 4u], shown);
+        Assert.Equal(1, session.RefusedFrameCount);
+        Assert.Equal(1, session.DiscardedFrameCount); // only the frame after the gap
     }
 
     [Fact]
-    public void AKeyframeThatIsOfferedButGivesNoPicture_DoesNotEndAWait()
+    public void AGap_ThenNonKeyframes_ThenAKeyframe_DiscardsUntilTheKeyframeIsOffered()
     {
-        var (session, presenter, shown) = Create();
+        var presenter = new GatedPresenter();
+        var session = new ClientAgentSession(presenter);
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
-        session.OnVideoFrameReceived(Payload(2, isKeyframe: false)); // gap: waiting for a keyframe
-        presenter.Decide = _ => false;                               // a decoder that swallows the keyframe
-        session.OnVideoFrameReceived(Payload(3, isKeyframe: true));
-        presenter.Decide = _ => true;
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
 
-        session.OnVideoFrameReceived(Payload(4, isKeyframe: false)); // nothing was shown from 3: still unusable
+        session.OnVideoFrameReceived(Payload(3, isKeyframe: false)); // 2 never arrived
+        session.OnVideoFrameReceived(Payload(4, isKeyframe: false));
         session.OnVideoFrameReceived(Payload(5, isKeyframe: true));
+        session.OnVideoFrameReceived(Payload(6, isKeyframe: false));
 
-        Assert.Equal([0u, 5u], shown);
-        Assert.Equal(1, session.RefusedFrameCount);
-        Assert.Equal(2, session.DiscardedFrameCount); // 2 and 4
+        Assert.Equal([0u, 1u, 5u, 6u], presenter.OfferedIds);
+        Assert.Equal(2, session.DiscardedFrameCount);
+    }
+
+    [Fact]
+    public void AStartMidStream_DiscardsNonKeyframesAgain_UntilAKeyframeHasBeenOffered()
+    {
+        var presenter = new GatedPresenter();
+        var session = new ClientAgentSession(presenter);
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
+        session.OnVideoFrameReceived(Payload(2, isKeyframe: false));
+
+        session.OnBroadcastStarted();
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: false));
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
+        session.OnVideoFrameReceived(Payload(2, isKeyframe: true));
+        session.OnVideoFrameReceived(Payload(3, isKeyframe: false));
+
+        Assert.Equal([0u, 1u, 2u, 2u, 3u], presenter.OfferedIds);
+        Assert.Equal(2, session.DiscardedFrameCount);
     }
 
     [Fact]
@@ -481,11 +537,11 @@ public class ClientAgentSessionTests
         presenter.Decide = _ => false;
         session.OnVideoFrameReceived(Payload(3, isKeyframe: true));    // refused
         presenter.Decide = _ => true;
-        session.OnVideoFrameReceived(Payload(4, isKeyframe: false));   // discarded: still waiting, the keyframe before it was refused
+        session.OnVideoFrameReceived(Payload(4, isKeyframe: false));   // presented: the keyframe before it was offered
 
-        Assert.Equal(1, session.PresentedFrameCount);
+        Assert.Equal(2, session.PresentedFrameCount);
         Assert.Equal(2, session.DroppedFrameCount);
         Assert.Equal(1, session.RefusedFrameCount);
-        Assert.Equal(2, session.DiscardedFrameCount);
+        Assert.Equal(1, session.DiscardedFrameCount);
     }
 }
