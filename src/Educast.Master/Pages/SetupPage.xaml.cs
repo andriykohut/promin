@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using Educast.Master.Controls;
 using Educast.Master.Core.Setup;
 using Educast.Protocol.Pairing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Navigation;
 
@@ -22,8 +22,6 @@ namespace Educast.Master.Pages;
 /// </remarks>
 public sealed partial class SetupPage : Page
 {
-    private bool _settingCode;
-
     public SetupPage()
     {
         var services = App.Services;
@@ -75,67 +73,18 @@ public sealed partial class SetupPage : Page
 
     public string MessageOf(SetupBanner? banner) => banner?.Message ?? string.Empty;
 
-    // The room code field: six digits and nothing else (design doc 6.2).
-    //
-    // The field is not bound two-way. Every change the control reports is filtered through
-    // RoomCodeEntry.Accept and the result pushed to the view model; the control's content is
-    // set from code only when the filter refuses an input, and when the view model clears the
-    // code (every PC in the room). Setting a PasswordBox's content from code hides its reveal
-    // button until the next keystroke, so it is done as rarely as possible.
+    // The room code field (RoomCodeField): the view model's CodeText always equals what the
+    // field holds. The field pushes every accepted edit; the view model's one write back is
+    // clearing the code when every PC is in the room.
 
-    private void CodeBox_PasswordChanged(object sender, RoutedEventArgs e) =>
-        ViewModel.CodeText = FilterCode(CodeBox, ViewModel.CodeText);
+    private void CodeBox_CodeChanged(object? sender, EventArgs e) => ViewModel.CodeText = CodeBox.Code;
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(SetupViewModel.CodeText) && CodeBox.Password != ViewModel.CodeText)
+        if (e.PropertyName == nameof(SetupViewModel.CodeText))
         {
-            SetPassword(CodeBox, ViewModel.CodeText);
+            CodeBox.Code = ViewModel.CodeText;
         }
-    }
-
-    /// <summary>Applies <see cref="RoomCodeEntry.Accept"/> to a change in <paramref name="box"/> and returns what it now holds.</summary>
-    private string FilterCode(PasswordBox box, string current)
-    {
-        if (_settingCode)
-        {
-            return box.Password;
-        }
-
-        var accepted = RoomCodeEntry.Accept(current, box.Password);
-        if (accepted != box.Password)
-        {
-            SetPassword(box, accepted);
-        }
-
-        return accepted;
-    }
-
-    private void SetPassword(PasswordBox box, string value)
-    {
-        _settingCode = true;
-        try
-        {
-            box.Password = value;
-        }
-        finally
-        {
-            _settingCode = false;
-        }
-    }
-
-    private PasswordBox NewCodeBox()
-    {
-        var box = new PasswordBox
-        {
-            MaxLength = RoomCode.Length,
-            PlaceholderText = "6 digits",
-            PasswordRevealMode = PasswordRevealMode.Peek,
-            InputScope = NumericPinScope(),
-        };
-        var current = string.Empty;
-        box.PasswordChanged += (_, _) => current = FilterCode(box, current);
-        return box;
     }
 
     // Navigation and the code card.
@@ -176,22 +125,22 @@ public sealed partial class SetupPage : Page
 
         await Guarded(async () =>
         {
-            var box = NewCodeBox();
+            var field = new RoomCodeField { AccessibleName = "Room code" };
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
                 Title = $"Room code for {row.Name}",
-                Content = box,
+                Content = field,
                 PrimaryButtonText = "Pair",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
                 IsPrimaryButtonEnabled = false,
             };
-            box.PasswordChanged += (_, _) => dialog.IsPrimaryButtonEnabled = RoomCode.IsValid(box.Password);
+            field.CodeChanged += (_, _) => dialog.IsPrimaryButtonEnabled = RoomCode.IsValid(field.Code);
 
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
             {
-                await ViewModel.PairOneAsync(row, box.Password);
+                await ViewModel.PairOneAsync(row, field.Code);
             }
         });
     }
@@ -277,12 +226,5 @@ public sealed partial class SetupPage : Page
         {
             separator.Visibility = index == 0 ? Visibility.Collapsed : Visibility.Visible;
         }
-    }
-
-    private static InputScope NumericPinScope()
-    {
-        var scope = new InputScope();
-        scope.Names.Add(new InputScopeName(InputScopeNameValue.NumericPin));
-        return scope;
     }
 }

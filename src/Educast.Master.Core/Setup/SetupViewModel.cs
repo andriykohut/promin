@@ -122,9 +122,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     public bool CanPairAll =>
         RoomCode.TryNormalize(_codeText, out _)
         && Rows.Any(r => r.IsPairable)
-        && !_isPairing
-        && !_busy
-        && !_health.HasLocalFault;
+        && ActionsAllowed;
 
     /// <summary>True while Pair all is running. A single row's Pair does not light this.</summary>
     public bool IsPairing => _isPairing;
@@ -409,7 +407,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     public async Task PairOneAsync(SetupRow row, string? codeOverride = null)
     {
         ArgumentNullException.ThrowIfNull(row);
-        if (_isPairing || _busy || _health.HasLocalFault || !row.IsPairable
+        if (!ActionsAllowed || !row.IsPairable
             || !RoomCode.TryNormalize(codeOverride ?? _codeText, out var code))
         {
             return;
@@ -673,7 +671,12 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
     }
 
-    private bool ActionsAllowed => !_isPairing && !_busy && !_health.HasLocalFault;
+    /// <summary>
+    /// Whether any pairing action may be taken: no pairing running, this PC healthy, and the room
+    /// readable — a pairing the room cannot record would only be undone (see <see cref="RecordPaired"/>),
+    /// after the student PC had already accepted it.
+    /// </summary>
+    private bool ActionsAllowed => !_isPairing && !_busy && !_health.HasLocalFault && !_roomUnreadable;
 
     private void Insert(SetupRow row)
     {

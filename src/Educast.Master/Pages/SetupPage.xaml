@@ -5,6 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:controls="using:Educast.Master.Controls"
     xmlns:setup="using:Educast.Master.Core.Setup"
     mc:Ignorable="d">
 
@@ -274,22 +275,17 @@
                             TextWrapping="Wrap" />
                     </StackPanel>
                     <!--
-                        Six digits, nothing else (design doc 6.2): the code-behind filters each
-                        change through RoomCodeEntry.Accept and pushes the result to CodeText. The
-                        field is deliberately not bound two-way: a binding writing the value back
-                        counts as setting the password from code, which hides the reveal button.
+                        Six digits, nothing else (design doc 6.2). RoomCodeField refuses an input
+                        before the control takes it, so a refused keystroke changes nothing; what
+                        happens to each input is decided in Core (RoomCodeEntry).
                     -->
-                    <PasswordBox
+                    <controls:RoomCodeField
                         x:Name="CodeBox"
                         Grid.Column="1"
                         MinWidth="160"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Room code"
-                        InputScope="NumericPin"
-                        MaxLength="6"
-                        PasswordChanged="CodeBox_PasswordChanged"
-                        PasswordRevealMode="Peek"
-                        PlaceholderText="6 digits" />
+                        AccessibleName="Room code"
+                        CodeChanged="CodeBox_CodeChanged" />
                     <Button
                         Grid.Column="2"
                         MinWidth="120"

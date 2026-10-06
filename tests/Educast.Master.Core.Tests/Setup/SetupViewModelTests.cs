@@ -824,6 +824,47 @@ public sealed class SetupViewModelTests
         Assert.Equal(1, _discovery.Started);
     }
 
+    // Fix round 3.
+
+    [Fact]
+    public async Task WhileTheRoomIsUnreadable_NoPairActionIsEnabled()
+    {
+        _store.LoadThrows = new RoomStoreException("locked", new IOException());
+        var vm = Activated();
+        Raise(1);
+        vm.CodeText = "482913";
+        var row = Row(vm, 1);
+
+        Assert.False(vm.CanPairAll);
+        Assert.False(row.CanAct);
+        Assert.False(row.CanPairNow);
+        Assert.True(row.CanEdit);
+
+        await vm.PairOneAsync(row);
+        await vm.PairOneAsync(row, "482913");
+        await vm.PairAllAsync();
+
+        Assert.Empty(_client.Calls);
+        Assert.Equal(SetupRowStatus.NotPaired, row.Status);
+    }
+
+    [Fact]
+    public async Task ASaveThatFails_AndAnUndoThatThrows_StillReadsCannotPairNow()
+    {
+        var vm = Activated();
+        Raise(1);
+        vm.CodeText = "482913";
+        _store.SaveThrows = new IOException("disk full");
+        _client.UnpairThrows = new IOException("trust file locked");
+
+        await vm.PairAllAsync();
+
+        Assert.Equal(SetupRowStatus.CannotPairNow, Row(vm, 1).Status);
+        Assert.Equal(SaveError, vm.StoreError);
+        Assert.Empty(_store.Members);
+        Assert.False(vm.IsPairing);
+    }
+
     [Fact]
     public void TheChecklist_IsOpenWhenNothingIsFound_AndClosesOnTheFirstPc()
     {
