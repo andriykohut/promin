@@ -310,6 +310,183 @@ public class DecoderPipelineTests
         Assert.Equal(1, mft.FlushCount);
     }
 
+    // ---- D1: pictures held back are counted ------------------------------------------------------
+
+    [Fact]
+    public void PicturesHeldBack_CountsAnAcceptedInputThatProducedNoPicture()
+    {
+        var pipeline = Pipeline(new FakeDecoderMft { HoldBack = 1 });
+
+        pipeline.TryDecode(Frames.Keyframe(0), out _); // accepted, nothing out
+        Assert.Equal((1, 1), (pipeline.InputsAccepted, pipeline.PicturesHeldBack));
+
+        pipeline.TryDecode(Frames.Delta(1), out _);    // a picture (the older one) came out
+        pipeline.TryDecode(Frames.Delta(2), out _);
+        Assert.Equal((3, 1), (pipeline.InputsAccepted, pipeline.PicturesHeldBack));
+    }
+
+    [Fact]
+    public void PicturesHeldBack_StaysZeroForAOneInOneOutDecoder()
+    {
+        var pipeline = Pipeline(new FakeDecoderMft());
+        for (var i = 0; i < 10; i++)
+            Assert.True(pipeline.TryDecode(i == 0 ? Frames.Keyframe(i) : Frames.Delta(i), out _));
+
+        Assert.Equal((10, 0), (pipeline.InputsAccepted, pipeline.PicturesHeldBack));
+    }
+
+    [Fact]
+    public void PicturesHeldBack_DoesNotCountRefusedInput_OrInputNeverOffered_OrFailures()
+    {
+        var mft = new FakeDecoderMft();
+        var pipeline = Pipeline(mft);
+
+        pipeline.TryDecode(Frames.Delta(0), out _);        // never offered: waiting for a keyframe
+        pipeline.TryDecode([1, 2, 3], out _);              // not Annex B
+        pipeline.TryDecode(null, out _);                   // nothing
+        Assert.Equal((0, 0), (pipeline.InputsAccepted, pipeline.PicturesHeldBack));
+
+        pipeline.TryDecode(Frames.Keyframe(1), out _);
+        mft.RejectNextInput();
+        pipeline.TryDecode(Frames.Delta(2), out _);        // refused by the transform
+        pipeline.TryDecode(Frames.Keyframe(3), out _);
+        mft.FailNextOutput();
+        pipeline.TryDecode(Frames.Delta(4), out _);        // accepted, then the transform failed: a failure, not a held-back picture
+
+        Assert.Equal(0, pipeline.PicturesHeldBack);
+        Assert.Equal(3, pipeline.InputsAccepted);
+    }
+
+    // ---- D3: NeedsKeyframe -------------------------------------------------------------------------
+
+    [Fact]
+    public void NeedsKeyframe_IsTrueFromConstruction_AndStaysTrueWhileNothingStartsTheStream()
+    {
+        var pipeline = Pipeline(new FakeDecoderMft());
+        Assert.True(pipeline.NeedsKeyframe);
+
+        pipeline.TryDecode(Frames.Delta(0), out _);
+        Assert.True(pipeline.NeedsKeyframe);
+        pipeline.TryDecode(Frames.KeyframeWithoutParameterSets(1), out _);
+        Assert.True(pipeline.NeedsKeyframe);
+        pipeline.TryDecode([1, 2, 3], out _);
+        Assert.True(pipeline.NeedsKeyframe);
+    }
+
+    [Fact]
+    public void NeedsKeyframe_IsFalseOnceAKeyframeHasBeenDecoded_AndStaysFalseThroughDeltas()
+    {
+        var pipeline = Pipeline(new FakeDecoderMft());
+
+        pipeline.TryDecode(Frames.Keyframe(0), out _);
+        Assert.False(pipeline.NeedsKeyframe);
+        pipeline.TryDecode(Frames.Delta(1), out _);
+        pipeline.TryDecode(Frames.Delta(2), out _);
+        Assert.False(pipeline.NeedsKeyframe);
+    }
+
+    [Fact]
+    public void NeedsKeyframe_IsTrueAgainAfterGarbage_AndClearedByTheNextKeyframe()
+    {
+        var pipeline = Pipeline(new FakeDecoderMft());
+        pipeline.TryDecode(Frames.Keyframe(0), out _);
+
+        pipeline.TryDecode([9, 9, 9], out _);
+        Assert.True(pipeline.NeedsKeyframe);
+        pipeline.TryDecode(Frames.Delta(1), out _);
+        Assert.True(pipeline.NeedsKeyframe);
+
+        pipeline.TryDecode(Frames.Keyframe(2), out _);
+        Assert.False(pipeline.NeedsKeyframe);
+    }
+
+    [Fact]
+    public void NeedsKeyframe_IsTrueAgainAfterARefusedInput()
+    {
+        var mft = new FakeDecoderMft();
+        var pipeline = Pipeline(mft);
+        pipeline.TryDecode(Frames.Keyframe(0), out _);
+
+        mft.RejectNextInput();
+        pipeline.TryDecode(Frames.Delta(1), out _);
+
+        Assert.True(pipeline.NeedsKeyframe);
+        Assert.Equal(1, mft.FlushCount);
+    }
+
+    [Fact]
+    public void NeedsKeyframe_IsTrueAgainAfterAFailedOutput_AndAfterEndlessFormatChanges()
+    {
+        var mft = new FakeDecoderMft();
+        var pipeline = Pipeline(mft);
+        pipeline.TryDecode(Frames.Keyframe(0), out _);
+        mft.FailNextOutput();
+        pipeline.TryDecode(Frames.Delta(1), out _);
+        Assert.True(pipeline.NeedsKeyframe);
+
+        var endless = Pipeline(new FakeDecoderMft { AlwaysChangesFormat = true });
+        endless.TryDecode(Frames.Keyframe(0), out _);
+        Assert.True(endless.NeedsKeyframe);
+    }
+
+    [Fact]
+    public void NeedsKeyframe_IsNotSetByAHeldBackPicture_OrByAFormatChange()
+    {
+        var held = Pipeline(new FakeDecoderMft { HoldBack = 1 });
+        held.TryDecode(Frames.Keyframe(0), out _);
+        held.TryDecode(Frames.Delta(1), out _);
+        Assert.Equal(1, held.PicturesHeldBack); // a held-back picture happened ...
+        Assert.False(held.NeedsKeyframe);       // ... and re-armed nothing
+
+        var mft = new FakeDecoderMft();
+        var changing = Pipeline(mft);
+        changing.TryDecode(Frames.Keyframe(0), out _);
+        mft.ChangeFormatBeforeNextPicture(1366, 768);
+        changing.TryDecode(Frames.Keyframe(1), out _);
+        Assert.False(changing.NeedsKeyframe);
+    }
+
+    // ---- LastFailure and a returned picture; leaks ---------------------------------------------------
+
+    // The doc says so: a call can hand out a picture and still report that the stream broke right after it.
+    [Fact]
+    public void ACallCanReturnAPicture_AndReportTheFailureThatBrokeTheStreamAfterIt()
+    {
+        var mft = new FakeDecoderMft { PicturesPerInput = 2, FailOutputAfterPictures = 1 };
+        var pipeline = Pipeline(mft);
+
+        Assert.True(pipeline.TryDecode(Frames.Keyframe(0), out var picture));
+
+        Assert.NotNull(picture);
+        Assert.Contains("0xC00D6D72", pipeline.LastFailure);
+        Assert.True(pipeline.NeedsKeyframe);
+    }
+
+    [Fact]
+    public void AnExceptionFromTheTransform_ReleasesWhatWasCollected_AndPropagates()
+    {
+        var mft = new FakeDecoderMft { PicturesPerInput = 2, ThrowOnOutputAfterPictures = 1 };
+        var pipeline = Pipeline(mft);
+
+        Assert.Throws<InvalidOperationException>(() => pipeline.TryDecode(Frames.Keyframe(0), out _));
+
+        Assert.Single(mft.Created);
+        Assert.True(mft.Created[0].Disposed);
+    }
+
+    [Fact]
+    public void PicturesDroppedBecauseANewerOneCameOut_AreDisposed()
+    {
+        var mft = new FakeDecoderMft { PicturesPerInput = 3 };
+        var pipeline = Pipeline(mft);
+
+        pipeline.TryDecode(Frames.Keyframe(5), out var picture);
+
+        Assert.Equal(3, mft.Created.Count);
+        Assert.Equal(2, mft.Created.Count(p => p.Disposed));
+        Assert.False(picture!.Disposed);
+    }
+
     // ---- dispose ----------------------------------------------------------------------------------
 
     [Fact]

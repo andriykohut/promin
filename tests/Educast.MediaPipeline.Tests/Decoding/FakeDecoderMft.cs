@@ -33,6 +33,7 @@ internal sealed class FakeDecoderMft : IDecoderMft<FakePicture>
     private (int Width, int Height)? _sizeAfterFormatChange;
     private bool _rejectNextInput;
     private bool _failNextOutput;
+    private int _picturesProduced;
 
     /// <summary>How many pictures the decoder keeps back: 0 is one-in one-out, 1 is "one behind".</summary>
     public int HoldBack { get; set; }
@@ -42,6 +43,15 @@ internal sealed class FakeDecoderMft : IDecoderMft<FakePicture>
 
     /// <summary>Report a format change on every output request, forever (a broken decoder).</summary>
     public bool AlwaysChangesFormat { get; set; }
+
+    /// <summary>After this many pictures were produced, the next output request fails (null: never).</summary>
+    public int? FailOutputAfterPictures { get; set; }
+
+    /// <summary>After this many pictures were produced, the next output request throws (null: never).</summary>
+    public int? ThrowOnOutputAfterPictures { get; set; }
+
+    /// <summary>Every picture the fake has handed out, so a test can see which were released.</summary>
+    public List<FakePicture> Created { get; } = [];
 
     public int FlushCount { get; private set; }
     public bool Disposed { get; private set; }
@@ -95,6 +105,15 @@ internal sealed class FakeDecoderMft : IDecoderMft<FakePicture>
         if (AlwaysChangesFormat)
             return DecoderOutputResult.FormatChanged;
 
+        if (ThrowOnOutputAfterPictures is { } throwAfter && _picturesProduced >= throwAfter)
+            throw new InvalidOperationException("the fake transform threw");
+
+        if (FailOutputAfterPictures is { } failAfter && _picturesProduced >= failAfter)
+        {
+            LastError = "0xC00D6D72 (the decoder broke after a picture)";
+            return DecoderOutputResult.Failed;
+        }
+
         if (_failNextOutput)
         {
             _failNextOutput = false;
@@ -105,6 +124,8 @@ internal sealed class FakeDecoderMft : IDecoderMft<FakePicture>
         if (_stale.Count > 0)
         {
             picture = _stale.Dequeue();
+            Created.Add(picture);
+            _picturesProduced++;
             return DecoderOutputResult.Produced;
         }
 
@@ -119,6 +140,8 @@ internal sealed class FakeDecoderMft : IDecoderMft<FakePicture>
         }
 
         picture = new FakePicture(_pending.Dequeue(), _width, _height);
+        Created.Add(picture);
+        _picturesProduced++;
         return DecoderOutputResult.Produced;
     }
 

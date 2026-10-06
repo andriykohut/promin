@@ -65,7 +65,7 @@ internal static class OutputPictureSize
         if (apertureBlob is not null
             && TryParseVideoArea(apertureBlob, out var x, out var y, out var w, out var h)
             && x >= 0 && y >= 0 && w > 0 && h > 0
-            && x + w <= codedWidth && y + h <= codedHeight)
+            && (long)x + w <= codedWidth && (long)y + h <= codedHeight)
         {
             (originX, originY, width, height) = (x, y, w, h);
         }

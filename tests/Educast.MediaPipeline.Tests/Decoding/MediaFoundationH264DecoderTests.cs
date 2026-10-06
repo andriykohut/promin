@@ -47,7 +47,7 @@ public class MediaFoundationH264DecoderTests(ITestOutputHelper output)
 
         Assert.False(string.IsNullOrWhiteSpace(decoder.DecoderName));
         Assert.False(decoder.IsAsynchronous);
-        Assert.True(decoder.LowLatencyAccepted, "the decoder did not accept the low-latency request; see the configuration above");
+        Assert.Equal(0, decoder.PicturesHeldBack);
         Assert.NotNull(decoder.IsHardwareAccelerated);
     }
 
@@ -123,15 +123,19 @@ public class MediaFoundationH264DecoderTests(ITestOutputHelper output)
     // The requirement: a picture comes back from the call that fed it. The pictures are solid greys that jump
     // about, so a decoder that returned the previous picture (one behind) would be caught by the colour, not
     // just by a count. A keyframe is forced in the middle of the stream.
+    // Run against the streams of the hardware encoder and of the software encoder, since a decoder may treat
+    // two encoders' streams differently.
     [Theory(Skip = NeedsGpu)]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void ThirtyFrames_EachPictureComesBackFromTheCallThatFedIt(bool hardware)
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public void ThirtyFrames_EachPictureComesBackFromTheCallThatFedIt(bool hardware, bool hardwareEncoder)
     {
         using var gpu = new TestGpu();
         using var decoder = new MediaFoundationH264Decoder(gpu.Device, allowHardware: hardware);
         var colours = Enumerable.Range(0, 30).Select(i => Grey(i)).ToList();
-        var frames = Encode(gpu, 1280, 720, colours, keyframes: [15]);
+        var frames = Encode(gpu, 1280, 720, colours, keyframes: [15], hardwareEncoder: hardwareEncoder);
         Assert.True(frames[15].IsKeyframe);
 
         var times = new List<double>();
@@ -152,38 +156,134 @@ public class MediaFoundationH264DecoderTests(ITestOutputHelper output)
             Assert.True(Math.Abs(actual - expected) <= 5, $"call {i}: luma {actual}, expected about {expected:F0} (the previous picture's was {16 + 219.0 * colours[Math.Max(i - 1, 0)].Green / 255:F0})");
         }
 
+        Assert.Equal(0, decoder.PicturesHeldBack);
+        Assert.False(decoder.NeedsKeyframe);
         output.WriteLine($"decode time per call: first {times[0]:F1} ms, then min {times.Skip(1).Min():F1} / avg {times.Skip(1).Average():F1} / max {times.Skip(1).Max():F1} ms");
         Describe(decoder, "after 30 frames");
     }
 
-    // The session calls the decoder from whichever thread-pool thread is free, one call at a time.
+    // The session calls the decoder from whichever thread is free, one call at a time. Every call here runs on
+    // its own new thread (started and joined before the next), the decoder is created on one thread and
+    // disposed on yet another, and the test asserts that more than one thread really was used.
     [Theory(Skip = NeedsGpu)]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task CallsFromDifferentThreadPoolThreads_OneAtATime_AreOneInOneOut(bool hardware)
+    public void CallsFromDifferentThreads_OneAtATime_AreOneInOneOut(bool hardware)
+    {
+        using var gpu = new TestGpu();
+        var colours = Enumerable.Range(0, 12).Select(i => Grey(i)).ToList();
+        var frames = Encode(gpu, 640, 360, colours);
+        var threads = new List<Thread>(); // kept alive so no managed thread id can be reused
+
+        var decoder = OnNewThread(threads, () => new MediaFoundationH264Decoder(gpu.Device, allowHardware: hardware), out var createdOn);
+        var decodedOn = new HashSet<int>();
+        var disposedOn = createdOn;
+        try
+        {
+            for (var i = 0; i < frames.Count; i++)
+            {
+                var index = i;
+                var (decoded, luma, failure) = OnNewThread(threads, () =>
+                {
+                    var ok = decoder.TryDecode(frames[index], out var frame);
+                    var texture = ok ? frame.Texture.Description : default;
+                    var nv12 = ok ? gpu.ReadNv12(frame.Texture, (int)texture.Width, (int)texture.Height) : Array.Empty<byte>();
+                    return (ok, ok ? nv12[180 * (int)texture.Width + 320] : (byte)0, decoder.LastFailure);
+                }, out var thread);
+                decodedOn.Add(thread);
+
+                Assert.True(decoded, $"call {i}: {failure}");
+                Assert.InRange(luma, 16 + 219.0 * colours[i].Green / 255 - 5, 16 + 219.0 * colours[i].Green / 255 + 5);
+            }
+            Assert.Equal(0, decoder.PicturesHeldBack);
+        }
+        finally
+        {
+            OnNewThread(threads, () => { decoder.Dispose(); return 0; }, out disposedOn);
+            output.WriteLine($"created on thread {createdOn}, {frames.Count} calls on {decodedOn.Count} threads, disposed on thread {disposedOn}");
+        }
+
+        Assert.True(decodedOn.Count > 1, "the calls did not run on more than one thread");
+        Assert.DoesNotContain(createdOn, decodedOn);
+        Assert.NotEqual(createdOn, disposedOn);
+    }
+
+    // ---- hostile input, long run ----------------------------------------------------------------------
+
+    // Access units with well-formed SPS, PPS and IDR headers over junk payload: they pass every gate of the
+    // pipeline and reach the real transform. Whatever the transform does (refuse, fail, conceal), TryDecode must
+    // not throw, and the next good keyframe must decode correctly. Fed before the stream starts and in the middle of it.
+    [Theory(Skip = NeedsGpu)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void WellFramedJunk_ReachesTheTransform_ThrowsNothing_AndTheNextGoodKeyframeDecodes(bool hardware)
     {
         using var gpu = new TestGpu();
         using var decoder = new MediaFoundationH264Decoder(gpu.Device, allowHardware: hardware);
-        var colours = Enumerable.Range(0, 12).Select(i => Grey(i)).ToList();
-        var frames = Encode(gpu, 640, 360, colours);
+        var frames = Encode(gpu, 640, 360, [Grey(1), Grey(2), Grey(3)], keyframes: [1, 2]);
+        var random = new Random(99);
 
-        var threads = new HashSet<int>();
-        for (var i = 0; i < frames.Count; i++)
+        var before = decoder.TryDecode(new EncodedFrame(WellFramedJunk(random), true, 0), out _);
+        output.WriteLine($"junk before the stream: returned {before}, failure: {decoder.LastFailure}, needs keyframe: {decoder.NeedsKeyframe}, held back: {decoder.PicturesHeldBack}");
+
+        Assert.True(decoder.TryDecode(frames[0], out _), decoder.LastFailure);
+        var during = decoder.TryDecode(new EncodedFrame(WellFramedJunk(random), true, 1), out _);
+        output.WriteLine($"junk mid-stream: returned {during}, failure: {decoder.LastFailure}, needs keyframe: {decoder.NeedsKeyframe}");
+        var junkDelta = decoder.TryDecode(new EncodedFrame([0, 0, 0, 1, 0x41, .. RandomBytes(random, 2000)], false, 2), out _);
+        output.WriteLine($"junk slice mid-stream: returned {junkDelta}, failure: {decoder.LastFailure}, needs keyframe: {decoder.NeedsKeyframe}");
+
+        Assert.True(decoder.TryDecode(frames[2], out var frame), decoder.LastFailure);
+        AssertGrey(gpu, frame, 640, 360, Grey(3));
+        Assert.False(decoder.NeedsKeyframe);
+    }
+
+    // For a two-hour lesson: 3,000 frames through one decoder in each mode (a keyframe every 300), with the
+    // process memory read before and after and REPORTED; the assertion is only a gross sanity bound.
+    [Theory(Skip = NeedsGpu)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ThreeThousandFrames_OneDecoder_AreOneInOneOut_AndMemoryIsReported(bool hardware)
+    {
+        using var gpu = new TestGpu();
+        using var decoder = new MediaFoundationH264Decoder(gpu.Device, allowHardware: hardware);
+        using var encoder = new MediaFoundationH264Encoder(gpu.Device, 1280, 720, 15, Standard(1280, 720, 15));
+        const int count = 3000;
+        const int warmup = 100;
+        long privateBefore = 0, workingBefore = 0, managedBefore = 0;
+        var clock = Stopwatch.StartNew();
+
+        for (var i = 0; i < count; i++)
         {
-            var index = i;
-            var (decoded, luma, thread) = await Task.Run(() =>
+            if (i == warmup)
             {
-                var ok = decoder.TryDecode(frames[index], out var frame);
-                var texture = ok ? frame.Texture.Description : default;
-                var nv12 = ok ? gpu.ReadNv12(frame.Texture, (int)texture.Width, (int)texture.Height) : Array.Empty<byte>();
-                return (ok, ok ? nv12[180 * (int)texture.Width + 320] : (byte)0, Environment.CurrentManagedThreadId);
-            });
-            threads.Add(thread);
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                using var process = Process.GetCurrentProcess();
+                (privateBefore, workingBefore, managedBefore) = (process.PrivateMemorySize64, process.WorkingSet64, GC.GetTotalMemory(true));
+            }
 
-            Assert.True(decoded, $"call {i}: {decoder.LastFailure}");
-            Assert.InRange(luma, 16 + 219.0 * colours[i].Green / 255 - 5, 16 + 219.0 * colours[i].Green / 255 + 5);
+            var colour = Grey(i);
+            using var picture = gpu.SolidTexture(1280, 720, colour.Blue, colour.Green, colour.Red);
+            Assert.True(encoder.TryEncode(new CapturedFrame(picture, 1280, 720), forceKeyframe: i % 300 == 0, out var encoded), $"the encoder returned no picture for input {i}");
+
+            Assert.True(decoder.TryDecode(encoded, out var frame), $"call {i} returned no picture ({decoder.LastFailure})");
+            Assert.Equal((1280, 720), (frame.Width, frame.Height));
+            if (i % 100 == 0)
+                AssertGrey(gpu, frame, 1280, 720, colour);
         }
-        output.WriteLine($"{frames.Count} calls on {threads.Count} different thread(s)");
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        using var after = Process.GetCurrentProcess();
+        var mb = 1024.0 * 1024;
+        output.WriteLine($"{count} frames in {clock.Elapsed.TotalSeconds:F1} s ({(hardware ? "hardware" : "software")} decode)");
+        output.WriteLine($"private bytes {privateBefore / mb:F0} MB -> {after.PrivateMemorySize64 / mb:F0} MB; working set {workingBefore / mb:F0} MB -> {after.WorkingSet64 / mb:F0} MB; managed {managedBefore / mb:F1} MB -> {GC.GetTotalMemory(true) / mb:F1} MB (measured after {warmup} frames and after {count})");
+        Describe(decoder, $"after {count} frames");
+
+        Assert.Equal(0, decoder.PicturesHeldBack);
+        Assert.True(after.PrivateMemorySize64 - privateBefore < 500 * mb, "private memory grew by more than 500 MB over 2,900 frames");
     }
 
     // ---- the picture is right ------------------------------------------------------------------------
@@ -382,6 +482,41 @@ public class MediaFoundationH264DecoderTests(ITestOutputHelper output)
         return new Colour(level, level, level);
     }
 
+    // SPS, PPS and IDR slice headers (the NAL types are right, so every gate passes) followed by junk.
+    private static byte[] WellFramedJunk(Random random) =>
+    [
+        0, 0, 0, 1, 0x67, .. RandomBytes(random, 24),
+        0, 0, 0, 1, 0x68, .. RandomBytes(random, 6),
+        0, 0, 0, 1, 0x65, .. RandomBytes(random, 4000),
+    ];
+
+    // Runs the function on a new thread and waits for it; the thread is kept in the list.
+    private static T OnNewThread<T>(List<Thread> keep, Func<T> work, out int threadId)
+    {
+        T result = default!;
+        Exception? failure = null;
+        var id = 0;
+        var thread = new Thread(() =>
+        {
+            id = Environment.CurrentManagedThreadId;
+            try
+            {
+                result = work();
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+        });
+        keep.Add(thread);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+        threadId = id;
+        return result;
+    }
+
     private static byte[] RandomBytes(Random random, int length)
     {
         var bytes = new byte[length];
@@ -396,9 +531,9 @@ public class MediaFoundationH264DecoderTests(ITestOutputHelper output)
     }
 
     /// <summary>Encodes one solid-colour picture per entry, the first as a keyframe (and any index in <paramref name="keyframes"/>), with the real encoder.</summary>
-    private static List<EncodedFrame> Encode(TestGpu gpu, int width, int height, IReadOnlyList<Colour> colours, IReadOnlyCollection<int>? keyframes = null)
+    private static List<EncodedFrame> Encode(TestGpu gpu, int width, int height, IReadOnlyList<Colour> colours, IReadOnlyCollection<int>? keyframes = null, bool hardwareEncoder = true)
     {
-        using var encoder = new MediaFoundationH264Encoder(gpu.Device, width, height, 15, Standard(width, height, 15));
+        using var encoder = new MediaFoundationH264Encoder(gpu.Device, width, height, 15, Standard(width, height, 15), hardwareEncoder);
         var frames = new List<EncodedFrame>();
         for (var i = 0; i < colours.Count; i++)
         {
@@ -423,7 +558,7 @@ public class MediaFoundationH264DecoderTests(ITestOutputHelper output)
     private void Describe(MediaFoundationH264Decoder decoder, string when)
     {
         output.WriteLine($"[{when}] decoder: {decoder.DecoderName}");
-        output.WriteLine($"[{when}] hardware accelerated: {decoder.IsHardwareAccelerated?.ToString() ?? "not known yet"}, asynchronous: {decoder.IsAsynchronous}, low latency accepted: {decoder.LowLatencyAccepted}");
+        output.WriteLine($"[{when}] hardware accelerated: {decoder.IsHardwareAccelerated?.ToString() ?? "not known yet"}, asynchronous: {decoder.IsAsynchronous}, pictures held back: {decoder.PicturesHeldBack}, needs keyframe: {decoder.NeedsKeyframe}");
         output.WriteLine($"[{when}] configuration: {decoder.Configuration}");
     }
 }

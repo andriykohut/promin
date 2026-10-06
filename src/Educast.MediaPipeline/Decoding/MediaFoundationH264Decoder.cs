@@ -15,8 +15,8 @@ namespace Educast.MediaPipeline.Decoding;
 /// Set up for low delay with no frame reordering, so a picture comes back from the call that fed it. The
 /// teacher's screen is often still and a new picture arrives only every few seconds; a decoder that waited for
 /// the next one would show students a picture seconds late. If this machine's decoder will not do that, the
-/// calls return false until the next picture arrives (<see cref="LowLatencyAccepted"/> and
-/// <see cref="Configuration"/> say what the decoder was asked and what it answered).
+/// calls return false until the next picture arrives (<see cref="PicturesHeldBack"/> counts it and
+/// <see cref="Configuration"/> says what the decoder was asked and what it answered).
 /// </para>
 /// <para>
 /// The size is not given: it comes from the stream (the SPS in each keyframe), and a change of size mid-stream
@@ -46,8 +46,16 @@ public sealed class MediaFoundationH264Decoder : IVideoDecoder
     /// <summary>True when the decoder is event-driven, false when it is synchronous (Windows' H.264 decoder is synchronous).</summary>
     public bool IsAsynchronous => false;
 
-    /// <summary>True when the decoder took the low-delay request: it will then give a picture back from the call that fed it.</summary>
-    public bool LowLatencyAccepted => _transform!.LowLatencyAccepted;
+    /// <summary>
+    /// How many times the decoder took a picture and gave nothing back from that call (and nothing failed). Zero
+    /// is what one-in one-out looks like; anything else means this machine's decoder holds pictures back, and a
+    /// still teacher's screen would show students a picture late. This, not the low-latency request recorded in
+    /// <see cref="Configuration"/>, is the evidence.
+    /// </summary>
+    public int PicturesHeldBack => _pipeline!.PicturesHeldBack;
+
+    /// <inheritdoc />
+    public bool NeedsKeyframe => _pipeline!.NeedsKeyframe;
 
     /// <summary>
     /// Whether the decoder is decoding on the GPU: true when pictures come out as Direct3D textures, false when
@@ -57,15 +65,17 @@ public sealed class MediaFoundationH264Decoder : IVideoDecoder
 
     /// <summary>
     /// What was configured and how the decoder answered, for diagnostics: whether the Direct3D device was
-    /// accepted, whether the low-delay request was, whether it is synchronous, and (once known) the output type
-    /// and whether it decodes on the GPU.
+    /// accepted, how the low-delay request was answered (a request, not a promise), whether it is synchronous,
+    /// (once known) the output type and whether it decodes on the GPU, and how many pictures were held back.
     /// </summary>
-    public string Configuration => $"{_deviceNote}; {_transform!.Notes}";
+    public string Configuration =>
+        $"{_deviceNote}; {_transform!.Notes}; pictures held back: {_pipeline!.PicturesHeldBack} of {_pipeline.InputsAccepted} accepted";
 
     /// <summary>
-    /// Why the last call returned no picture, when something was wrong with the stream or the decoder (for
-    /// example "waiting for a keyframe"); null when the last call returned a picture or the decoder simply had
-    /// nothing to show yet.
+    /// What was wrong with the stream or the decoder in the last call (for example "waiting for a keyframe"), for
+    /// diagnostics; null when nothing was, which includes a decoder that simply held the picture back. A call
+    /// that returns a picture can still set it, when the stream broke right after that picture; use
+    /// <see cref="NeedsKeyframe"/> to decide what to do.
     /// </summary>
     public string? LastFailure => _presentFailure ?? _pipeline!.LastFailure;
 

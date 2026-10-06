@@ -35,8 +35,28 @@ internal sealed class DecoderPipeline<TPicture> : IDisposable where TPicture : c
 
     internal DecoderPipeline(IDecoderMft<TPicture> mft) => _mft = mft;
 
-    /// <summary>Why the last call returned no picture because something was wrong; null when it did return one or when there was simply nothing to show yet.</summary>
+    /// <summary>
+    /// What went wrong in the last call, or null when nothing did (including when the call simply had no picture
+    /// to show yet, because the decoder held it back). A call that returns a picture can still set this: the
+    /// stream may have broken right after that picture, and then <see cref="NeedsKeyframe"/> is true too.
+    /// </summary>
     internal string? LastFailure { get; private set; }
+
+    /// <summary>
+    /// True from construction until a keyframe has been accepted, and true again after anything that makes the
+    /// next delta undecodable (bytes refused, a transform that refused or failed, a flush). A picture held back
+    /// does not set it: on a decoder that legitimately holds pictures, re-arming would freeze the stream between keyframes.
+    /// </summary>
+    internal bool NeedsKeyframe => _awaitingKeyframe;
+
+    /// <summary>Inputs the transform took.</summary>
+    internal int InputsAccepted { get; private set; }
+
+    /// <summary>
+    /// Calls where the transform took the input and no picture came out of the call (and nothing failed): what a
+    /// decoder that is not one-in one-out shows. Refused input, input never offered and failures are not counted.
+    /// </summary>
+    internal int PicturesHeldBack { get; private set; }
 
     /// <summary>Pictures that came out of the transform and were released because a newer one came out in the same call.</summary>
     internal int PicturesDropped { get; private set; }
@@ -57,10 +77,13 @@ internal sealed class DecoderPipeline<TPicture> : IDisposable where TPicture : c
         {
             Feed(data);
             picture = _collected;
+            _collected = null; // handed over: the caller's now
             return picture is not null;
         }
         finally
         {
+            // Only when an exception got in the way: a picture collected so far must not hold a pool slot forever.
+            _collected?.Dispose();
             _collected = null;
         }
     }
@@ -112,7 +135,9 @@ internal sealed class DecoderPipeline<TPicture> : IDisposable where TPicture : c
         _transformHoldsStream = true;
         _nextIsDiscontinuity = false;
         _awaitingKeyframe = false;
-        Drain();
+        InputsAccepted++;
+        if (Drain() && _collected is null)
+            PicturesHeldBack++;
     }
 
     // Collects every picture the transform has ready. False when it failed, in which case the stream is

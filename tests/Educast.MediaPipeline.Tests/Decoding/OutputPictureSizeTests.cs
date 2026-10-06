@@ -86,6 +86,8 @@ public class OutputPictureSizeTests
         Area(1920, 1080, x: 8),        // runs off the right edge
         Area(1920, 1080, y: 16),       // runs off the bottom edge
         Area(1920, 1080, x: -2),       // negative origin
+        Area(int.MaxValue, 1080, x: 8),  // x + width overflows a 32-bit int
+        Area(1920, int.MaxValue, y: 16), // y + height overflows
         new byte[7],                   // not a video area at all
     };
 

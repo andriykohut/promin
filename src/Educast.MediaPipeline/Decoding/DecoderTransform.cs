@@ -38,15 +38,13 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
     private string? _formatNote;
     private string? _outputKindNote;
     private bool _providesSamples;
+    private IMFSample? _spareSample; // software path: an output sample that was lent and not used
     private int _outputBufferSize;
     private int _outputAlignment;
     private long _inputCount;
     private bool _disposed;
 
     internal bool UsesDeviceManager { get; }
-
-    /// <summary>Whether the decoder took the low-delay request, by either of the two ways it is made.</summary>
-    internal bool LowLatencyAccepted { get; }
 
     /// <summary>True when pictures come out as Direct3D textures (GPU decoding), false when in memory; null before the first picture.</summary>
     internal bool? OutputIsOnGpu { get; private set; }
@@ -57,13 +55,12 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
     internal string Notes => string.Join("; ", _notes.Concat(new[] { _formatNote, _outputKindNote }.OfType<string>()));
 
     private DecoderTransform(
-        IMFTransform transform, CodecApi? codec, IMFDXGIDeviceManager? deviceManager, bool lowLatency, List<string> notes)
+        IMFTransform transform, CodecApi? codec, IMFDXGIDeviceManager? deviceManager, List<string> notes)
     {
         _transform = transform;
         _codec = codec;
         _deviceManager = deviceManager;
         UsesDeviceManager = deviceManager is not null;
-        LowLatencyAccepted = lowLatency;
         _notes = notes;
     }
 
@@ -122,12 +119,15 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
                 }
             }
 
-            // 3. Low delay and no reordering, before the types are set. Asked for in both ways the decoder knows
-            // (the MF_LOW_LATENCY attribute and ICodecAPI's AVLowLatencyMode share one key); the answer to each is recorded.
-            var attributeAccepted = attributes is not null && attributes.Set(CodecApi.LowLatencyMode, 1u).Success;
+            // 3. Low delay and no reordering, before the types are set, asked for in the two ways the decoder
+            // knows (the MF_LOW_LATENCY attribute and ICodecAPI's AVLowLatencyMode share one key). Writing the
+            // attribute only stores a value: it is a request, not an answer. The ICodecAPI call is an answer
+            // from the decoder (on the machine tried so far it refused the boolean form with E_INVALIDARG), so
+            // when it refuses, the property is tried again as an integer (VT_UI4 1). What actually matters, whether
+            // pictures are held back, is counted while decoding (see DecoderPipeline.PicturesHeldBack).
+            var attributeSet = attributes is not null && attributes.Set(CodecApi.LowLatencyMode, 1u).Success;
             codec = CodecApi.TryCreate(transform);
             var codecOutcome = "no ICodecAPI";
-            var codecAccepted = false;
             if (codec is not null)
             {
                 if (!codec.IsSupported(CodecApi.LowLatencyMode))
@@ -136,15 +136,21 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
                 }
                 else
                 {
-                    var set = codec.SetBool(CodecApi.LowLatencyMode, true);
-                    codecAccepted = set.Success;
-                    codecOutcome = codecAccepted ? "set" : $"refused (0x{set.Code:X8})";
+                    var asBool = codec.SetBool(CodecApi.LowLatencyMode, true);
+                    if (asBool.Success)
+                    {
+                        codecOutcome = "VT_BOOL accepted";
+                    }
+                    else
+                    {
+                        var asInt = codec.SetUInt32(CodecApi.LowLatencyMode, 1);
+                        codecOutcome = $"VT_BOOL refused (0x{asBool.Code:X8}), VT_UI4 {(asInt.Success ? "accepted" : $"refused (0x{asInt.Code:X8})")}";
+                    }
                 }
             }
-            var lowLatency = attributeAccepted || codecAccepted;
-            notes.Add($"low latency: {(lowLatency ? "accepted" : "NOT accepted")} (MF_LOW_LATENCY {(attributeAccepted ? "set" : "refused")}, ICodecAPI AVLowLatencyMode {codecOutcome})");
+            notes.Add($"low latency: requested (MF_LOW_LATENCY {(attributeSet ? "set" : "not set")}; ICodecAPI AVLowLatencyMode {codecOutcome})");
 
-            result = new DecoderTransform(transform, codec, deviceManager, lowLatency, notes);
+            result = new DecoderTransform(transform, codec, deviceManager, notes);
             result.SetInputType();
 
             // The size is not known until the stream says it, and the decoder may not offer an output type
@@ -277,6 +283,9 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
 
     private void ReadOutputStreamInfo()
     {
+        // A spare sample was sized for the old output type.
+        _spareSample?.Dispose();
+        _spareSample = null;
         try
         {
             var info = _transform.GetOutputStreamInfo(0);
@@ -331,6 +340,7 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
     public DecoderInputResult ProcessInput(byte[] data, bool isKeyframe, bool discontinuity)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        LastError = null; // only ever the detail of the call that just failed
         try
         {
             using var sample = MediaFactory.MFCreateSample();
@@ -375,8 +385,10 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         picture = null;
+        LastError = null;
 
         IMFSample? lent = null;
+        var keepLentForNextCall = false;
         IMFSample? returned = null;
         var pictureOwnsSample = false;
         try
@@ -384,10 +396,12 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
             var buffer = new OutputDataBuffer { StreamID = 0 };
             if (!_providesSamples)
             {
-                // A transform that does not allocate its own output samples needs one lent to it. Each
-                // picture gets a fresh one: the picture is handed on and read later, so a reused sample
-                // would be overwritten by the next output.
-                lent = CreateOutputSample();
+                // A transform that does not allocate its own output samples needs one lent to it. A sample that
+                // became a picture is not reused (the picture is handed on and read later, so the next output
+                // would overwrite it); one that was not used (the usual "need more input" call that ends each
+                // decode) is kept for the next call, instead of allocating a full-size sample to throw away.
+                lent = _spareSample ?? CreateOutputSample();
+                _spareSample = null;
                 // ProcessOutput hands back a second wrapper around the sample we gave it, without taking a
                 // reference for it; disposing that wrapper releases one. This keeps the count right.
                 lent.AddRef();
@@ -399,7 +413,10 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
             buffer.Events?.Dispose();
 
             if (result == ResultCode.TransformNeedMoreInput)
+            {
+                keepLentForNextCall = true;
                 return DecoderOutputResult.NeedMoreInput;
+            }
 
             // A new SPS (the first one, or one with a new size) changes the output format; so does a type that
             // was never set. Take up the format the decoder offers now and ask again.
@@ -440,7 +457,12 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
                 else
                     returned?.Dispose();
                 if (!pictureOwnsSample)
-                    lent.Dispose();
+                {
+                    if (keepLentForNextCall)
+                        _spareSample = lent;
+                    else
+                        lent.Dispose();
+                }
             }
             else if (!pictureOwnsSample)
             {
@@ -552,6 +574,7 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
     public void Flush()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        LastError = null;
         try
         {
             _transform.ProcessMessage(TMessageType.MessageCommandFlush, 0);
@@ -585,6 +608,7 @@ internal sealed class DecoderTransform : IDecoderMft<DecodedPicture>
 
         // Politely, and without caring whether a transform that is already unwell answers. Every step runs
         // whether or not the one before it threw.
+        Guard(() => _spareSample?.Dispose());
         Guard(() => SendMessage(TMessageType.MessageNotifyEndOfStream));
         Guard(() => SendMessage(TMessageType.MessageNotifyEndStreaming));
         Guard(() => SendMessage(TMessageType.MessageCommandFlush));
