@@ -18,19 +18,17 @@ internal sealed class BroadcastDisplayFactory(bool windowed, Action<string> log)
 /// <para>
 /// <b>Threading.</b> Three kinds of thread meet here. <i>The display thread</i> is created for this display and
 /// does everything that touches the window, the Direct3D device or the decoder: it creates them, pumps the
-/// window's messages, decodes, draws, and at the end destroys the window and releases the rest, in that order. Nothing
-/// else ever touches those objects, so a picture can never
-/// be presented from a thread that races the window's destruction: destruction is something the same thread does
-/// between two messages. <i>The receive loop</i> (<see cref="BroadcastConnection"/>'s pump, on the thread pool)
-/// only puts a frame's bytes into a small bounded mailbox and posts one message to the window; it waits when the
-/// mailbox is full, which makes QUIC's own receive queue (which drops its oldest) the only place frames are lost.
-/// <i>The control loop</i> calls <see cref="Dispose"/>, which posts a close message and waits for the display
-/// thread to finish.
+/// window's messages, decodes, draws, and at the end destroys the window and releases the rest, in that order.
+/// Nothing else ever touches those objects, so a picture is never presented from a thread that races the window's
+/// destruction: destruction is something the same thread does between two messages. <i>The receive loop</i>
+/// (<see cref="BroadcastConnection"/>'s pump, on the thread pool) only puts a frame's bytes into a small bounded
+/// mailbox and posts one message to the window; it waits when the mailbox is full, so a display that falls behind
+/// holds frames back in QUIC's own receive queue, which drops its oldest. <i>The control loop</i> calls
+/// <see cref="Dispose"/>, which posts a close message and waits for the display thread to finish.
 /// </para>
 /// <para>
 /// Decoding on the window's thread is a choice: it avoids handing the decoder's texture between threads (it is
-/// valid only until the next decode). The cost is that the window does not pump messages while a frame decodes
-/// (milliseconds, not seconds).
+/// valid only until the next decode). The cost is that the window does not pump messages while a frame decodes.
 /// </para>
 /// </remarks>
 internal sealed class BroadcastDisplay : IBroadcastDisplay
