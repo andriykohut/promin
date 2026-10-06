@@ -13,7 +13,7 @@ namespace Educast.Protocol.Transport;
 /// <b>Who may pin.</b> <see cref="Pin"/> is internal on purpose: the only thing allowed to
 /// create a pin is the transport's pairing operation
 /// (<see cref="QuicMasterConnector.PairAsync"/> / <see cref="QuicAgentListener.AcceptPairingAsync"/>),
-/// which calls it on a successful mutual pre-shared-key handshake and on nothing else. "Pin only
+/// which calls it on a successful mutual room-code handshake and on nothing else. "Pin only
 /// on success" was previously prose in a doc comment that every later caller had to re-implement
 /// correctly; it is now a property of the code. Removing a pin is an operator action, so
 /// <see cref="Unpin"/> is public.
@@ -100,6 +100,18 @@ public sealed class PeerCertificateStore
 
             _deviceIdsByThumbprint.Remove(thumbprint);
             return true;
+        }
+    }
+
+    /// <summary>How many devices are pinned.</summary>
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _pinnedThumbprints.Count;
+            }
         }
     }
 

@@ -31,7 +31,7 @@ internal enum PairingHandshakeResult
 }
 
 /// <summary>
-/// Runs the mutual pre-shared-key exchange over a live control channel under an explicit
+/// Runs the mutual room-code exchange over a live control channel under an explicit
 /// deadline. Internal: the public entry points are the pairing operations
 /// (<see cref="QuicMasterConnector.PairAsync"/> and
 /// <see cref="QuicAgentListener.AcceptPairingAsync"/>), which run this and then pin — on
@@ -76,33 +76,33 @@ internal static class QuicPairingHandshake
     /// <summary>Master side: sends the challenge first, verifies the agent, then proves itself.</summary>
     public static Task<PairingHandshakeResult> RunAsMasterAsync(
         IControlChannel control,
-        byte[] presharedKey,
+        byte[] roomCode,
         ReadOnlyMemory<byte> certificateBinding,
         CancellationToken ct,
         TimeSpan? timeout = null) =>
         RunAsync(
-            new PairingService().AuthenticateAsMasterAsync, control, presharedKey, certificateBinding, timeout, ct);
+            new PairingService().AuthenticateAsMasterAsync, control, roomCode, certificateBinding, timeout, ct);
 
     /// <summary>Agent side: answers the challenge, then requires the master's proof.</summary>
     public static Task<PairingHandshakeResult> RunAsAgentAsync(
         IControlChannel control,
-        byte[] presharedKey,
+        byte[] roomCode,
         ReadOnlyMemory<byte> certificateBinding,
         CancellationToken ct,
         TimeSpan? timeout = null) =>
         RunAsync(
-            new PairingService().AuthenticateAsAgentAsync, control, presharedKey, certificateBinding, timeout, ct);
+            new PairingService().AuthenticateAsAgentAsync, control, roomCode, certificateBinding, timeout, ct);
 
     private static async Task<PairingHandshakeResult> RunAsync(
         Func<IControlChannel, byte[], ReadOnlyMemory<byte>, CancellationToken, Task<bool>> role,
         IControlChannel control,
-        byte[] presharedKey,
+        byte[] roomCode,
         ReadOnlyMemory<byte> certificateBinding,
         TimeSpan? timeout,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(control);
-        ArgumentNullException.ThrowIfNull(presharedKey);
+        ArgumentNullException.ThrowIfNull(roomCode);
 
         var deadline = timeout ?? DefaultTimeout;
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(deadline, TimeSpan.Zero);
@@ -117,7 +117,7 @@ internal static class QuicPairingHandshake
         {
             try
             {
-                result = await role(control, presharedKey, certificateBinding, linked.Token).ConfigureAwait(false)
+                result = await role(control, roomCode, certificateBinding, linked.Token).ConfigureAwait(false)
                     ? PairingHandshakeResult.Paired
                     : PairingHandshakeResult.KeyNotProven;
             }

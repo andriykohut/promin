@@ -27,7 +27,7 @@ namespace Educast.Protocol.Transport;
 /// <b>A pairing connection</b> is judged by the open pairing window alone — refused outright if
 /// there is none — is granted no video credit at all, and goes to
 /// <see cref="AcceptPairingAsync"/> and nowhere else. That is the only way a master comes to be
-/// pinned: the operation runs the mutual pre-shared-key handshake with whoever the window
+/// pinned: the operation runs the mutual room-code handshake with whoever the window
 /// admitted and pins that certificate if and only if the handshake succeeded.
 ///
 /// Connections are taken off the QUIC listener by a single background
@@ -183,7 +183,7 @@ public sealed class QuicAgentListener : IAsyncDisposable
 
     /// <summary>
     /// Opens a pairing window and pairs with the one master that dials in to pair during it:
-    /// the mutual pre-shared-key handshake, and — on success, and only on success — a pin for
+    /// the mutual room-code handshake, and — on success, and only on success — a pin for
     /// the certificate that master presented, under the device id its certificate carries.
     /// </summary>
     /// <remarks>
@@ -208,22 +208,29 @@ public sealed class QuicAgentListener : IAsyncDisposable
     /// that only one side recorded is finished. Masters that are already paired keep connecting
     /// normally through <see cref="AcceptAsync"/> while the window is open, and do not touch it.
     ///
+    /// <paramref name="admission"/> says whose dial the window may let in:
+    /// <see cref="PairingAdmission.Anyone"/> (the default, and what the window did before it was a parameter)
+    /// or <see cref="PairingAdmission.PinnedPeersOnly"/>, which turns any certificate that is not pinned away
+    /// during TLS without using the window up.
+    ///
     /// <b>Success is said out loud.</b> Having verified the master and pinned it, this side
     /// sends <see cref="PairConfirm"/>; the master pins on that and on nothing else. On every
     /// other way out the control stream is aborted, never merely closed. The connection is
     /// closed either way; the master reconnects normally afterwards.
     /// </remarks>
     /// <exception cref="InvalidOperationException">A pairing window is already open.</exception>
+    /// <param name="roomCode">The room code's ASCII bytes.</param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="window"/> is not greater than zero and at most ten minutes.
     /// </exception>
     public async Task<PairingOutcome> AcceptPairingAsync(
-        byte[] presharedKey,
+        byte[] roomCode,
         CancellationToken ct,
         TimeSpan? window = null,
-        TimeSpan? handshakeTimeout = null)
+        TimeSpan? handshakeTimeout = null,
+        PairingAdmission admission = PairingAdmission.Anyone)
     {
-        ArgumentNullException.ThrowIfNull(presharedKey);
+        ArgumentNullException.ThrowIfNull(roomCode);
 
         var lifetime = window ?? QuicTransportSettings.DefaultPairingWindow;
         var handshakeBudget = handshakeTimeout ?? QuicPairingHandshake.DefaultTimeout;
@@ -232,7 +239,7 @@ public sealed class QuicAgentListener : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(handshakeBudget, TimeSpan.Zero, nameof(handshakeTimeout));
         EnsureStarted();
 
-        var trust = new PairingTrustWindow(_trustedMasters, expectedDeviceId: null, lifetime);
+        var trust = new PairingTrustWindow(_trustedMasters, expectedDeviceId: null, lifetime, admission);
         if (Interlocked.CompareExchange(ref _pairingWindow, trust, null) is not null)
         {
             throw new InvalidOperationException("A pairing window is already open on this listener.");
@@ -290,7 +297,7 @@ public sealed class QuicAgentListener : IAsyncDisposable
             }
 
             var result = await QuicPairingHandshake
-                .RunAsAgentAsync(control, presharedKey, binding, handshake.Token, handshakeBudget)
+                .RunAsAgentAsync(control, roomCode, binding, handshake.Token, handshakeBudget)
                 .ConfigureAwait(false);
             if (result != PairingHandshakeResult.Paired)
             {
@@ -336,7 +343,7 @@ public sealed class QuicAgentListener : IAsyncDisposable
 
                 return PairingOutcome.Failed(
                     PairingFailure.NotConfirmed,
-                    "The master proved the pre-shared key but then reported that it did not record the " +
+                    "The master proved the room code but then reported that it did not record the " +
                     "pairing, so nothing was recorded here either. It is safe to pair again.");
             }
 
@@ -402,7 +409,7 @@ public sealed class QuicAgentListener : IAsyncDisposable
     {
         PairingHandshakeResult.KeyNotProven => PairingOutcome.Failed(
             PairingFailure.KeyNotProven,
-            "The master did not prove the pre-shared key. Either the keys entered on the two PCs differ, " +
+            "The master did not prove the room code. Either the codes entered on the two PCs differ, " +
             "or something between them is intercepting the connection."),
         PairingHandshakeResult.TimedOut => PairingOutcome.Failed(
             PairingFailure.TimedOut, "A master was let in but the pairing handshake did not finish in time."),

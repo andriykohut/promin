@@ -20,7 +20,7 @@ namespace Educast.Protocol.Transport;
 ///
 /// <see cref="PairAsync"/> is the only way an agent comes to be pinned. It dials the agent as a
 /// pairing connection, lets one certificate through TLS for that one connection, runs the mutual
-/// pre-shared-key handshake over it, and pins the certificate if and only if the agent
+/// room-code handshake over it, and pins the certificate if and only if the agent
 /// explicitly confirmed.
 /// </remarks>
 public sealed class QuicMasterConnector
@@ -53,7 +53,7 @@ public sealed class QuicMasterConnector
 
     /// <summary>
     /// Pairs with the agent at <paramref name="endpoint"/> as <paramref name="deviceId"/>: one
-    /// connection, the mutual pre-shared-key handshake, and — once the agent has explicitly
+    /// connection, the mutual room-code handshake, and — once the agent has explicitly
     /// confirmed, and only then — a pin for the certificate the agent presented. The agent must
     /// have a pairing window open (<see cref="QuicAgentListener.AcceptPairingAsync"/>).
     /// </summary>
@@ -82,13 +82,13 @@ public sealed class QuicMasterConnector
     public async Task<PairingOutcome> PairAsync(
         IPEndPoint endpoint,
         string deviceId,
-        byte[] presharedKey,
+        byte[] roomCode,
         CancellationToken ct,
         TimeSpan? timeout = null)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceId);
-        ArgumentNullException.ThrowIfNull(presharedKey);
+        ArgumentNullException.ThrowIfNull(roomCode);
 
         var budget = timeout ?? QuicTransportSettings.PairingTimeout;
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(budget, TimeSpan.Zero);
@@ -118,7 +118,7 @@ public sealed class QuicMasterConnector
 
             control = await channel.OpenControlChannelAsync(operation.Token).ConfigureAwait(false);
             var handshake = await QuicPairingHandshake
-                .RunAsMasterAsync(control, presharedKey, binding, operation.Token)
+                .RunAsMasterAsync(control, roomCode, binding, operation.Token)
                 .ConfigureAwait(false);
             if (handshake != PairingHandshakeResult.Paired)
             {
@@ -133,7 +133,7 @@ public sealed class QuicMasterConnector
             {
                 return PairingOutcome.Failed(
                     PairingFailure.NotConfirmed,
-                    "The agent proved the pre-shared key but declined to record the pairing.");
+                    "The agent proved the room code but declined to record the pairing.");
             }
 
             try
@@ -194,7 +194,7 @@ public sealed class QuicMasterConnector
     {
         PairingHandshakeResult.KeyNotProven => PairingOutcome.Failed(
             PairingFailure.KeyNotProven,
-            "The agent did not prove the pre-shared key. Either the keys entered on the two PCs differ, " +
+            "The agent did not prove the room code. Either the codes entered on the two PCs differ, " +
             "or something between them is intercepting the connection."),
         PairingHandshakeResult.PeerRefused => PairingOutcome.Failed(
             PairingFailure.RefusedByPeer, AgentRefusedConnection),
@@ -215,7 +215,7 @@ public sealed class QuicMasterConnector
                 "is switched on, on this network, and running Educast."),
             PairingPhase.AwaitingConfirmation => PairingOutcome.Failed(
                 PairingFailure.NotConfirmed,
-                "The agent proved the pre-shared key but did not confirm the pairing in time. It is safe " +
+                "The agent proved the room code but did not confirm the pairing in time. It is safe " +
                 "to pair again."),
             _ => PairingOutcome.Failed(
                 PairingFailure.TimedOut,
@@ -247,7 +247,7 @@ public sealed class QuicMasterConnector
                 $"and running Educast. ({failure.Message})"),
             PairingPhase.AwaitingConfirmation => PairingOutcome.Failed(
                 PairingFailure.NotConfirmed,
-                "The agent proved the pre-shared key but the connection ended before it confirmed the " +
+                "The agent proved the room code but the connection ended before it confirmed the " +
                 "pairing. It is safe to pair again."),
             _ => PairingOutcome.Failed(
                 PairingFailure.ConnectionLost,

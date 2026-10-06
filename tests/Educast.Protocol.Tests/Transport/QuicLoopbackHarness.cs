@@ -218,19 +218,19 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
     /// <summary>The master's half of the handshake over an already-open control channel.</summary>
     public async Task<bool> HandshakeAsMasterAsync(
         Educast.Protocol.Pairing.IControlChannel control,
-        byte[] presharedKey,
+        byte[] roomCode,
         CancellationToken ct,
         TimeSpan? timeout = null) =>
-        await QuicPairingHandshake.RunAsMasterAsync(control, presharedKey, Binding, ct, timeout)
+        await QuicPairingHandshake.RunAsMasterAsync(control, roomCode, Binding, ct, timeout)
             == PairingHandshakeResult.Paired;
 
     /// <summary>The agent's half of the handshake over an already-open control channel.</summary>
     public async Task<bool> HandshakeAsAgentAsync(
         Educast.Protocol.Pairing.IControlChannel control,
-        byte[] presharedKey,
+        byte[] roomCode,
         CancellationToken ct,
         TimeSpan? timeout = null) =>
-        await QuicPairingHandshake.RunAsAgentAsync(control, presharedKey, Binding, ct, timeout)
+        await QuicPairingHandshake.RunAsAgentAsync(control, roomCode, Binding, ct, timeout)
             == PairingHandshakeResult.Paired;
 
     /// <summary>

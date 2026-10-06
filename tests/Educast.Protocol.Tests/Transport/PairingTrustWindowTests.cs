@@ -186,6 +186,69 @@ public class PairingTrustWindowTests
             new PairingTrustWindow(new PeerCertificateStore(), expectedDeviceId: null, Generous).TryAdmit(nameless));
     }
 
+    // ---- Who the window admits: anyone, or pinned peers only ---------------------------------------
+
+    /// <summary>
+    /// A window for pinned peers only refuses a certificate that is not pinned, and a refusal like that does
+    /// not use the window up: the pinned peer that comes after it is still admitted, and nothing was reported
+    /// as refused to the operation waiting on the window.
+    /// </summary>
+    [Fact]
+    public void PinnedPeersOnly_RefusesAStranger_WithoutConsumingTheWindow()
+    {
+        using var stranger = SelfSignedCertificateFactory.Create("master-stranger");
+        using var pinned = SelfSignedCertificateFactory.Create("master-1");
+        var pins = new PeerCertificateStore();
+        pins.Pin("master-1", PeerCertificateStore.ComputeThumbprint(pinned));
+        var window = new PairingTrustWindow(pins, expectedDeviceId: null, Generous, PairingAdmission.PinnedPeersOnly);
+
+        Assert.False(window.TryAdmit(stranger));
+        Assert.False(window.TryAdmit(stranger));
+        Assert.False(window.HasAdmitted);
+        Assert.Null(window.RefusalReason);
+        Assert.False(window.Claimed.IsCompleted);
+
+        Assert.True(window.TryAdmit(pinned));
+        Assert.True(window.HasAdmitted);
+    }
+
+    [Fact]
+    public void PinnedPeersOnly_StillAdmitsOnlyOneCertificate()
+    {
+        using var pinned = SelfSignedCertificateFactory.Create("master-1");
+        var pins = new PeerCertificateStore();
+        pins.Pin("master-1", PeerCertificateStore.ComputeThumbprint(pinned));
+        var window = new PairingTrustWindow(pins, expectedDeviceId: null, Generous, PairingAdmission.PinnedPeersOnly);
+
+        Assert.True(window.TryAdmit(pinned));
+        Assert.False(window.TryAdmit(pinned));
+    }
+
+    /// <summary>
+    /// A new certificate under the name of a pinned master is a stranger as well: the pin is the certificate,
+    /// not the name.
+    /// </summary>
+    [Fact]
+    public void PinnedPeersOnly_RefusesANewCertificateUnderAPinnedName()
+    {
+        using var impostor = SelfSignedCertificateFactory.Create("master-1");
+        var pins = new PeerCertificateStore();
+        pins.Pin("master-1", new string('B', 64));
+        var window = new PairingTrustWindow(pins, expectedDeviceId: null, Generous, PairingAdmission.PinnedPeersOnly);
+
+        Assert.False(window.TryAdmit(impostor));
+        Assert.False(window.HasAdmitted);
+        Assert.Null(window.RefusalReason);
+    }
+
+    [Fact]
+    public void Anyone_IsWhatAWindowDoesWhenNotToldOtherwise()
+    {
+        using var stranger = SelfSignedCertificateFactory.Create("master-stranger");
+
+        Assert.True(new PairingTrustWindow(new PeerCertificateStore(), expectedDeviceId: null, Generous).TryAdmit(stranger));
+    }
+
     [Fact]
     public void ReadDeviceId_IsTheSubjectCommonName()
     {

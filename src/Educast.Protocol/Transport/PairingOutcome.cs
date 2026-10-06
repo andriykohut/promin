@@ -26,7 +26,7 @@ public enum PairingFailure
     PeerCertificateRefused,
 
     /// <summary>
-    /// The peer did not prove the pre-shared key. The keys entered on the two machines differ,
+    /// The peer did not prove the room code. The codes entered on the two machines differ,
     /// or something between them is intercepting the connection.
     /// </summary>
     KeyNotProven,
@@ -67,7 +67,7 @@ public enum PairingFailure
 ///
 /// When <see cref="Paired"/> is true the peer's certificate has already been pinned under
 /// <see cref="DeviceId"/> by the operation itself, after — and only after — the mutual
-/// pre-shared-key handshake succeeded. When it is false nothing was pinned and the store is
+/// room-code handshake succeeded. When it is false nothing was pinned and the store is
 /// exactly as it was. The connection the operation used is closed either way: connect normally
 /// afterwards, and the pin is what lets that succeed.
 /// </remarks>
