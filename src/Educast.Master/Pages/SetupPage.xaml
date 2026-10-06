@@ -5,7 +5,6 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:controls="using:Educast.Master.Controls"
     xmlns:setup="using:Educast.Master.Core.Setup"
     mc:Ignorable="d">
 
@@ -275,17 +274,28 @@
                             TextWrapping="Wrap" />
                     </StackPanel>
                     <!--
-                        Six digits, nothing else (design doc 6.2). RoomCodeField refuses an input
-                        before the control takes it, so a refused keystroke changes nothing; what
-                        happens to each input is decided in Core (RoomCodeEntry).
+                        The stock password box, untouched: nothing filters what is typed or
+                        pasted, and nothing writes its content back in reaction to typing. The
+                        code is checked on the action (RoomCode.TryNormalize); until it is valid
+                        the actions stay disabled and the hint shows. The hint is collapsed when
+                        hidden, as the page's error bars are, so the card grows by one caption
+                        line while it shows.
                     -->
-                    <controls:RoomCodeField
-                        x:Name="CodeBox"
-                        Grid.Column="1"
-                        MinWidth="160"
-                        VerticalAlignment="Center"
-                        AccessibleName="Room code"
-                        CodeChanged="CodeBox_CodeChanged" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <PasswordBox
+                            x:Name="CodeBox"
+                            MinWidth="160"
+                            AutomationProperties.Name="Room code"
+                            InputScope="NumericPin"
+                            PasswordChanged="CodeBox_PasswordChanged"
+                            PasswordRevealMode="Peek"
+                            PlaceholderText="6 digits" />
+                        <TextBlock
+                            Margin="0,4,0,0"
+                            Style="{StaticResource SecondaryTextStyle}"
+                            Text="{x:Bind ViewModel.CodeHint}"
+                            Visibility="{x:Bind ViewModel.ShowsCodeHint, Mode=OneWay}" />
+                    </StackPanel>
                     <Button
                         Grid.Column="2"
                         MinWidth="120"

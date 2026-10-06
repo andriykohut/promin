@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using Educast.Master.Controls;
 using Educast.Master.Core.Setup;
-using Educast.Protocol.Pairing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Navigation;
 
@@ -73,17 +73,17 @@ public sealed partial class SetupPage : Page
 
     public string MessageOf(SetupBanner? banner) => banner?.Message ?? string.Empty;
 
-    // The room code field (RoomCodeField): the view model's CodeText always equals what the
-    // field holds. The field pushes every accepted edit; the view model's one write back is
-    // clearing the code when every PC is in the room.
+    // The room code field: a stock PasswordBox. Its content is forwarded to CodeText as it is;
+    // the one write back is the view model clearing the code when every PC is in the room (the
+    // box already holds what was typed, so nothing is written in reaction to typing).
 
-    private void CodeBox_CodeChanged(object? sender, EventArgs e) => ViewModel.CodeText = CodeBox.Code;
+    private void CodeBox_PasswordChanged(object sender, RoutedEventArgs e) => ViewModel.CodeText = CodeBox.Password;
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(SetupViewModel.CodeText))
+        if (e.PropertyName == nameof(SetupViewModel.CodeText) && CodeBox.Password != ViewModel.CodeText)
         {
-            CodeBox.Code = ViewModel.CodeText;
+            CodeBox.Password = ViewModel.CodeText;
         }
     }
 
@@ -125,22 +125,43 @@ public sealed partial class SetupPage : Page
 
         await Guarded(async () =>
         {
-            var field = new RoomCodeField { AccessibleName = "Room code" };
+            // The same stock box and hint as the card; Enter is the dialog's default button,
+            // which is enabled only while the code is valid.
+            var code = new EnterCodeViewModel();
+            var box = new PasswordBox
+            {
+                PlaceholderText = "6 digits",
+                PasswordRevealMode = PasswordRevealMode.Peek,
+                InputScope = NumericPinScope(),
+            };
+            AutomationProperties.SetName(box, "Room code");
+            var hint = new TextBlock
+            {
+                Text = EnterCodeViewModel.HintText,
+                Style = (Style)Resources["SecondaryTextStyle"],
+                Margin = new Thickness(0, 4, 0, 0),
+                Visibility = Visibility.Collapsed,
+            };
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
                 Title = $"Room code for {row.Name}",
-                Content = field,
+                Content = new StackPanel { Children = { box, hint } },
                 PrimaryButtonText = "Pair",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
                 IsPrimaryButtonEnabled = false,
             };
-            field.CodeChanged += (_, _) => dialog.IsPrimaryButtonEnabled = RoomCode.IsValid(field.Code);
-
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            box.PasswordChanged += (_, _) =>
             {
-                await ViewModel.PairOneAsync(row, field.Code);
+                code.CodeText = box.Password;
+                hint.Visibility = code.ShowsHint ? Visibility.Visible : Visibility.Collapsed;
+                dialog.IsPrimaryButtonEnabled = code.CanPair;
+            };
+
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary && code.Code is { } sixDigits)
+            {
+                await ViewModel.PairOneAsync(row, sixDigits);
             }
         });
     }
@@ -226,5 +247,12 @@ public sealed partial class SetupPage : Page
         {
             separator.Visibility = index == 0 ? Visibility.Collapsed : Visibility.Visible;
         }
+    }
+
+    private static InputScope NumericPinScope()
+    {
+        var scope = new InputScope();
+        scope.Names.Add(new InputScopeName(InputScopeNameValue.NumericPin));
+        return scope;
     }
 }

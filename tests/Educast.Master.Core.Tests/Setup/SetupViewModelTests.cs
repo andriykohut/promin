@@ -824,6 +824,116 @@ public sealed class SetupViewModelTests
         Assert.Equal(1, _discovery.Started);
     }
 
+    // Fix round 4: a stock password box, checked on the action.
+
+    [Fact]
+    public void AnEmptyCode_NoHint_PairAllDisabled()
+    {
+        var vm = Activated();
+        Raise(1);
+
+        Assert.False(vm.ShowsCodeHint);
+        Assert.False(vm.CanPairAll);
+        Assert.False(Row(vm, 1).CanPairNow);
+    }
+
+    [Theory]
+    [InlineData("482913")]
+    [InlineData("482 913")]
+    [InlineData("482-913")]
+    [InlineData(" 482913 ")]
+    public async Task AValidCode_NoHint_PairAllEnabled_AndTheSixDigitsAreSent(string typed)
+    {
+        var vm = Activated();
+        Raise(1);
+        vm.CodeText = typed;
+
+        Assert.False(vm.ShowsCodeHint);
+        Assert.True(vm.CanPairAll);
+        Assert.True(Row(vm, 1).CanPairNow);
+        Assert.Equal(typed, vm.CodeText);
+
+        await vm.PairAllAsync();
+
+        Assert.Equal([(Id(1), "482913")], _client.Calls);
+        Assert.Equal(Id(1), Assert.Single(_store.Members).DeviceId);
+        Assert.DoesNotContain(typed, _store.Serialised);
+    }
+
+    [Theory]
+    [InlineData("48291")]
+    [InlineData("4829134")]
+    [InlineData("48a913")]
+    [InlineData("abc")]
+    [InlineData("111")]
+    public async Task AnInvalidCode_ShowsTheHint_PairAllDisabled_AndTheActionSendsNothing(string typed)
+    {
+        var vm = Activated();
+        Raise(1);
+        vm.CodeText = typed;
+
+        Assert.True(vm.ShowsCodeHint);
+        Assert.False(vm.CanPairAll);
+        Assert.False(Row(vm, 1).CanPairNow);
+
+        await vm.PairAllAsync();
+        await vm.PairOneAsync(Row(vm, 1));
+
+        Assert.Empty(_client.Calls);
+        Assert.Empty(_store.Members);
+        Assert.Equal(0, _store.Saves);
+    }
+
+    [Fact]
+    public void InvalidToValidAndBack_FlipsTheHintAndPairAll_WithNotifications()
+    {
+        var vm = Activated();
+        Raise(1);
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.CodeText = "111";
+        Assert.True(vm.ShowsCodeHint);
+        Assert.False(vm.CanPairAll);
+
+        vm.CodeText = "111222";
+        Assert.False(vm.ShowsCodeHint);
+        Assert.True(vm.CanPairAll);
+
+        vm.CodeText = "1112223";
+        Assert.True(vm.ShowsCodeHint);
+        Assert.False(vm.CanPairAll);
+
+        Assert.Equal(3, raised.Count(n => n == nameof(SetupViewModel.ShowsCodeHint)));
+        Assert.Equal(3, raised.Count(n => n == nameof(SetupViewModel.CanPairAll)));
+    }
+
+    [Fact]
+    public async Task AValidCode_IsStillGated_ByBusyAndByAnUnreadableRoom()
+    {
+        var vm = Activated();
+        Raise(1, 2);
+        vm.CodeText = "482 913";
+        _client.HoldDeviceId = Id(1);
+        var run = vm.PairOneAsync(Row(vm, 1));
+        await _client.Reached;
+        Assert.False(vm.ShowsCodeHint);
+        Assert.False(vm.CanPairAll);
+        _client.Release();
+        await run;
+        Assert.True(vm.CanPairAll);
+
+        _store.LoadThrows = new RoomStoreException("locked", new IOException());
+        vm.Activate();
+        Raise(3);
+        vm.CodeText = "482 913";
+        Assert.False(vm.ShowsCodeHint);
+        Assert.False(vm.CanPairAll);
+    }
+
+    [Fact]
+    public void TheHint_IsTheDesignsWording() => Assert.Equal("The code is 6 digits", SetupViewModel.CodeHintText);
+
     // Fix round 3.
 
     [Fact]

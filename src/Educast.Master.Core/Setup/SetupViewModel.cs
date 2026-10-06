@@ -106,7 +106,14 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     /// <summary>The "A PC is missing?" checklist, as the page shows it.</summary>
     public IReadOnlyList<ChecklistItem> Checklist => SetupChecklist.Items;
 
-    /// <summary>Whatever is typed in the room code field. Never stored anywhere else.</summary>
+    /// <summary>The hint under the room code field while it holds something that is not a code.</summary>
+    public const string CodeHintText = "The code is 6 digits";
+
+    /// <summary>
+    /// Whatever the room code field holds, raw — spaces, hyphens and letters included. Never
+    /// stored anywhere else. Validity is <see cref="RoomCode.TryNormalize"/>, checked where the
+    /// code is used, and what is sent is always the six digits.
+    /// </summary>
     public string CodeText
     {
         get => _codeText;
@@ -114,10 +121,16 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         {
             if (Set(ref _codeText, value ?? string.Empty))
             {
+                Raise(nameof(ShowsCodeHint));
                 RefreshActions();
             }
         }
     }
+
+    /// <summary>True while the field is not empty and not a valid code.</summary>
+    public bool ShowsCodeHint => _codeText.Length > 0 && !RoomCode.TryNormalize(_codeText, out _);
+
+    public string CodeHint => CodeHintText;
 
     public bool CanPairAll =>
         RoomCode.TryNormalize(_codeText, out _)
