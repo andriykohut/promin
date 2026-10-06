@@ -103,11 +103,18 @@ internal sealed class FullscreenRenderWindow : IDisposable
     public bool PostAppMessage(uint number)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(number, 1u);
-        return PostMessageW(Volatile.Read(ref _hwnd), WM_APP + number, 0, 0);
+        return Post(WM_APP + number);
     }
 
     /// <summary>Closes the window, from any thread. Windowed or not, this closes it (the student's own request to does not, fullscreen).</summary>
-    public bool PostClose() => PostMessageW(Volatile.Read(ref _hwnd), WM_APP, 0, 0);
+    public bool PostClose() => Post(WM_APP);
+
+    // A window handle of 0 would post to the calling thread's own queue, so a window that is gone is not posted to.
+    private bool Post(uint message)
+    {
+        var hwnd = Volatile.Read(ref _hwnd);
+        return hwnd != 0 && PostMessageW(hwnd, message, 0, 0);
+    }
 
     /// <summary>Destroys the window. On the window's thread.</summary>
     public void Close()
@@ -142,17 +149,20 @@ internal sealed class FullscreenRenderWindow : IDisposable
             return;
         }
 
-        using (var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0))
+        using (var backBuffer = DisplayStepException.Run("getting the swap chain's back buffer", () => _swapChain.GetBuffer<ID3D11Texture2D>(0)))
         {
             _blitter.Draw(picture.Texture, picture.Width, picture.Height, backBuffer, new PixelSize(_width, _height));
         }
 
         // No wait for the vertical blank: the picture is shown as soon as it is ready.
-        var result = _swapChain.Present(0, PresentFlags.None);
-        if (result.Failure)
+        DisplayStepException.Run("presenting the swap chain", () =>
         {
-            result.CheckError();
-        }
+            var result = _swapChain.Present(0, PresentFlags.None);
+            if (result.Failure)
+            {
+                result.CheckError();
+            }
+        });
     }
 
     private void ResizeTo(int width, int height)
@@ -163,7 +173,9 @@ internal sealed class FullscreenRenderWindow : IDisposable
             return;
         }
 
-        _swapChain.ResizeBuffers(0, (uint)width, (uint)height, Format.Unknown, SwapChainFlags.None).CheckError();
+        DisplayStepException.Run(
+            $"resizing the swap chain's buffers to {width}x{height}",
+            () => _swapChain.ResizeBuffers(0, (uint)width, (uint)height, Format.Unknown, SwapChainFlags.None).CheckError());
         _width = width;
         _height = height;
         Redraw();

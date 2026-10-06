@@ -62,38 +62,60 @@ internal sealed class PictureBlitter : IDisposable
         var picture = new PixelSize(pictureWidth, pictureHeight);
         var destination = FrameSizing.FitRect(picture, targetSize);
 
-        EnsureProcessor(picture, targetSize);
+        DisplayStepException.Run(
+            $"preparing the video processor for a {pictureWidth}x{pictureHeight} picture on a {targetSize.Width}x{targetSize.Height} screen",
+            () => EnsureProcessor(picture, targetSize));
 
-        using (var renderTarget = _device.CreateRenderTargetView(target))
+        DisplayStepException.Run("clearing the screen texture to black", () =>
         {
+            using var renderTarget = _device.CreateRenderTargetView(target);
             _device.ImmediateContext.ClearRenderTargetView(renderTarget, new Color4(0f, 0f, 0f, 1f));
-        }
+        });
 
-        using var input = _videoDevice.CreateVideoProcessorInputView(
-            nv12Picture,
-            _enumerator!,
-            new VideoProcessorInputViewDescription
-            {
-                FourCC = 0,
-                ViewDimension = VideoProcessorInputViewDimension.Texture2D,
-                Texture2D = new Texture2DVideoProcessorInputView { MipSlice = 0, ArraySlice = 0 },
-            });
-        using var output = _videoDevice.CreateVideoProcessorOutputView(
-            target,
-            _enumerator!,
-            new VideoProcessorOutputViewDescription
-            {
-                ViewDimension = VideoProcessorOutputViewDimension.Texture2D,
-                Texture2D = new Texture2DVideoProcessorOutputView { MipSlice = 0 },
-            });
+        // Each step is named, because E_INVALIDARG alone does not say which call refused its argument.
+        using var input = DisplayStepException.Run(
+            $"creating the video processor's input view on the decoded picture's texture ({Describe(nv12Picture)})",
+            () => _videoDevice.CreateVideoProcessorInputView(
+                nv12Picture,
+                _enumerator!,
+                new VideoProcessorInputViewDescription
+                {
+                    FourCC = 0,
+                    ViewDimension = VideoProcessorInputViewDimension.Texture2D,
+                    Texture2D = new Texture2DVideoProcessorInputView { MipSlice = 0, ArraySlice = 0 },
+                }));
+        using var output = DisplayStepException.Run(
+            $"creating the video processor's output view on the screen texture ({Describe(target)})",
+            () => _videoDevice.CreateVideoProcessorOutputView(
+                target,
+                _enumerator!,
+                new VideoProcessorOutputViewDescription
+                {
+                    ViewDimension = VideoProcessorOutputViewDimension.Texture2D,
+                    Texture2D = new Texture2DVideoProcessorOutputView { MipSlice = 0 },
+                }));
 
-        _videoContext.VideoProcessorSetStreamSourceRect(_processor!, 0, true, new RawRect(0, 0, pictureWidth, pictureHeight));
-        _videoContext.VideoProcessorSetStreamDestRect(
-            _processor!, 0, true,
-            new RawRect(destination.X, destination.Y, destination.X + destination.Width, destination.Y + destination.Height));
+        DisplayStepException.Run("setting the source and destination rectangles", () =>
+        {
+            _videoContext.VideoProcessorSetStreamSourceRect(_processor!, 0, true, new RawRect(0, 0, pictureWidth, pictureHeight));
+            _videoContext.VideoProcessorSetStreamDestRect(
+                _processor!, 0, true,
+                new RawRect(destination.X, destination.Y, destination.X + destination.Width, destination.Y + destination.Height));
+        });
 
-        _videoContext.VideoProcessorBlt(_processor!, output, 0, [new VideoProcessorStream { Enable = true, InputSurface = input }])
-            .CheckError();
+        DisplayStepException.Run(
+            $"scaling the picture into {destination} (the video processor's blit)",
+            () => _videoContext
+                .VideoProcessorBlt(_processor!, output, 0, [new VideoProcessorStream { Enable = true, InputSurface = input }])
+                .CheckError());
+    }
+
+    /// <summary>What a texture is, for the log line of a step that refused it.</summary>
+    private static string Describe(ID3D11Texture2D texture)
+    {
+        var d = texture.Description;
+        return $"{d.Width}x{d.Height} {d.Format}, usage {d.Usage}, bind flags {d.BindFlags}, array size {d.ArraySize}, " +
+               $"mip levels {d.MipLevels}, samples {d.SampleDescription.Count}";
     }
 
     public void Dispose()

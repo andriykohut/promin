@@ -1,4 +1,5 @@
 using Educast.MediaPipeline.Encoding;
+using Vortice;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Vortice.MediaFoundation;
@@ -12,12 +13,25 @@ namespace Educast.MediaPipeline.Decoding;
 /// the transform reuses, and holding one back would starve it, so the decoder never lends them out. The
 /// texture is as large as the transform's surface (the coded size, a multiple of 16 on most decoders); the
 /// picture is its top-left corner. Not thread-safe.
+/// <para>
+/// <b>Bind flags.</b> The texture is meant to be drawn from by the Direct3D 11 video processor (the student's
+/// display scales it to the screen with that), and the documentation of
+/// <c>ID3D11VideoDevice::CreateVideoProcessorInputView</c> allows an input texture only if its bind flags are 0 or
+/// include one of decoder, video encoder, render target or unordered access. A texture bound for shader
+/// resource alone (what this class made before) is refused with E_INVALIDARG on an NVIDIA GeForce RTX 4070.
+/// So: where the device can render to NV12 the texture is bound for render target (and for shader resource as
+/// well, where the device can load NV12 in a shader); where it cannot, it has no bind flags at all, which is
+/// allowed. Both are filled the same way (a GPU copy into it, an upload into it), and neither needs any flag
+/// itself. Each choice is tried against the video processor when the texture is made: a device that accepts
+/// neither fails then, with a message that says what was tried, not at the first draw.
+/// </para>
 /// </summary>
 internal sealed class OutputSurface : IDisposable
 {
     private readonly ID3D11Device _device;
     private readonly ID3D11DeviceContext _context;
-    private readonly BindFlags _bind;
+    private readonly ID3D11VideoDevice? _videoDevice;
+    private readonly BindFlags[] _bindChoices;
     private ID3D11Texture2D? _texture;
     private uint _width;
     private uint _height;
@@ -28,8 +42,23 @@ internal sealed class OutputSurface : IDisposable
         // One wrapper for the device's immediate context, which belongs to the device and goes with it.
         _context = device.ImmediateContext;
 
-        // Shader-resource binding is only added where the driver supports it, as for the converter's output.
-        _bind = (device.CheckFormatSupport(Format.NV12) & FormatSupport.ShaderLoad) != 0 ? BindFlags.ShaderResource : BindFlags.None;
+        _videoDevice = device.QueryInterfaceOrNull<ID3D11VideoDevice>();
+        _bindChoices = ChooseBindFlags(device.CheckFormatSupport(Format.NV12));
+    }
+
+    /// <summary>
+    /// The bind flags to try, best first. Shader-resource binding is only added where the driver supports it, as
+    /// for the converter's output; it is never offered alone.
+    /// </summary>
+    internal static BindFlags[] ChooseBindFlags(FormatSupport nv12Support)
+    {
+        if ((nv12Support & FormatSupport.RenderTarget) == 0)
+            return [BindFlags.None];
+
+        var renderTarget = (nv12Support & FormatSupport.ShaderLoad) != 0
+            ? BindFlags.RenderTarget | BindFlags.ShaderResource
+            : BindFlags.RenderTarget;
+        return [renderTarget, BindFlags.None];
     }
 
     /// <summary>
@@ -164,26 +193,80 @@ internal sealed class OutputSurface : IDisposable
 
         _texture?.Dispose();
         _texture = null;
-        _texture = _device.CreateTexture2D(new Texture2DDescription
+
+        var tried = new List<string>();
+        foreach (var bind in _bindChoices)
         {
-            Width = width,
-            Height = height,
-            MipLevels = 1,
-            ArraySize = 1,
-            Format = Format.NV12,
-            SampleDescription = new SampleDescription(1, 0),
-            Usage = ResourceUsage.Default,
-            BindFlags = _bind,
-            CPUAccessFlags = CpuAccessFlags.None,
-            MiscFlags = ResourceOptionFlags.None,
-        });
-        _width = width;
-        _height = height;
+            var texture = CreateTexture(width, height, bind);
+            var refusal = _videoDevice is null ? null : ProbeAsVideoProcessorInput(texture, width, height);
+            if (refusal is null)
+            {
+                _texture = texture;
+                _width = width;
+                _height = height;
+                return;
+            }
+
+            texture.Dispose();
+            tried.Add($"bind flags {bind}: {refusal}");
+        }
+
+        throw new NotSupportedException(
+            $"The video processor on this GPU refuses the decoder's {width}x{height} NV12 output texture as input, " +
+            $"with every kind of texture this decoder can make ({string.Join("; ", tried)}).");
+    }
+
+    private ID3D11Texture2D CreateTexture(uint width, uint height, BindFlags bind) => _device.CreateTexture2D(new Texture2DDescription
+    {
+        Width = width,
+        Height = height,
+        MipLevels = 1,
+        ArraySize = 1,
+        Format = Format.NV12,
+        SampleDescription = new SampleDescription(1, 0),
+        Usage = ResourceUsage.Default,
+        BindFlags = bind,
+        CPUAccessFlags = CpuAccessFlags.None,
+        MiscFlags = ResourceOptionFlags.None,
+    });
+
+    // Null when the video processor takes the texture as input; otherwise what it said.
+    private string? ProbeAsVideoProcessorInput(ID3D11Texture2D texture, uint width, uint height)
+    {
+        try
+        {
+            using var enumerator = _videoDevice!.CreateVideoProcessorEnumerator(new VideoProcessorContentDescription
+            {
+                InputFrameFormat = VideoFrameFormat.Progressive,
+                InputFrameRate = new Rational(30, 1),
+                InputWidth = width,
+                InputHeight = height,
+                OutputFrameRate = new Rational(30, 1),
+                OutputWidth = width,
+                OutputHeight = height,
+                Usage = VideoUsage.PlaybackNormal,
+            });
+            using var view = _videoDevice.CreateVideoProcessorInputView(
+                texture,
+                enumerator,
+                new VideoProcessorInputViewDescription
+                {
+                    FourCC = 0,
+                    ViewDimension = VideoProcessorInputViewDimension.Texture2D,
+                    Texture2D = new Texture2DVideoProcessorInputView { MipSlice = 0, ArraySlice = 0 },
+                });
+            return null;
+        }
+        catch (SharpGen.Runtime.SharpGenException refused)
+        {
+            return refused.Message.Trim();
+        }
     }
 
     public void Dispose()
     {
         _texture?.Dispose();
         _texture = null;
+        _videoDevice?.Dispose();
     }
 }
