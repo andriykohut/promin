@@ -9,6 +9,7 @@
     <Project Path="src/Educast.Protocol/Educast.Protocol.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Educast.Agent.Tests/Educast.Agent.Tests.csproj" />
     <Project Path="tests/Educast.Master.Core.Tests/Educast.Master.Core.Tests.csproj" />
     <Project Path="tests/Educast.MediaPipeline.Tests/Educast.MediaPipeline.Tests.csproj" />
     <Project Path="tests/Educast.Protocol.Tests/Educast.Protocol.Tests.csproj" />
