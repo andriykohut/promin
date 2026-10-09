@@ -104,7 +104,9 @@ public sealed class BroadcastController : IBroadcastController
     public Task<bool> AddAsync(RoomMember pc, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(pc);
-        return Current is { } running ? TryAddAsync(running, pc, ct) : Task.FromResult(false);
+
+        // On the pool, as the start does it: setting up a connection is not for the UI thread to wait on.
+        return Current is { } running ? Task.Run(() => TryAddAsync(running, pc, ct)) : Task.FromResult(false);
     }
 
     public void StopSendingTo(string deviceId)
@@ -209,13 +211,28 @@ public sealed class BroadcastController : IBroadcastController
             }
 
             var peer = new Peer(channel, control);
-            if (running.Peers.TryGetValue(pc.DeviceId, out var replaced))
+            Peer? replaced;
+            lock (_gate)
+            {
+                // Teardown reads Peers only after Release cleared _running under this lock. So a peer registered
+                // here is one teardown says goodbye to; a PC that answers after that is refused, and the catch
+                // below closes its connection instead of leaving its display up with nothing to show.
+                if (!ReferenceEquals(_running, running))
+                {
+                    throw new InvalidOperationException("The broadcast ended while the PC was connecting.");
+                }
+
+                running.Peers.TryGetValue(pc.DeviceId, out replaced);
+                running.Peers[pc.DeviceId] = peer;
+            }
+
+            if (replaced is not null)
             {
                 // The agent keeps the newest connection from this PC; the old one is just closed.
                 _ = CloseAsync(replaced);
             }
 
-            running.Peers[pc.DeviceId] = peer;
+            // Outside the lock: replacing a client can wait on its send loop.
             running.Session.AddClient(pc.DeviceId, new QuicVideoSink(channel));
             return true;
         }
