@@ -22,6 +22,8 @@ namespace Educast.Master.Services;
 /// </remarks>
 public sealed class AppServices : IDisposable
 {
+    private readonly BroadcastController _broadcast;
+
     private AppServices(string rootDirectory)
     {
         IdentityDirectory = Path.Combine(rootDirectory, "identity");
@@ -37,7 +39,7 @@ public sealed class AppServices : IDisposable
         Pairing = new QuicPairingClient(Connector, TrustedAgents, TrustPath);
         Discovery = new LanDiscovery();
         WallSettings = new JsonWallSettings(Path.Combine(rootDirectory, "settings.json"));
-        Broadcast = new BroadcastController(Connector);
+        Broadcast = _broadcast = new BroadcastController(Connector);
     }
 
     /// <summary>Where this Windows account's Educast state lives.</summary>
@@ -123,7 +125,8 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
-        Broadcast.Stop();
+        // Not just Stop: a process that exits before the students were told leaves their screens on the last picture.
+        _broadcast.StopAndWait(TimeSpan.FromSeconds(3));
         Discovery.Stop();
         Identity.Dispose();
     }

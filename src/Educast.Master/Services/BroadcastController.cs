@@ -32,9 +32,15 @@ public sealed class BroadcastController : IBroadcastController
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan GoodbyeTimeout = TimeSpan.FromSeconds(1);
 
+    // How long a start waits for every PC to answer before the picture starts for those that have.
+    private static readonly TimeSpan StartTogetherTime = TimeSpan.FromSeconds(1);
+
     private readonly QuicMasterConnector _connector;
     private readonly object _gate = new();
     private Running? _running;
+
+    // The newest teardown: what the next start, and the closing app, wait for. It never faults.
+    private Task _tearDown = Task.CompletedTask;
 
     public BroadcastController(QuicMasterConnector connector)
     {
@@ -65,36 +71,64 @@ public sealed class BroadcastController : IBroadcastController
     {
         ArgumentNullException.ThrowIfNull(pcs);
         ArgumentNullException.ThrowIfNull(preset);
+        Task previous;
         lock (_gate)
         {
             if (_running is not null)
             {
                 throw new InvalidOperationException("The broadcast is already running.");
             }
+
+            previous = _tearDown;
         }
 
-        var running = await Task.Run(() => Build(preset, sharpness), ct).ConfigureAwait(false);
-        HardwareEncoderAvailable = running.Source.UsingHardwareEncoder;
-        running.Session.ClientDisconnected += id => OnClientDisconnected(running, id);
-        running.Session.SourceFailed += failure => OnSourceFailed(running, failure);
-        running.Source.EncodeSizeChanged += size => _ = ResendStartAsync(running, size);
-        lock (_gate)
-        {
-            _running = running;
-        }
-
-        // From here a start ends running, or with everything it built released and nothing left set.
+        // A start ends running, or with everything it built released and nothing left set.
+        Running? built = null;
         try
         {
-            var reached = await Task.WhenAll(pcs.Select(pc => TryAddAsync(running, pc, ct))).ConfigureAwait(false);
-            running.Session.Start();
-            return pcs.Where((_, i) => !reached[i]).Select(pc => pc.DeviceId).ToList();
-        }
-        catch
-        {
-            if (Release(running))
+            // The broadcast before this one lets go of the screen first: a second capture of the same display,
+            // made while the first is still alive, is refused.
+            await previous.ConfigureAwait(false);
+
+            var running = built = await Task.Run(() => Build(preset, sharpness), ct).ConfigureAwait(false);
+            HardwareEncoderAvailable = running.Source.UsingHardwareEncoder;
+            running.Session.ClientDisconnected += id => OnClientDisconnected(running, id);
+            running.Session.SourceFailed += failure => OnSourceFailed(running, failure);
+            running.Source.EncodeSizeChanged += size => _ = ResendStartAsync(running, size);
+            lock (_gate)
             {
-                await TearDownAsync(running).ConfigureAwait(false);
+                _running = running;
+            }
+
+            // The picture starts once every PC has answered, or after a second for those that have: one PC that
+            // does not answer must not keep the others on a black screen for its whole five seconds. The rest
+            // are added to the running session as they answer.
+            var answers = Task.WhenAll(pcs.Select(pc => TryAddAsync(running, pc, ct)));
+            await Task.WhenAny(answers, Task.Delay(StartTogetherTime)).ConfigureAwait(false);
+            running.Session.Start();
+            var reached = await answers.ConfigureAwait(false);
+
+            // The picture source failed, or the app is closing, while the last PCs were answering.
+            if (!ReferenceEquals(Current, running))
+            {
+                throw new InvalidOperationException("The broadcast ended while it was starting.");
+            }
+
+            // A PC that answered and was lost again before this returns is not receiving: the caller brings it back.
+            var unreachable = pcs
+                .Where((pc, i) => !reached[i] || !running.Peers.ContainsKey(pc.DeviceId))
+                .Select(pc => pc.DeviceId)
+                .ToList();
+            Trace.TraceInformation("Broadcast started: {0} of {1} PCs receiving.", pcs.Count - unreachable.Count, pcs.Count);
+            return unreachable;
+        }
+        catch (Exception failure)
+        {
+            Trace.TraceError("The broadcast could not start: {0}", failure);
+            if (built is not null)
+            {
+                End(built, "its start failed");
+                await TearDown.ConfigureAwait(false);
             }
 
             throw;
@@ -104,9 +138,22 @@ public sealed class BroadcastController : IBroadcastController
     public Task<bool> AddAsync(RoomMember pc, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(pc);
+        if (Current is not { } running)
+        {
+            return Task.FromResult(false);
+        }
 
         // On the pool, as the start does it: setting up a connection is not for the UI thread to wait on.
-        return Current is { } running ? Task.Run(() => TryAddAsync(running, pc, ct)) : Task.FromResult(false);
+        return Task.Run(async () =>
+        {
+            var joined = await TryAddAsync(running, pc, ct).ConfigureAwait(false);
+            if (joined)
+            {
+                Trace.TraceInformation("{0} ({1}) joined the running broadcast.", pc.DisplayName, pc.DeviceId);
+            }
+
+            return joined;
+        });
     }
 
     public void StopSendingTo(string deviceId)
@@ -128,10 +175,21 @@ public sealed class BroadcastController : IBroadcastController
 
     public void Stop()
     {
-        if (Current is { } running && Release(running))
+        if (Current is { } running)
         {
-            _ = TearDownAsync(running);
+            End(running, "stopped");
         }
+    }
+
+    /// <summary>
+    /// Stops the broadcast and waits, for at most <paramref name="timeout"/>, until every PC has been told and
+    /// the screen capture released. For closing the app: a process that exits first leaves the students
+    /// looking at the last picture until their connection times out.
+    /// </summary>
+    public void StopAndWait(TimeSpan timeout)
+    {
+        Stop();
+        TearDown.Wait(timeout);
     }
 
     public BroadcastStats StatsFor(string deviceId) =>
@@ -150,9 +208,24 @@ public sealed class BroadcastController : IBroadcastController
         }
     }
 
-    /// <summary>Clears <paramref name="running"/> as the current broadcast. False when it already was not (someone else is releasing it).</summary>
-    private bool Release(Running running)
+    private Task TearDown
     {
+        get
+        {
+            lock (_gate)
+            {
+                return _tearDown;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ends <paramref name="running"/> if it is still the current broadcast: from here no PC is registered with
+    /// it, and its teardown begins on the pool. False when it had been ended already.
+    /// </summary>
+    private bool End(Running running, string why)
+    {
+        int pcs;
         lock (_gate)
         {
             if (!ReferenceEquals(_running, running))
@@ -161,21 +234,53 @@ public sealed class BroadcastController : IBroadcastController
             }
 
             _running = null;
-            return true;
+            pcs = running.Peers.Count;
+            _tearDown = Task.Run(() => TearDownAsync(running));
         }
+
+        Trace.TraceInformation("Broadcast ended ({0}); {1} PCs were receiving.", why, pcs);
+        return true;
     }
 
     private static Running Build(QualityPreset preset, Sharpness sharpness)
     {
+        var source = BuildSource(preset, sharpness);
+        if (!source.UsingHardwareEncoder && preset != QualityPreset.SoftwareFallback)
+        {
+            // The probe promised a hardware encoder and Windows opened its software one. What runs is the
+            // quality the wall then shows, not the chosen one encoded in software.
+            Trace.TraceInformation("No hardware encoder could be opened; building again for {0}.", QualityPreset.SoftwareFallback.Label);
+            source.Dispose();
+            preset = QualityPreset.SoftwareFallback;
+            source = BuildSource(preset, sharpness);
+        }
+
+        return new Running(source, new BroadcastSession(new KeyframeLog(source), 1000 / preset.Fps), preset.Fps);
+    }
+
+    private static CaptureEncodeSource BuildSource(QualityPreset preset, Sharpness sharpness)
+    {
         var capture = new DxgiScreenCapture();
 
         // The source takes the capture over and releases it if it cannot start.
-        var source = new CaptureEncodeSource(
+        return new CaptureEncodeSource(
             capture,
             preset,
             sharpness,
-            (size, bitsPerSecond) => new MediaFoundationH264Encoder(capture.Device, size.Width, size.Height, preset.Fps, bitsPerSecond));
-        return new Running(source, new BroadcastSession(source, 1000 / preset.Fps), preset.Fps);
+            (size, bitsPerSecond) =>
+            {
+                var encoder = new MediaFoundationH264Encoder(capture.Device, size.Width, size.Height, preset.Fps, bitsPerSecond);
+                Trace.TraceInformation(
+                    "Encoder: {0}, {1}, {2}x{3}, {4} fps, {5} bit/s. {6}",
+                    encoder.EncoderName,
+                    encoder.UsingHardwareEncoder ? "hardware" : "software",
+                    size.Width,
+                    size.Height,
+                    preset.Fps,
+                    bitsPerSecond,
+                    encoder.Configuration);
+                return encoder;
+            });
     }
 
     /// <summary>Connects, says what is coming, and adds the PC to the session. False, and nothing left open, when it could not be reached in time.</summary>
@@ -214,7 +319,7 @@ public sealed class BroadcastController : IBroadcastController
             Peer? replaced;
             lock (_gate)
             {
-                // Teardown reads Peers only after Release cleared _running under this lock. So a peer registered
+                // Teardown reads Peers only after End cleared _running under this lock. So a peer registered
                 // here is one teardown says goodbye to; a PC that answers after that is refused, and the catch
                 // below closes its connection instead of leaving its display up with nothing to show.
                 if (!ReferenceEquals(_running, running))
@@ -259,19 +364,19 @@ public sealed class BroadcastController : IBroadcastController
         // A late report from a broadcast that has ended says nothing about the PCs of the one running now.
         if (ReferenceEquals(Current, running))
         {
+            Trace.TraceInformation("Lost {0}.", deviceId);
             ClientLost?.Invoke(deviceId);
         }
     }
 
     private void OnSourceFailed(Running running, Exception failure)
     {
-        if (!Release(running))
+        if (!End(running, "its picture source failed"))
         {
             return;
         }
 
         Trace.TraceError("The broadcast's picture source failed: {0}", failure);
-        _ = TearDownAsync(running);
         BroadcastFailed?.Invoke();
     }
 
@@ -279,15 +384,31 @@ public sealed class BroadcastController : IBroadcastController
     private static Task ResendStartAsync(Running running, PixelSize size) =>
         Task.WhenAll(running.Peers.Values.Select(peer => TellAsync(peer, new StartBroadcast(size.Width, size.Height, running.Fps))));
 
-    /// <summary>Stops the session, says goodbye to every PC together, then releases the encoder and the capture, in that order.</summary>
+    /// <summary>
+    /// Tells every PC the broadcast is over, all together and within a second; stops the session; releases the
+    /// encoder and the capture; and only then closes the connections, without waiting for them: closing one to
+    /// a PC that has gone silent lasts until QUIC gives up on it, and the screen must not be held that long.
+    /// Runs on the pool, after <see cref="End"/>, so the set of PCs no longer grows. Never throws.
+    /// </summary>
     private static async Task TearDownAsync(Running running)
     {
         try
         {
-            await Task.Run(running.Session.Stop).ConfigureAwait(false);
-            await Task.WhenAll(running.Peers.Values.Select(SayGoodbyeAsync)).ConfigureAwait(false);
-            running.Peers.Clear();
-            running.Source.Dispose();
+            try
+            {
+                await Task.WhenAll(running.Peers.Values.Select(peer => TellAsync(peer, new StopBroadcast()))).ConfigureAwait(false);
+                running.Session.Stop();
+            }
+            finally
+            {
+                running.Source.Dispose();
+                foreach (var peer in running.Peers.Values)
+                {
+                    _ = CloseAsync(peer);
+                }
+
+                running.Peers.Clear();
+            }
         }
         catch (Exception failure)
         {
@@ -350,6 +471,24 @@ public sealed class BroadcastController : IBroadcastController
     }
 
     private sealed record Peer(QuicChannel Channel, QuicControlChannel Control);
+
+    /// <summary>
+    /// Writes the size of every keyframe the source produces to the log, about one every two seconds: it is
+    /// how a still picture that looks soft is diagnosed afterwards.
+    /// </summary>
+    private sealed class KeyframeLog(IEncodedFrameSource source) : IEncodedFrameSource
+    {
+        public bool TryGetNextFrame(TimeSpan timeout, bool forceKeyframe, out EncodedVideoFrame frame)
+        {
+            var produced = source.TryGetNextFrame(timeout, forceKeyframe, out frame);
+            if (produced && frame.IsKeyframe)
+            {
+                Trace.TraceInformation("Keyframe: {0} bytes.", frame.Data.Length);
+            }
+
+            return produced;
+        }
+    }
 
     /// <summary>
     /// One PC's frames over its <see cref="QuicChannel"/>. The transport does not throw for a
