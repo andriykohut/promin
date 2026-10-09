@@ -5,30 +5,58 @@ namespace Educast.Master.Core.Tests.Setup;
 
 public sealed class AnnouncementFilterTests
 {
-    private readonly AnnouncementFilter _filter = new();
+    private readonly HashSet<string> _pinned = new(StringComparer.Ordinal);
+    private readonly AnnouncementFilter _filter;
+
+    public AnnouncementFilterTests()
+    {
+        _filter = new AnnouncementFilter(_pinned.Contains);
+    }
 
     private static StudentPc Pc(int n, string address = "192.168.1.21", int port = 17843, string name = "PC") =>
-        new($"device-{n:000}", name, address, port);
+        new($"device-{n:0000}", name, address, port);
 
-    [Fact]
-    public void TheSameAnnouncement_IsPostedOnceASecond()
+    /// <summary>Two hundred devices nobody paired, each announcing once at <paramref name="at"/>.</summary>
+    private void Forge200(long at)
     {
-        Assert.True(_filter.ShouldPost(Pc(1), 0));
-        Assert.False(_filter.ShouldPost(Pc(1), 1));
-        Assert.False(_filter.ShouldPost(Pc(1), 999));
-        Assert.True(_filter.ShouldPost(Pc(1), 1000));
-        Assert.False(_filter.ShouldPost(Pc(1), 1999));
+        for (var n = 1; n <= AnnouncementFilter.MaxDevices; n++)
+        {
+            Assert.True(_filter.ShouldPost(Pc(n), at));
+        }
     }
 
     [Fact]
-    public void AnAnnouncementThatDiffers_IsPostedAtOnce()
+    public void TheSameAnnouncement_IsPostedEveryHalfSecond()
     {
         Assert.True(_filter.ShouldPost(Pc(1), 0));
+        Assert.False(_filter.ShouldPost(Pc(1), 1));
+        Assert.False(_filter.ShouldPost(Pc(1), 499));
+        Assert.True(_filter.ShouldPost(Pc(1), 500));
+        Assert.False(_filter.ShouldPost(Pc(1), 999));
+    }
 
-        Assert.True(_filter.ShouldPost(Pc(1, address: "192.168.1.99"), 1));
-        Assert.True(_filter.ShouldPost(Pc(1, address: "192.168.1.99", port: 17900), 2));
-        Assert.True(_filter.ShouldPost(Pc(1, address: "192.168.1.99", port: 17900, name: "Front left"), 3));
-        Assert.False(_filter.ShouldPost(Pc(1, address: "192.168.1.99", port: 17900, name: "Front left"), 4));
+    [Fact]
+    public void AnIdThatAlternatesTwoValues_IsPostedAtMostTwiceASecond()
+    {
+        var posted = 0;
+        for (var ms = 0; ms < 1000; ms++)
+        {
+            if (_filter.ShouldPost(Pc(1, port: ms % 2 == 0 ? 17843 : 17900), ms))
+            {
+                posted++;
+            }
+        }
+
+        Assert.Equal(2, posted);
+    }
+
+    [Fact]
+    public void ARealPc_AnnouncingEveryTwoSeconds_IsNeverDropped_AlsoWhenItsAddressChanges()
+    {
+        for (var i = 0; i < 10; i++)
+        {
+            Assert.True(_filter.ShouldPost(Pc(1, address: i < 5 ? "192.168.1.21" : "192.168.1.99"), i * 2000));
+        }
     }
 
     [Fact]
@@ -36,20 +64,58 @@ public sealed class AnnouncementFilterTests
     {
         Assert.True(_filter.ShouldPost(Pc(1), 0));
         Assert.True(_filter.ShouldPost(Pc(2), 0));
-        Assert.False(_filter.ShouldPost(Pc(1), 500));
+        Assert.False(_filter.ShouldPost(Pc(1), 499));
     }
 
     [Fact]
-    public void AtMost200DevicesAreTracked_OthersAreIgnored_AndTheKnownOnesStillPass()
+    public void TwoHundredForgedIds_DoNotHideAPcThisConsoleHasPaired()
     {
-        for (var n = 1; n <= AnnouncementFilter.MaxDevices; n++)
+        _pinned.Add(Pc(9001).DeviceId);
+        Forge200(at: 0);
+
+        Assert.False(_filter.ShouldPost(Pc(201), 1));
+        Assert.True(_filter.ShouldPost(Pc(9001), 1));
+        Assert.False(_filter.ShouldPost(Pc(9001), 2));
+        Assert.True(_filter.ShouldPost(Pc(9001), 501));
+    }
+
+    [Fact]
+    public void AFullTable_ForgetsTheDevicesNotHeardFromForTenSeconds_SoTheLockOutEndsWithTheFlood()
+    {
+        Forge200(at: 0);
+
+        Assert.False(_filter.ShouldPost(Pc(201), 9_999));
+        Assert.True(_filter.ShouldPost(Pc(201), 10_000));
+    }
+
+    [Fact]
+    public void AFullTable_OfDevicesStillAnnouncing_RefusesANewOne()
+    {
+        Forge200(at: 0);
+        Forge200(at: 9_000);
+
+        Assert.False(_filter.ShouldPost(Pc(201), 10_000));
+        Assert.True(_filter.ShouldPost(Pc(1), 10_000));
+    }
+
+    [Fact]
+    public void TheTable_NeverHoldsMoreThan200UnpinnedDevices_AndPairedOnesAreNotCounted()
+    {
+        for (var n = 1; n <= 50; n++)
         {
-            Assert.True(_filter.ShouldPost(Pc(n), 0));
+            _pinned.Add(Pc(9000 + n).DeviceId);
+            Assert.True(_filter.ShouldPost(Pc(9000 + n), 0));
         }
 
-        Assert.False(_filter.ShouldPost(Pc(201), 0));
-        Assert.False(_filter.ShouldPost(Pc(201), 5000));
-        Assert.True(_filter.ShouldPost(Pc(200), 5000));
+        Assert.Equal(0, _filter.UnpinnedTracked);
+
+        // A new id every 20 ms for 20 seconds: the oldest are forgotten as the table fills.
+        for (var n = 1; n <= 1000; n++)
+        {
+            _filter.ShouldPost(Pc(n), n * 20);
+            Assert.InRange(_filter.UnpinnedTracked, 1, AnnouncementFilter.MaxDevices);
+        }
+
         Assert.Equal(200, AnnouncementFilter.MaxDevices);
     }
 }

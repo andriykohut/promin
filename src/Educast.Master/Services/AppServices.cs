@@ -37,7 +37,7 @@ public sealed class AppServices : IDisposable
 
         RoomStore = new JsonRoomStore(RoomPath);
         Pairing = new QuicPairingClient(Connector, TrustedAgents, TrustPath);
-        Discovery = new LanDiscovery();
+        Discovery = new LanDiscovery(deviceId => TrustedAgents.TryGetPinnedThumbprint(deviceId, out _));
         WallSettings = new JsonWallSettings(Path.Combine(rootDirectory, "settings.json"));
         Broadcast = _broadcast = new BroadcastController(Connector);
     }

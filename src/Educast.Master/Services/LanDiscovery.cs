@@ -17,9 +17,9 @@ namespace Educast.Master.Services;
 /// constructor throws <see cref="SocketException"/> when the port is already bound (a second
 /// console on this PC); that is reported as <c>false</c>, not thrown into a navigation.
 /// </remarks>
-public sealed class LanDiscovery : IDiscovery
+public sealed class LanDiscovery(Func<string, bool> isPinned) : IDiscovery
 {
-    private readonly AnnouncementFilter _filter = new();
+    private readonly AnnouncementFilter _filter = new(isPinned);
     private LanDiscoveryScanner? _scanner;
 
     public event Action<StudentPc>? Seen;

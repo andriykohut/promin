@@ -4,40 +4,65 @@ namespace Educast.Master.Core.Setup;
 
 /// <summary>
 /// Which discovery announcements are worth passing on to the screens. Anyone on the network can
-/// send them at any rate, and each one passed on is work for the UI thread, so: an announcement
-/// that says exactly what the last one passed on for that device said is dropped for a second,
-/// and no more than <see cref="MaxDevices"/> devices are followed; others are ignored.
+/// send them at any rate, and each one passed on is work for the UI thread. Three rules:
+/// <list type="number">
+/// <item>Whatever it says, a device is passed on at most once in half a second.</item>
+/// <item>A device this console has paired is always followed, and is not counted.</item>
+/// <item>
+/// At most <see cref="MaxDevices"/> other devices are followed. When that many are and a new one
+/// announces itself, those not heard from for ten seconds are forgotten first; the new one is
+/// ignored only if the table is still full.
+/// </item>
+/// </list>
 /// </summary>
 /// <remarks>
-/// A student PC announces itself every two seconds, so nothing real is dropped. The time is a
-/// running millisecond count, not the clock, so a clock change cannot silence a PC.
+/// A student PC announces itself every two seconds, so nothing real is dropped, and a flood of
+/// forged devices can hide an unpaired PC only for as long as it lasts, and a paired one never.
+/// The time is a running millisecond count, not the clock, so a clock change cannot silence a PC.
 /// </remarks>
-public sealed class AnnouncementFilter
+/// <param name="isPinned">Whether this console has paired the device with that id. Called on the caller's thread.</param>
+public sealed class AnnouncementFilter(Func<string, bool> isPinned)
 {
     /// <summary>The same bound Set up devices puts on its list.</summary>
     public const int MaxDevices = 200;
 
-    private const long RepeatMilliseconds = 1000;
+    private const long PostIntervalMilliseconds = 500;
+    private const long ForgetAfterMilliseconds = 10_000;
 
-    private readonly Dictionary<string, (StudentPc Pc, long At)> _posted = new(StringComparer.Ordinal);
+    // When each device was last passed on. Paired ones apart, because only the others are bounded.
+    private readonly Dictionary<string, long> _paired = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _others = new(StringComparer.Ordinal);
+
+    /// <summary>How many devices this console has not paired are followed now; never more than <see cref="MaxDevices"/>.</summary>
+    public int UnpinnedTracked => _others.Count;
 
     /// <summary>Whether to pass this announcement on. One caller at a time.</summary>
     public bool ShouldPost(StudentPc pc, long nowMilliseconds)
     {
         ArgumentNullException.ThrowIfNull(pc);
-        if (_posted.TryGetValue(pc.DeviceId, out var last))
+        var paired = isPinned(pc.DeviceId);
+        var postedAt = paired ? _paired : _others;
+        if (postedAt.TryGetValue(pc.DeviceId, out var last))
         {
-            if (last.Pc == pc && nowMilliseconds - last.At < RepeatMilliseconds)
+            if (nowMilliseconds - last < PostIntervalMilliseconds)
             {
                 return false;
             }
         }
-        else if (_posted.Count >= MaxDevices)
+        else if (!paired && _others.Count >= MaxDevices)
         {
-            return false;
+            foreach (var quiet in _others.Where(o => nowMilliseconds - o.Value >= ForgetAfterMilliseconds).Select(o => o.Key).ToList())
+            {
+                _others.Remove(quiet);
+            }
+
+            if (_others.Count >= MaxDevices)
+            {
+                return false;
+            }
         }
 
-        _posted[pc.DeviceId] = (pc, nowMilliseconds);
+        postedAt[pc.DeviceId] = nowMilliseconds;
         return true;
     }
 }
