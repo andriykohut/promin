@@ -180,6 +180,21 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     public WallMessage? Message => _message;
 
+    // The bar binds these, never Message itself: a binding through a null object is never re-evaluated.
+
+    public bool IsMessageOpen => _message is not null;
+
+    public string MessageTitle => _message?.Title ?? string.Empty;
+
+    public string MessageText => _message?.Text ?? string.Empty;
+
+    public string MessageActionLabel => _message?.ActionLabel ?? string.Empty;
+
+    public bool HasMessageAction => _message?.ActionLabel is not null;
+
+    /// <summary><see cref="WallMessageKind.Info"/> when there is no message.</summary>
+    public WallMessageKind MessageKind => _message?.Kind ?? WallMessageKind.Info;
+
     /// <summary>Page shown: start listening, read the room. Never throws.</summary>
     public void Activate()
     {
@@ -664,12 +679,20 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         Set(ref _canChooseQuality, selectable && hardware, nameof(CanChooseQuality));
         Set(ref _onAirShown, _onAir, nameof(IsOnAir));
 
-        Set(ref _message, _roomUnreadable ? WallMessage.RoomUnreadable
+        if (Set(ref _message, _roomUnreadable ? WallMessage.RoomUnreadable
             : _broadcastStopped ? WallMessage.BroadcastStopped
             : _saveFailed ? WallMessage.RoomNotSaved
             : !empty && !anyOnline ? WallMessage.NoPcReachable
             : !hardware ? WallMessage.SoftwareEncoding
-            : null, nameof(Message));
+            : null, nameof(Message)))
+        {
+            Raise(nameof(IsMessageOpen));
+            Raise(nameof(MessageTitle));
+            Raise(nameof(MessageText));
+            Raise(nameof(MessageActionLabel));
+            Raise(nameof(HasMessageAction));
+            Raise(nameof(MessageKind));
+        }
 
         // The rates are the real ones for this PC: its display, scaled to the chosen ceiling.
         var display = _broadcast.DisplaySize;
@@ -690,15 +713,16 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     private static bool SamePills(IReadOnlyList<WallPill> a, IReadOnlyList<WallPill> b) => a.SequenceEqual(b);
 
-    private void Set<T>(ref T field, T value, string name, Func<T, T, bool>? same = null)
+    private bool Set<T>(ref T field, T value, string name, Func<T, T, bool>? same = null)
     {
         if (same is null ? EqualityComparer<T>.Default.Equals(field, value) : same(field, value))
         {
-            return;
+            return false;
         }
 
         field = value;
         Raise(name);
+        return true;
     }
 
     private void Raise([CallerMemberName] string? name = null) =>

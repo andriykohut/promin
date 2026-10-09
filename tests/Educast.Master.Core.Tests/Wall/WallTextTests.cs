@@ -59,8 +59,11 @@ public class WallTextTests
     [InlineData(9, new string[0], new string[0], "All 9 PCs receiving well.")]
     [InlineData(8, new[] { "PC-04" }, new[] { "PC-07" }, "8 PCs receiving well. PC-04 is dropping frames. PC-07 is reconnecting.")]
     [InlineData(1, new[] { "PC-02", "PC-04" }, new string[0], "1 PC receiving well. 2 PCs are dropping frames.")]
-    [InlineData(0, new string[0], new[] { "PC-07" }, "0 PCs receiving well. PC-07 is reconnecting.")]
+    [InlineData(0, new string[0], new[] { "PC-07" }, "No PCs are receiving. PC-07 is reconnecting.")]
     [InlineData(7, new string[0], new[] { "PC-01", "PC-07" }, "7 PCs receiving well. 2 PCs are reconnecting.")]
+    [InlineData(1, new string[0], new string[0], "1 PC receiving well.")]
+    [InlineData(0, new string[0], new string[0], "No PCs are receiving.")]
+    [InlineData(2, new string[0], new string[0], "All 2 PCs receiving well.")]
     public void OnAirLine(int receiving, string[] dropping, string[] reconnecting, string expected) =>
         Assert.Equal(expected, WallText.OnAirLine(receiving, dropping, reconnecting));
 

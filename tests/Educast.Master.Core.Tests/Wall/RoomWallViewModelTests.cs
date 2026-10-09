@@ -375,6 +375,42 @@ public sealed class RoomWallViewModelTests
     }
 
     [Fact]
+    public void TheBar_HasPlainValues_ThatChangeWithTheMessage_BothWays()
+    {
+        Room(1);
+        var vm = Activated();
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        Assert.True(vm.IsMessageOpen);
+        Assert.Equal("No student PCs can be reached.", vm.MessageTitle);
+        Assert.Equal("Check that they are switched on and on the same network as this PC.", vm.MessageText);
+        Assert.Equal("Set up devices", vm.MessageActionLabel);
+        Assert.True(vm.HasMessageAction);
+        Assert.Equal(WallMessageKind.Error, vm.MessageKind);
+
+        See(1);
+        vm.Tick();
+
+        Assert.Null(vm.Message);
+        Assert.False(vm.IsMessageOpen);
+        Assert.Equal(string.Empty, vm.MessageTitle);
+        Assert.Equal(string.Empty, vm.MessageText);
+        Assert.Equal(string.Empty, vm.MessageActionLabel);
+        Assert.False(vm.HasMessageAction);
+        Assert.Contains(nameof(RoomWallViewModel.IsMessageOpen), raised);
+        Assert.Contains(nameof(RoomWallViewModel.MessageTitle), raised);
+
+        raised.Clear();
+        _now = _now.AddSeconds(7);
+        vm.Tick();
+
+        Assert.True(vm.IsMessageOpen);
+        Assert.Equal("No student PCs can be reached.", vm.MessageTitle);
+        Assert.Contains(nameof(RoomWallViewModel.IsMessageOpen), raised);
+    }
+
+    [Fact]
     public void Quality_CanBeChosenOffAir()
     {
         var vm = TenWithSevenOffline();

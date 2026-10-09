@@ -44,12 +44,16 @@ public static class WallText
 
     public static string OnAirLine(int receiving, IReadOnlyList<string> dropping, IReadOnlyList<string> reconnecting)
     {
-        if (dropping.Count == 0 && reconnecting.Count == 0)
+        var allWell = dropping.Count == 0 && reconnecting.Count == 0;
+        var parts = new List<string>
         {
-            return $"All {receiving} PCs receiving well.";
-        }
-
-        var parts = new List<string> { receiving == 1 ? "1 PC receiving well." : $"{receiving} PCs receiving well." };
+            receiving switch
+            {
+                0 => "No PCs are receiving.",
+                1 => "1 PC receiving well.",
+                _ => allWell ? $"All {receiving} PCs receiving well." : $"{receiving} PCs receiving well.",
+            },
+        };
         if (dropping.Count > 0)
         {
             parts.Add(dropping.Count == 1 ? $"{dropping[0]} is dropping frames." : $"{dropping.Count} PCs are dropping frames.");
