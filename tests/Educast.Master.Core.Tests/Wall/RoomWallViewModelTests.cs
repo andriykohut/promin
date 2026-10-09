@@ -707,6 +707,27 @@ public sealed class RoomWallViewModelTests
     }
 
     [Fact]
+    public async Task LostWhileConnecting_IsReconnecting_WhenTheStartReturns_AndIsRejoined()
+    {
+        var vm = TenWithSevenOffline();
+        _broadcast.PendingStart = new TaskCompletionSource<IReadOnlyCollection<string>>();
+        var starting = vm.StartAsync();
+
+        // It answered, and its connection went before the start had every answer.
+        _broadcast.RaiseLost(Id(4));
+        _broadcast.PendingStart.SetResult([]);
+        await starting;
+
+        Assert.Equal(PcTileState.Reconnecting, Tile(vm, 4).State);
+        Assert.Equal(8, vm.Tiles.Count(t => t.State == PcTileState.Receiving));
+
+        vm.Tick();
+
+        Assert.Equal(Id(4), Assert.Single(_broadcast.Adds).DeviceId);
+        Assert.Equal(PcTileState.Receiving, Tile(vm, 4).State);
+    }
+
+    [Fact]
     public async Task WhileConnecting_NothingCanBeStartedOrChanged()
     {
         var vm = TenWithSevenOffline();

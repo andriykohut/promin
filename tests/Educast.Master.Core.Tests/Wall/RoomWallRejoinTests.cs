@@ -445,6 +445,48 @@ public sealed class RoomWallRejoinTests
     }
 
     [Fact]
+    public async Task RememberingAnAddress_KeepsWhatSetUpDevicesChangedInTheRoomMeanwhile()
+    {
+        var vm = await OnAir(AllTen);
+        _broadcast.RaiseLost(Id(7));
+
+        // Set up devices keeps its own copy of the room; the wall has not read the file again.
+        _store.Members.RemoveAll(m => m.DeviceId == Id(4));
+        _store.Members.Add(new RoomMember(Id(11), "PC-11", "192.168.1.31", 17843, PairedOn, Selected: true));
+        _discovery.Raise(new StudentPc(Id(7), "PC-07", "192.168.1.99", 17900));
+
+        vm.Tick();
+
+        Assert.Equal(PcTileState.Receiving, Tile(vm, 7).State);
+        Assert.Equal(1, _store.Saves);
+        Assert.DoesNotContain(_store.Members, m => m.DeviceId == Id(4));
+        Assert.Contains(_store.Members, m => m.DeviceId == Id(11));
+        Assert.Equal("192.168.1.99", _store.Members.Single(m => m.DeviceId == Id(7)).LastAddress);
+        Assert.Equal(17900, _store.Members.Single(m => m.DeviceId == Id(7)).Port);
+    }
+
+    [Fact]
+    public async Task RemovedOnSetUpDevicesWhileItsRejoinIsInFlight_IsStopped_AndNotShownReceiving()
+    {
+        _broadcast.PendingAdd = new TaskCompletionSource<bool>();
+        var vm = await OnAir(AllTen);
+        _broadcast.RaiseLost(Id(7));
+        _discovery.Raise(new StudentPc(Id(7), "PC-07", "192.168.1.99", 17900));
+        vm.Tick();
+
+        // Set up devices saves the room without the PC; the wall has not read the file again.
+        _store.Members.RemoveAll(m => m.DeviceId == Id(7));
+        _broadcast.PendingAdd.SetResult(true);
+
+        Assert.Equal([Id(7)], _broadcast.StoppedSendingTo);
+        Assert.Equal(PcTileState.Reconnecting, Tile(vm, 7).State);
+        Assert.Equal(["9 receiving", "1 reconnecting"], vm.Pills.Select(p => p.Text));
+        Assert.Null(vm.Message);
+        Assert.Equal(0, _store.Saves);
+        Assert.DoesNotContain(_store.Members, m => m.DeviceId == Id(7));
+    }
+
+    [Fact]
     public async Task EndingTheBroadcast_LetsNothingOutOfACancelledAttempt_AndTheNextBroadcastRejoinsAsUsual()
     {
         _broadcast.PendingAdd = new TaskCompletionSource<bool>();

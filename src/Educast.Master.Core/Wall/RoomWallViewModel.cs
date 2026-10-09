@@ -57,6 +57,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private readonly HashSet<string> _stoppedByTeacher = new(StringComparer.Ordinal);
     private readonly HashSet<string> _rejoining = new(StringComparer.Ordinal);
 
+    // PCs reported lost while a start was still connecting: not receiving when it returns, whatever it says.
+    private readonly HashSet<string> _lostWhileStarting = new(StringComparer.Ordinal);
+
     // Where each member last announced itself from: where it is dialled next. Anyone on the network can send an
     // announcement, so this is kept in memory only; the room file gets an address once a connection worked there.
     private readonly Dictionary<string, (string Address, int Port)> _announcedAt = new(StringComparer.Ordinal);
@@ -250,6 +253,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         var targets = _members.Where(m => m.Selected && _presence.IsOnline(m.DeviceId, now)).Select(AsDialled).ToList();
 
         _starting = true;
+        _lostWhileStarting.Clear();
         _broadcastStopped = false;
         Refresh();
 
@@ -276,7 +280,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _stoppedByTeacher.Clear();
         foreach (var target in targets)
         {
-            if (unreachable.Contains(target.DeviceId))
+            if (unreachable.Contains(target.DeviceId) || _lostWhileStarting.Contains(target.DeviceId))
             {
                 continue;
             }
@@ -291,7 +295,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             _sendingTo.Add(target.DeviceId);
         }
 
-        RememberAddresses(targets.Where(t => _sendingTo.Contains(t.DeviceId)));
+        RememberAddresses(StoredRoom(), targets.Where(t => _sendingTo.Contains(t.DeviceId)));
 
         foreach (var tile in Tiles)
         {
@@ -477,15 +481,17 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             return;
         }
 
-        // The broadcast ended, or the PC was stopped or removed, while it was connecting: it is not sent the picture.
-        if (!IsWanted(MemberOf(id)))
+        // The broadcast ended, or the PC was stopped or removed, while it was connecting: it is not sent the
+        // picture. Removed includes removed on Set up devices, which the wall only sees in the stored room.
+        var stored = StoredRoom();
+        if (!IsWanted(MemberOf(id)) || stored?.Any(m => m.DeviceId == id) == false)
         {
             _broadcast.StopSendingTo(id);
             return;
         }
 
         _sendingTo.Add(id);
-        RememberAddresses([member]);
+        RememberAddresses(stored, [member]);
         var tile = TileOf(id);
         tile.Drops.Reset();
         _backId = id;
@@ -570,42 +576,80 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             : member;
 
     /// <summary>
-    /// A connection to each of these PCs, pinned to it, just worked at the address it carries: that
-    /// is the address the room remembers. One save, only if something differs; a failed save changes nothing.
+    /// The room as the store holds it now: Set up devices may have changed it since the wall read it.
+    /// Null when it cannot be read.
     /// </summary>
-    private void RememberAddresses(IEnumerable<RoomMember> reached)
+    private List<RoomMember>? StoredRoom()
     {
-        var before = _members.ToList();
+        try
+        {
+            return _store.Load().ToList();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// A connection to each of these PCs, pinned to it, just worked at the address it carries: that
+    /// is the address the room remembers. Written into <paramref name="stored"/>, the room as the
+    /// store holds it, and nothing else in it is touched: the wall's own copy may be older. One save,
+    /// only if an address differs; a PC no longer in the stored room is not written back.
+    /// </summary>
+    private void RememberAddresses(List<RoomMember>? stored, IEnumerable<RoomMember> reached)
+    {
+        if (stored is null)
+        {
+            return;
+        }
+
+        var changed = new List<RoomMember>();
         foreach (var pc in reached)
+        {
+            var index = stored.FindIndex(m => m.DeviceId == pc.DeviceId);
+            if (index >= 0 && (stored[index].LastAddress != pc.LastAddress || stored[index].Port != pc.Port))
+            {
+                stored[index] = stored[index] with { LastAddress = pc.LastAddress, Port = pc.Port };
+                changed.Add(pc);
+            }
+        }
+
+        if (changed.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _store.Save(stored);
+            _saveFailed = false;
+        }
+        catch (Exception)
+        {
+            _saveFailed = true;
+            return;
+        }
+
+        // The wall's copy follows for these PCs, so what it shows and what it saves later agree with the file.
+        foreach (var pc in changed)
         {
             var index = _members.FindIndex(m => m.DeviceId == pc.DeviceId);
             if (index >= 0)
             {
                 _members[index] = _members[index] with { LastAddress = pc.LastAddress, Port = pc.Port };
+                TileOf(pc.DeviceId).Address = pc.LastAddress;
             }
-        }
-
-        if (_members.SequenceEqual(before))
-        {
-            return;
-        }
-
-        if (!TrySave())
-        {
-            _members.Clear();
-            _members.AddRange(before);
-            return;
-        }
-
-        foreach (var tile in Tiles)
-        {
-            tile.Address = MemberOf(tile.DeviceId)!.LastAddress;
         }
     }
 
     private void OnClientLost(string deviceId)
     {
-        if (_onAir && _sendingTo.Remove(deviceId))
+        if (_starting)
+        {
+            _lostWhileStarting.Add(deviceId);
+        }
+        else if (_onAir && _sendingTo.Remove(deviceId))
         {
             Refresh();
         }
