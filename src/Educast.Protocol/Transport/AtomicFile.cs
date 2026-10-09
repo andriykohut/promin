@@ -6,7 +6,7 @@ namespace Educast.Protocol.Transport;
 /// A crash or a full disk leaves the previous file intact rather than a truncated one, and a
 /// power cut straight after the swap cannot leave a file whose content never reached the disk.
 /// </summary>
-internal static class AtomicFile
+public static class AtomicFile
 {
     /// <summary>Writes <paramref name="content"/> to <paramref name="path"/> atomically, creating the directory if needed.</summary>
     public static void WriteAllBytes(string path, byte[] content)

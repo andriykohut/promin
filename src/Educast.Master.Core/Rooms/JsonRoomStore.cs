@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Educast.Protocol.Transport;
 
 namespace Educast.Master.Core.Rooms;
 
@@ -61,33 +62,13 @@ public sealed class JsonRoomStore : IRoomStore
     {
         ArgumentNullException.ThrowIfNull(members);
 
-        var temporary = $"{_path}.{Guid.NewGuid():N}.tmp";
         try
         {
-            var directory = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                JsonSerializer.Serialize(stream, members, Options);
-                stream.Flush(flushToDisk: true);
-            }
-
-            File.Move(temporary, _path, overwrite: true);
+            AtomicFile.WriteAllBytes(_path, JsonSerializer.SerializeToUtf8Bytes(members, Options));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             throw new RoomStoreException($"The room file {_path} could not be written.", e);
-        }
-        finally
-        {
-            if (File.Exists(temporary))
-            {
-                File.Delete(temporary);
-            }
         }
     }
 
