@@ -17,13 +17,6 @@ public readonly record struct VideoFrameEnvelope(uint FrameId, bool IsKeyframe)
         destination[4] = (byte)(IsKeyframe ? 1 : 0);
     }
 
-    public byte[] ToArray()
-    {
-        var buffer = new byte[Size];
-        WriteTo(buffer);
-        return buffer;
-    }
-
     /// <exception cref="ArgumentException">
     /// <paramref name="source"/> is shorter than <see cref="Size"/> bytes.
     /// </exception>

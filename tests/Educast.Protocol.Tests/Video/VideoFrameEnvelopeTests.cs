@@ -14,17 +14,10 @@ public class VideoFrameEnvelopeTests
     {
         var original = new VideoFrameEnvelope(frameId, isKeyframe);
 
-        var decoded = VideoFrameEnvelope.ReadFrom(original.ToArray());
+        var bytes = new byte[VideoFrameEnvelope.Size];
+        original.WriteTo(bytes);
 
-        Assert.Equal(original, decoded);
-    }
-
-    [Fact]
-    public void ToArray_ProducesExactlyEnvelopeSizeBytes()
-    {
-        var bytes = new VideoFrameEnvelope(FrameId: 42, IsKeyframe: true).ToArray();
-
-        Assert.Equal(VideoFrameEnvelope.Size, bytes.Length);
+        Assert.Equal(original, VideoFrameEnvelope.ReadFrom(bytes));
     }
 
     [Fact]

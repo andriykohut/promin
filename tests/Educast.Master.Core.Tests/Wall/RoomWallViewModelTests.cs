@@ -97,7 +97,7 @@ public sealed class RoomWallViewModelTests
         Assert.Equal(9, vm.Tiles.Count(t => t.State == PcTileState.Ready));
         Assert.Equal(PcTileState.Offline, Tile(vm, 7).State);
         Assert.Equal("Offline", Tile(vm, 7).StatusText);
-        Assert.Equal(["9 ready", "1 offline"], vm.Pills.Select(p => p.Text));
+        Assert.Equal(["9 ready", "1 offline"], vm.Pills.Select(p => $"{p.Count} {p.Word}"));
         Assert.Equal("9 of 10 PCs selected", vm.BarLine1);
         Assert.Equal("PC-07 is offline. It joins by itself if it comes back.", vm.BarLine2);
         Assert.False(vm.IsOnAir);
@@ -289,7 +289,7 @@ public sealed class RoomWallViewModelTests
 
         Assert.Equal(PcTileState.Reconnecting, Tile(vm, 4).State);
         Assert.Equal("Reconnecting", Tile(vm, 4).StatusText);
-        Assert.Contains(vm.Pills, p => p.Text == "1 reconnecting");
+        Assert.Contains(vm.Pills, p => $"{p.Count} {p.Word}" == "1 reconnecting");
     }
 
     [Fact]
@@ -298,7 +298,7 @@ public sealed class RoomWallViewModelTests
         var vm = await OnAir();
 
         Assert.Equal(PcTileState.Reconnecting, Tile(vm, 7).State);
-        Assert.Equal(["9 receiving", "1 reconnecting"], vm.Pills.Select(p => p.Text));
+        Assert.Equal(["9 receiving", "1 reconnecting"], vm.Pills.Select(p => $"{p.Count} {p.Word}"));
     }
 
     [Fact]
@@ -352,7 +352,7 @@ public sealed class RoomWallViewModelTests
         Assert.Equal("12:41", vm.ElapsedText);
         Assert.Equal("12:41", Tile(vm, 4).ReceivingForText);
         Assert.Equal("8 PCs receiving well. PC-04 is dropping frames. PC-07 is reconnecting.", vm.BarLine2);
-        Assert.Equal(["8 receiving", "1 dropping frames", "1 reconnecting"], vm.Pills.Select(p => p.Text));
+        Assert.Equal(["8 receiving", "1 dropping frames", "1 reconnecting"], vm.Pills.Select(p => $"{p.Count} {p.Word}"));
     }
 
     [Fact]
@@ -378,7 +378,7 @@ public sealed class RoomWallViewModelTests
         Assert.Equal(PcTileState.Ready, Tile(vm, 4).State);
         Assert.True(Stored(_store, 4).Selected);
         Assert.True(vm.IsOnAir);
-        Assert.Equal(["8 receiving", "1 reconnecting"], vm.Pills.Select(p => p.Text));
+        Assert.Equal(["8 receiving", "1 reconnecting"], vm.Pills.Select(p => $"{p.Count} {p.Word}"));
     }
 
     [Fact]
@@ -529,7 +529,7 @@ public sealed class RoomWallViewModelTests
         Assert.Equal([Id(4)], _pairing.Unpaired);
         Assert.DoesNotContain(_store.Members, m => m.DeviceId == Id(4));
         Assert.DoesNotContain(vm.Tiles, t => t.DeviceId == Id(4));
-        Assert.Equal(["8 receiving", "1 reconnecting"], vm.Pills.Select(p => p.Text));
+        Assert.Equal(["8 receiving", "1 reconnecting"], vm.Pills.Select(p => $"{p.Count} {p.Word}"));
     }
 
     [Fact]
@@ -702,7 +702,7 @@ public sealed class RoomWallViewModelTests
         Assert.True(vm.IsOnAir);
         Assert.Equal([Id(4)], _broadcast.StoppedSendingTo);
         Assert.DoesNotContain(vm.Tiles, t => t.DeviceId == Id(4));
-        Assert.Equal(["8 receiving", "1 reconnecting"], vm.Pills.Select(p => p.Text));
+        Assert.Equal(["8 receiving", "1 reconnecting"], vm.Pills.Select(p => $"{p.Count} {p.Word}"));
         Assert.Equal([Id(4)], _pairing.Unpaired);
     }
 
@@ -722,7 +722,7 @@ public sealed class RoomWallViewModelTests
         Assert.True(vm.IsOnAir);
         Assert.Equal([Id(4)], _broadcast.StoppedSendingTo);
         Assert.Equal(PcTileState.Reconnecting, Tile(vm, 4).State);
-        Assert.Equal(["8 receiving", "2 reconnecting"], vm.Pills.Select(p => p.Text));
+        Assert.Equal(["8 receiving", "2 reconnecting"], vm.Pills.Select(p => $"{p.Count} {p.Word}"));
         Assert.Null(vm.Message);
         Assert.Equal(0, _store.Saves);
     }

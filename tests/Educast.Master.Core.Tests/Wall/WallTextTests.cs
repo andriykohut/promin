@@ -21,7 +21,7 @@ public class WallTextTests
     [InlineData(10, 0, new[] { "10 ready" })]
     [InlineData(0, 3, new[] { "3 offline" })]
     public void PillsOffAir(int ready, int offline, string[] expected) =>
-        Assert.Equal(expected, WallText.PillsOffAir(ready, offline).Select(p => p.Text));
+        Assert.Equal(expected, WallText.PillsOffAir(ready, offline).Select(p => $"{p.Count} {p.Word}"));
 
     [Fact]
     public void PillsOffAir_CarryTheStateTheirDotIsColouredBy() =>
@@ -34,7 +34,7 @@ public class WallTextTests
     [InlineData(9, 0, 0, new[] { "9 receiving" })]
     [InlineData(0, 0, 2, new[] { "2 reconnecting" })]
     public void PillsOnAir(int receiving, int dropping, int reconnecting, string[] expected) =>
-        Assert.Equal(expected, WallText.PillsOnAir(receiving, dropping, reconnecting).Select(p => p.Text));
+        Assert.Equal(expected, WallText.PillsOnAir(receiving, dropping, reconnecting).Select(p => $"{p.Count} {p.Word}"));
 
     [Fact]
     public void PillsOnAir_CarryTheStateTheirDotIsColouredBy() =>
@@ -116,7 +116,6 @@ public class WallTextTests
 
         Assert.Equal(3, pill.Count);
         Assert.Equal("offline", pill.Word);
-        Assert.Equal("3 offline", pill.Text);
     }
 
     [Theory]

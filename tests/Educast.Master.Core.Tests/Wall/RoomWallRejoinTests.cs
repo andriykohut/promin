@@ -82,7 +82,7 @@ public sealed class RoomWallRejoinTests
 
         Assert.Equal([Id(7)], Added);
         Assert.Equal(PcTileState.Receiving, Tile(vm, 7).State);
-        Assert.Equal(["10 receiving"], vm.Pills.Select(p => p.Text));
+        Assert.Equal(["10 receiving"], vm.Pills.Select(p => $"{p.Count} {p.Word}"));
     }
 
     [Fact]
@@ -277,7 +277,7 @@ public sealed class RoomWallRejoinTests
 
         Assert.Equal([Id(7)], _broadcast.StoppedSendingTo);
         Assert.DoesNotContain(vm.Tiles, t => t.DeviceId == Id(7));
-        Assert.Equal(["9 receiving"], vm.Pills.Select(p => p.Text));
+        Assert.Equal(["9 receiving"], vm.Pills.Select(p => $"{p.Count} {p.Word}"));
         Assert.Null(vm.Message);
     }
 
@@ -480,7 +480,7 @@ public sealed class RoomWallRejoinTests
 
         Assert.Equal([Id(7)], _broadcast.StoppedSendingTo);
         Assert.Equal(PcTileState.Reconnecting, Tile(vm, 7).State);
-        Assert.Equal(["9 receiving", "1 reconnecting"], vm.Pills.Select(p => p.Text));
+        Assert.Equal(["9 receiving", "1 reconnecting"], vm.Pills.Select(p => $"{p.Count} {p.Word}"));
         Assert.Null(vm.Message);
         Assert.Equal(0, _store.Saves);
     }

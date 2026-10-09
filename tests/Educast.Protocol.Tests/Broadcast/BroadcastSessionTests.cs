@@ -382,26 +382,8 @@ public class BroadcastSessionTests
     // (when the abort lands while it waits for the peer's acknowledgement). ScriptedVideoSink covers those.
     private sealed class StalledVideoSink : IVideoSink
     {
-        private int _startedFrameCount;
-        private int _abortedFrameCount;
-
-        public int StartedFrameCount => Volatile.Read(ref _startedFrameCount);
-
-        public int AbortedFrameCount => Volatile.Read(ref _abortedFrameCount);
-
-        public async ValueTask SendFrameAsync(byte[] envelopeAndFrame, CancellationToken ct)
-        {
-            Interlocked.Increment(ref _startedFrameCount);
-            try
-            {
-                await Task.Delay(Timeout.Infinite, ct);
-            }
-            catch (OperationCanceledException)
-            {
-                Interlocked.Increment(ref _abortedFrameCount);
-                throw;
-            }
-        }
+        public async ValueTask SendFrameAsync(byte[] envelopeAndFrame, CancellationToken ct) =>
+            await Task.Delay(Timeout.Infinite, ct);
     }
 
     private enum OnCancel
