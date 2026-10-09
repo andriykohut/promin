@@ -1,5 +1,3 @@
-using Educast.Master.Core;
-
 namespace Educast.Master.Core.Tests;
 
 public sealed class ConsoleHealthTests

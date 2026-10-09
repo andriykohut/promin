@@ -1,5 +1,4 @@
 using Educast.MediaPipeline.Encoding;
-using Vortice;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Vortice.MediaFoundation;

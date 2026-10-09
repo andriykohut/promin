@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Net.Quic;
 using Educast.Protocol.Messages;
 using Educast.Protocol.Pairing;

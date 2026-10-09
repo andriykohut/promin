@@ -1,4 +1,3 @@
-using Educast.Protocol.Messages;
 using Educast.Protocol.Pairing;
 
 namespace Educast.Protocol.Tests.Pairing;

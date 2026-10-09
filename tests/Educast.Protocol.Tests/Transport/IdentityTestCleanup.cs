@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.RegularExpressions;
-using Educast.Protocol.Transport;
 
 namespace Educast.Protocol.Tests.Transport;
 

@@ -370,7 +370,6 @@
             <!-- 5. The list, one row per PC. -->
             <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.HasRows, Mode=OneWay}">
                 <ItemsRepeater
-                    x:Name="RowsRepeater"
                     ElementIndexChanged="Rows_ElementIndexChanged"
                     ElementPrepared="Rows_ElementPrepared"
                     ItemTemplate="{StaticResource RowTemplate}"

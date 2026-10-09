@@ -104,7 +104,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void FramesInOrder_AreAllShown()
     {
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
 
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
         session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
@@ -138,7 +138,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void AGap_ThatIsFollowedByAKeyframe_CostsNothing()
     {
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
 
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
         session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
@@ -152,7 +152,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void TwoGaps_AreOneWaitForOneKeyframe()
     {
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
 
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
         session.OnVideoFrameReceived(Payload(2, isKeyframe: false)); // gap
@@ -167,7 +167,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void ALateFrame_ThatTheGateRefuses_DoesNotRepairAGap()
     {
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
 
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
         session.OnVideoFrameReceived(Payload(2, isKeyframe: false)); // 1 is still on its way
@@ -213,7 +213,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void ABroadcastThatStartsAgain_IsShownFromItsFirstKeyframe_OnTheSameSession()
     {
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
         session.OnVideoFrameReceived(Payload(500, isKeyframe: true));
         session.OnVideoFrameReceived(Payload(501, isKeyframe: false));
 
@@ -229,7 +229,7 @@ public class ClientAgentSessionTests
     public void WithoutAStart_ARestartedMastersFramesAreAllRefused()
     {
         // The reason OnBroadcastStarted exists: this is what a gate that was never reset does.
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
         session.OnVideoFrameReceived(Payload(500, isKeyframe: true));
 
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
@@ -242,7 +242,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void AStart_ForgetsAWaitForAKeyframe_AndExpectsOneFirst()
     {
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
         session.OnVideoFrameReceived(Payload(2, isKeyframe: false)); // a gap: waiting for a keyframe
 
@@ -488,7 +488,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void AStart_RestartsTheCountOfConsecutiveSkips()
     {
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
         // One picture replaced unshown; picture 1 is pending and one more skip would force a picture out.
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
         session.OnVideoFrameReceived(Payload(1, isKeyframe: false), moreWaiting: true);
@@ -506,7 +506,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void AKeyframeInTheMiddleOfABatch_IsStillDecoded()
     {
-        var (session, presenter, shown) = Create();
+        var (session, presenter, _) = Create();
 
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
         session.OnVideoFrameReceived(Payload(1, isKeyframe: false), moreWaiting: true);
@@ -522,7 +522,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void FramesThatArriveOneAtATime_AreAllShown_AsBefore()
     {
-        var (session, presenter, shown) = Create();
+        var (session, presenter, _) = Create();
 
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
         session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
@@ -534,7 +534,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void ABatchThatEndsWithADiscardedFrame_StillShowsThePictureBeforeIt()
     {
-        var (session, presenter, shown) = Create();
+        var (session, presenter, _) = Create();
 
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
         session.OnVideoFrameReceived(Payload(2, isKeyframe: false), moreWaiting: false); // a gap: discarded
@@ -562,7 +562,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void AStartBetweenFrames_GivesUpAPictureThatWasWaitingToBeShown()
     {
-        var (session, presenter, shown) = Create();
+        var (session, presenter, _) = Create();
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
 
         session.OnBroadcastStarted();
@@ -580,7 +580,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void WhenAnOverloadedPcLosesFramesInItsQueue_TheGapIsHandled_LastPictureKept_ThenLiveAtTheNextKeyframe()
     {
-        var (session, presenter, shown) = Create();
+        var (session, presenter, _) = Create();
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
         session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
 
@@ -639,7 +639,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void ATooLargePayload_IsDroppedAndCounted_AndThrowsNothing()
     {
-        var (session, presenter, shown) = Create();
+        var (session, presenter, _) = Create();
 
         session.OnVideoFrameReceived(new byte[QuicChannel.MaxVideoFrameBytes + 1]);
 
@@ -650,7 +650,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void APayloadExactlyAtTheLimit_IsAFrame()
     {
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
         var payload = new byte[QuicChannel.MaxVideoFrameBytes];
         new VideoFrameEnvelope(0, true).WriteTo(payload);
 
@@ -663,7 +663,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void AMalformedPayload_LeavesTheGateWhereItWas()
     {
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
         session.OnVideoFrameReceived(Payload(7, isKeyframe: true));
 
         session.OnVideoFrameReceived(new byte[2]);
@@ -676,7 +676,7 @@ public class ClientAgentSessionTests
     [Fact]
     public void AFrameLostToBeingTooLarge_BreaksTheChain_LikeAnyOtherLostFrame()
     {
-        var (session, presenter, shown) = Create();
+        var (session, _, shown) = Create();
         session.OnVideoFrameReceived(Payload(0, isKeyframe: true));
         session.OnVideoFrameReceived(Payload(1, isKeyframe: false));
 
