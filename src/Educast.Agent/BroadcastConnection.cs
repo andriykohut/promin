@@ -147,9 +147,10 @@ internal sealed class BroadcastConnection(
         return true;
     }
 
-    // A display that was given up on and then turned up anyway is not wanted.
-    private static void DisposeWhenReady(Task<IBroadcastDisplay?> starting) =>
-        _ = starting.ContinueWith(
+    // A display that was given up on and then turned up anyway is not wanted. Null when the start threw before
+    // there was anything to wait for.
+    private static void DisposeWhenReady(Task<IBroadcastDisplay?>? starting) =>
+        _ = starting?.ContinueWith(
             late =>
             {
                 if (late.IsCompletedSuccessfully)

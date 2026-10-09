@@ -10,7 +10,10 @@ namespace Educast.MediaPipeline.Decoding;
 public interface IVideoDecoder : IDisposable
 {
     /// <summary>
-    /// What to do about keyframes: while this is true, ask the teacher for one. True from construction and again
+    /// Whether the decoder has nothing to build a picture on until a keyframe arrives. It only reports: nothing
+    /// in the product acts on it, because the protocol has no way to ask the teacher PC for a keyframe (one is
+    /// sent every two seconds regardless) and the student's session finds loss from the frame ids.
+    /// True from construction and again
     /// after anything that breaks the stream (bytes that were refused, a decoder that refused or failed). It stays
     /// true until a picture has come out of a call made after a keyframe was accepted; accepting a keyframe is not
     /// enough, since a decoder can accept one and give nothing back. A decoder that holds one picture back
