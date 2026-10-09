@@ -35,6 +35,12 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     /// <summary>A PC is dropping frames while it dropped one within this time.</summary>
     public static readonly TimeSpan DropWindow = TimeSpan.FromSeconds(10);
 
+    /// <summary>On air, a PC that could not be joined is not tried again sooner than this after the attempt started.</summary>
+    public static readonly TimeSpan RejoinInterval = TimeSpan.FromSeconds(3);
+
+    /// <summary>How long <see cref="WallMessage.IsBack"/> shows.</summary>
+    public static readonly TimeSpan BackMessageTime = TimeSpan.FromSeconds(6);
+
     private const int MaxNameLength = 64;
 
     private readonly IRoomStore _store;
@@ -49,6 +55,13 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private readonly List<RoomMember> _members = [];
     private readonly HashSet<string> _sendingTo = new(StringComparer.Ordinal);
     private readonly HashSet<string> _stoppedByTeacher = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _rejoining = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTimeOffset> _rejoinTriedAt = new(StringComparer.Ordinal);
+
+    // Cancelled when the broadcast ends, so a PC still connecting is let go instead of being left waiting for a picture.
+    private CancellationTokenSource _rejoins = new();
+    private WallMessage? _backMessage;
+    private DateTimeOffset _backUntil;
 
     private bool _active;
     private bool _starting;
@@ -310,17 +323,23 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     /// <summary>Clears every online PC; offline ones keep their flag.</summary>
     public void ClearSelection() => SetFlags(OnlineMembers(), selected: false);
 
-    /// <summary>Takes the PC out of this broadcast; it stays paired and keeps its flag for the next one.</summary>
+    /// <summary>
+    /// Takes the PC out of this broadcast, receiving or still reconnecting, and it is not rejoined;
+    /// it stays paired and keeps its flag for the next one.
+    /// </summary>
     public void StopSendingTo(PcTile tile)
     {
         ArgumentNullException.ThrowIfNull(tile);
-        if (!_onAir || !_sendingTo.Remove(tile.DeviceId))
+        if (!_onAir || !_stoppedByTeacher.Add(tile.DeviceId))
         {
             return;
         }
 
-        _broadcast.StopSendingTo(tile.DeviceId);
-        _stoppedByTeacher.Add(tile.DeviceId);
+        if (_sendingTo.Remove(tile.DeviceId))
+        {
+            _broadcast.StopSendingTo(tile.DeviceId);
+        }
+
         Refresh();
     }
 
@@ -404,8 +423,65 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         Refresh();
     }
 
-    /// <summary>Once a second from the page's timer: reads presence and the broadcast's counters, recomputes every state and text.</summary>
-    public void Tick() => Refresh();
+    /// <summary>
+    /// Once a second from the page's timer: on air, starts joining each PC the broadcast wants and
+    /// is not sending to (lost, unreachable or offline at the start) that is online now; then reads
+    /// presence and the broadcast's counters and recomputes every state and text.
+    /// </summary>
+    public void Tick()
+    {
+        var now = _now();
+        foreach (var member in _members.Where(m => IsWanted(m) && !_sendingTo.Contains(m.DeviceId)).ToList())
+        {
+            if (_presence.IsOnline(member.DeviceId, now)
+                && !_rejoining.Contains(member.DeviceId)
+                && !(_rejoinTriedAt.TryGetValue(member.DeviceId, out var triedAt) && now - triedAt < RejoinInterval))
+            {
+                _ = RejoinAsync(member, now);
+            }
+        }
+
+        Refresh();
+    }
+
+    /// <summary>One attempt to bring a PC into the running broadcast. Never throws.</summary>
+    private async Task RejoinAsync(RoomMember member, DateTimeOffset now)
+    {
+        var id = member.DeviceId;
+        _rejoining.Add(id);
+        _rejoinTriedAt[id] = now;
+
+        bool joined;
+        try
+        {
+            joined = await _broadcast.AddAsync(member, _rejoins.Token).ConfigureAwait(true);
+        }
+        catch (Exception)
+        {
+            // Not reached, or the broadcast ended meanwhile: like any failed attempt, tried again later.
+            joined = false;
+        }
+
+        _rejoining.Remove(id);
+        if (!joined)
+        {
+            return;
+        }
+
+        // The broadcast ended, or the PC was stopped or removed, while it was connecting: it is not sent the picture.
+        if (!IsWanted(MemberOf(id)))
+        {
+            _broadcast.StopSendingTo(id);
+            return;
+        }
+
+        _sendingTo.Add(id);
+        var tile = TileOf(id);
+        tile.Drops.Reset();
+        _backMessage = WallMessage.IsBack(tile.Name);
+        _backUntil = _now() + BackMessageTime;
+        Refresh();
+    }
 
     private void LoadRoom()
     {
@@ -512,6 +588,8 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _onAir = false;
         _sendingTo.Clear();
         _stoppedByTeacher.Clear();
+        _rejoins.Cancel();
+        _rejoins = new CancellationTokenSource();
     }
 
     private List<RoomMember> OnlineMembers()
@@ -576,6 +654,10 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     private PcTile TileOf(string deviceId) => Tiles.First(t => t.DeviceId == deviceId);
 
+    /// <summary>Whether the running broadcast should be sending to this PC: selected, and not stopped by the teacher.</summary>
+    private bool IsWanted(RoomMember? member) =>
+        _onAir && member is { Selected: true } && !_stoppedByTeacher.Contains(member.DeviceId);
+
     private PcTileState StateOf(RoomMember member, PcTile tile, bool online, DateTimeOffset now)
     {
         if (_onAir)
@@ -585,7 +667,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
                 return tile.Drops.IsDropping(now) ? PcTileState.DroppingFrames : PcTileState.Receiving;
             }
 
-            if (member.Selected && !_stoppedByTeacher.Contains(member.DeviceId))
+            if (IsWanted(member))
             {
                 return PcTileState.Reconnecting;
             }
@@ -683,6 +765,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             : _broadcastStopped ? WallMessage.BroadcastStopped
             : _saveFailed ? WallMessage.RoomNotSaved
             : !empty && !anyOnline ? WallMessage.NoPcReachable
+            : now < _backUntil ? _backMessage
             : !hardware ? WallMessage.SoftwareEncoding
             : null, nameof(Message)))
         {

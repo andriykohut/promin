@@ -31,6 +31,12 @@ public sealed record WallMessage(WallMessageKind Kind, string Title, string Text
         "Quality reduced to 720p, 10 fps.",
         "This PC has no hardware video encoder, so Educast is encoding in software.");
 
+    /// <summary>A PC that dropped off, or was not there at the start, joined the running broadcast. Shown for a few seconds.</summary>
+    public static WallMessage IsBack(string name) => new(
+        WallMessageKind.Info,
+        $"{name} is back.",
+        "It joined the broadcast by itself.");
+
     /// <summary>The room file exists but could not be read; the same words as the setup screen's.</summary>
     public static WallMessage RoomUnreadable { get; } = new(
         WallMessageKind.Error, SetupBanner.ReadError.Title, SetupBanner.ReadError.Message);

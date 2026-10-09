@@ -50,10 +50,25 @@ public sealed class FakeBroadcastController : IBroadcastController
             pcs.Select(p => p.DeviceId).Where(Unreachable.Contains).ToList());
     }
 
+    /// <summary>Thrown by <see cref="AddAsync"/> when set.</summary>
+    public Exception? AddThrows { get; set; }
+
+    /// <summary>When set, <see cref="AddAsync"/> returns its task instead of answering at once: the rejoin is still connecting.</summary>
+    public TaskCompletionSource<bool>? PendingAdd { get; set; }
+
+    /// <summary>The token the newest <see cref="AddAsync"/> was given.</summary>
+    public CancellationToken LastAddToken { get; private set; }
+
     public Task<bool> AddAsync(RoomMember pc, CancellationToken ct)
     {
         Adds.Add(pc);
-        return Task.FromResult(!Unreachable.Contains(pc.DeviceId));
+        LastAddToken = ct;
+        if (AddThrows is not null)
+        {
+            throw AddThrows;
+        }
+
+        return PendingAdd?.Task ?? Task.FromResult(!Unreachable.Contains(pc.DeviceId));
     }
 
     public void StopSendingTo(string deviceId) => StoppedSendingTo.Add(deviceId);
