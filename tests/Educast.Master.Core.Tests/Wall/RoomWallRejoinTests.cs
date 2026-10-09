@@ -350,4 +350,101 @@ public sealed class RoomWallRejoinTests
         Assert.Equal(2, _broadcast.Adds.Count);
         Assert.Equal(PcTileState.Receiving, Tile(vm, 7).State);
     }
+
+    // ---- the message is about a PC that is being sent to ---------------------------------------
+
+    /// <summary>On air, PC-07 lost, seen again and rejoined: the bar says it is back.</summary>
+    private async Task<RoomWallViewModel> SevenIsBack()
+    {
+        var vm = await SevenLostAndBack();
+        vm.Tick();
+        Assert.Equal("PC-07 is back.", vm.Message?.Title);
+        return vm;
+    }
+
+    [Fact]
+    public async Task BackMessage_EndsWithTheBroadcast_AndIsNotShownOnTheNext()
+    {
+        var vm = await SevenIsBack();
+
+        vm.Stop();
+        Assert.Null(vm.Message);
+
+        await vm.StartAsync();
+        Assert.Equal(PcTileState.Receiving, Tile(vm, 7).State);
+        Assert.Null(vm.Message);
+    }
+
+    [Fact]
+    public async Task BackMessage_Ends_WhenThePcIsLostAgain_AndTheWarningReturns()
+    {
+        _broadcast.HardwareEncoderAvailable = false;
+        var vm = await SevenIsBack();
+
+        _broadcast.RaiseLost(Id(7));
+
+        Assert.Equal("Quality reduced to 720p, 10 fps.", vm.Message?.Title);
+    }
+
+    [Fact]
+    public async Task BackMessage_Ends_WhenTheTeacherStopsSendingToThePc()
+    {
+        var vm = await SevenIsBack();
+
+        vm.StopSendingTo(Tile(vm, 7));
+
+        Assert.Null(vm.Message);
+    }
+
+    [Fact]
+    public async Task BackMessage_Ends_WhenThePcIsRemoved()
+    {
+        var vm = await SevenIsBack();
+
+        vm.Remove(Tile(vm, 7));
+
+        Assert.Null(vm.Message);
+    }
+
+    // ---- more edges ----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Reconnecting_ButNotSeenWithinSixSeconds_IsNotTried()
+    {
+        var vm = await OnAir(AllTen);
+        _broadcast.RaiseLost(Id(7));
+
+        Advance(vm, 6, 1);
+
+        Assert.Empty(_broadcast.Adds);
+        Assert.Equal(PcTileState.Reconnecting, Tile(vm, 7).State);
+
+        See(7);
+        vm.Tick();
+
+        Assert.Equal([Id(7)], Added);
+    }
+
+    [Fact]
+    public async Task EndingTheBroadcast_LetsNothingOutOfACancelledAttempt_AndTheNextBroadcastRejoinsAsUsual()
+    {
+        _broadcast.PendingAdd = new TaskCompletionSource<bool>();
+        var vm = await SevenLostAndBack();
+        vm.Tick();
+        _broadcast.LastAddToken.Register(() => throw new InvalidOperationException("a transport's cancellation callback"));
+
+        vm.Stop();
+
+        Assert.False(vm.IsOnAir);
+        _broadcast.PendingAdd.SetResult(false);
+        _broadcast.PendingAdd = null;
+
+        await vm.StartAsync();
+        _broadcast.RaiseLost(Id(4));
+        vm.Tick();
+
+        Assert.Equal(Id(4), _broadcast.Adds[^1].DeviceId);
+        Assert.False(_broadcast.LastAddToken.IsCancellationRequested);
+        Assert.Equal(PcTileState.Receiving, Tile(vm, 4).State);
+    }
 }

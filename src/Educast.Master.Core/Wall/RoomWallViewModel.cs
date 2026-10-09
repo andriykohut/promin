@@ -36,10 +36,10 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     public static readonly TimeSpan DropWindow = TimeSpan.FromSeconds(10);
 
     /// <summary>On air, a PC that could not be joined is not tried again sooner than this after the attempt started.</summary>
-    public static readonly TimeSpan RejoinInterval = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan RejoinInterval = TimeSpan.FromSeconds(3);
 
     /// <summary>How long <see cref="WallMessage.IsBack"/> shows.</summary>
-    public static readonly TimeSpan BackMessageTime = TimeSpan.FromSeconds(6);
+    private static readonly TimeSpan BackMessageTime = TimeSpan.FromSeconds(6);
 
     private const int MaxNameLength = 64;
 
@@ -60,6 +60,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     // Cancelled when the broadcast ends, so a PC still connecting is let go instead of being left waiting for a picture.
     private CancellationTokenSource _rejoins = new();
+
+    // The PC the "is back" message is about; the message shows only while that PC is being sent to.
+    private string? _backId;
     private WallMessage? _backMessage;
     private DateTimeOffset _backUntil;
 
@@ -478,6 +481,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _sendingTo.Add(id);
         var tile = TileOf(id);
         tile.Drops.Reset();
+        _backId = id;
         _backMessage = WallMessage.IsBack(tile.Name);
         _backUntil = _now() + BackMessageTime;
         Refresh();
@@ -588,8 +592,12 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _onAir = false;
         _sendingTo.Clear();
         _stoppedByTeacher.Clear();
-        _rejoins.Cancel();
+        _backId = null;
+
+        // The next broadcast's source first; the callbacks of the ended one run on the pool, and nothing they throw comes back here.
+        var ended = _rejoins;
         _rejoins = new CancellationTokenSource();
+        _ = ended.CancelAsync();
     }
 
     private List<RoomMember> OnlineMembers()
@@ -765,7 +773,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             : _broadcastStopped ? WallMessage.BroadcastStopped
             : _saveFailed ? WallMessage.RoomNotSaved
             : !empty && !anyOnline ? WallMessage.NoPcReachable
-            : now < _backUntil ? _backMessage
+            : _backId is not null && _sendingTo.Contains(_backId) && now < _backUntil ? _backMessage
             : !hardware ? WallMessage.SoftwareEncoding
             : null, nameof(Message)))
         {
