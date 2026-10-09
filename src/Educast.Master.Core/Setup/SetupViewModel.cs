@@ -35,8 +35,6 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     /// <summary>How many distinct PCs discovery may put on the screen.</summary>
     public const int MaxSeenPcs = 200;
 
-    private const int MaxNameLength = 64;
-
     private static readonly StringComparer NameOrder = StringComparer.OrdinalIgnoreCase;
 
     private readonly IPairingClient _pairing;
@@ -487,15 +485,9 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     public void Rename(SetupRow row, string newName)
     {
         ArgumentNullException.ThrowIfNull(row);
-        var name = (newName ?? string.Empty).Trim();
-        if (name.Length == 0)
+        if (RoomMember.CleanName(newName) is not { } name)
         {
             return;
-        }
-
-        if (name.Length > MaxNameLength)
-        {
-            name = name[..MaxNameLength].TrimEnd();
         }
 
         if (name == row.Name)

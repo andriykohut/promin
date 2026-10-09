@@ -41,8 +41,6 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     /// <summary>How long <see cref="WallMessage.IsBack"/> shows.</summary>
     private static readonly TimeSpan BackMessageTime = TimeSpan.FromSeconds(6);
 
-    private const int MaxNameLength = 64;
-
     private readonly IRoomStore _store;
     private readonly IDiscovery _discovery;
     private readonly IBroadcastController _broadcast;
@@ -361,15 +359,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     public void Rename(PcTile tile, string newName)
     {
         ArgumentNullException.ThrowIfNull(tile);
-        var name = (newName ?? string.Empty).Trim();
-        if (name.Length == 0)
+        if (RoomMember.CleanName(newName) is not { } name)
         {
             return;
-        }
-
-        if (name.Length > MaxNameLength)
-        {
-            name = name[..MaxNameLength].TrimEnd();
         }
 
         var index = _members.FindIndex(m => m.DeviceId == tile.DeviceId);

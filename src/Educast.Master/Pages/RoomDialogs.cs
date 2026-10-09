@@ -1,3 +1,4 @@
+using Educast.Master.Core.Rooms;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -9,7 +10,7 @@ internal static class RoomDialogs
     /// <summary>Asks for a new name. Null when cancelled.</summary>
     public static async Task<string?> RenameAsync(XamlRoot xamlRoot, string currentName)
     {
-        var box = new TextBox { MaxLength = 64, Text = currentName };
+        var box = new TextBox { MaxLength = RoomMember.MaxNameLength, Text = currentName };
         box.SelectAll();
         var dialog = new ContentDialog
         {
