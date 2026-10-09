@@ -17,25 +17,33 @@
             <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         </Style>
 
-        <!-- A count pill: a dot coloured by its meaning, the count strong, the word secondary. -->
+        <!--
+            A count pill: a capsule (the radius is half the fixed height; a larger radius is drawn as an ellipse),
+            a dot coloured by its meaning, the count in the primary colour, the word secondary, normal weight.
+        -->
         <DataTemplate x:Key="PillTemplate" x:DataType="wall:WallPill">
             <Border
-                Padding="9,3,10,3"
-                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                Height="28"
+                Padding="12,0"
+                VerticalAlignment="Center"
+                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                 BorderThickness="1"
-                CornerRadius="999">
-                <StackPanel Orientation="Horizontal" Spacing="6">
+                CornerRadius="14">
+                <StackPanel
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="8">
                     <Ellipse
-                        Width="7"
-                        Height="7"
+                        Width="8"
+                        Height="8"
                         VerticalAlignment="Center"
                         Fill="{x:Bind controls:PcTileColours.DotBrush(State)}" />
                     <TextBlock
                         VerticalAlignment="Center"
-                        FontSize="12"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}">
-                        <Run FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorPrimaryBrush}" Text="{x:Bind Count}" /><Run Text=" " /><Run Text="{x:Bind Word}" />
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource BodyTextBlockStyle}">
+                        <Run Foreground="{ThemeResource TextFillColorPrimaryBrush}" Text="{x:Bind Count}" /><Run Text=" " /><Run Text="{x:Bind Word}" />
                     </TextBlock>
                 </StackPanel>
             </Border>
@@ -62,15 +70,14 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- 1. Header: "This room", the count pills, and Set up devices at the right. -->
-        <Grid Padding="24,6,24,4" ColumnSpacing="10">
+        <!-- 1. Header: "This room", the count pills 12 px after it and 8 px apart, and Set up devices at the right. -->
+        <Grid Padding="24,6,24,4" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock
-                Margin="0,0,6,0"
                 VerticalAlignment="Center"
                 Style="{StaticResource TitleTextBlockStyle}"
                 Text="This room" />
@@ -99,15 +106,15 @@
             Grid.Row="1"
             Margin="24,0,24,0"
             IsClosable="False"
-            IsOpen="{x:Bind HasValue(ViewModel.Message), Mode=OneWay}"
-            Message="{x:Bind TextOf(ViewModel.Message), Mode=OneWay}"
-            Severity="{x:Bind SeverityOf(ViewModel.Message), Mode=OneWay}"
-            Title="{x:Bind TitleOf(ViewModel.Message), Mode=OneWay}">
+            IsOpen="{x:Bind ViewModel.IsMessageOpen, Mode=OneWay}"
+            Message="{x:Bind ViewModel.MessageText, Mode=OneWay}"
+            Severity="{x:Bind SeverityOf(ViewModel.MessageKind), Mode=OneWay}"
+            Title="{x:Bind ViewModel.MessageTitle, Mode=OneWay}">
             <InfoBar.ActionButton>
                 <Button
                     Click="SetUpDevices_Click"
-                    Content="{x:Bind ActionOf(ViewModel.Message), Mode=OneWay}"
-                    Visibility="{x:Bind ActionVisibilityOf(ViewModel.Message), Mode=OneWay}" />
+                    Content="{x:Bind ViewModel.MessageActionLabel, Mode=OneWay}"
+                    Visibility="{x:Bind ViewModel.HasMessageAction, Mode=OneWay}" />
             </InfoBar.ActionButton>
         </InfoBar>
 

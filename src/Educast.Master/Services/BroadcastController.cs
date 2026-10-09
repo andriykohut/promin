@@ -192,6 +192,14 @@ public sealed class BroadcastController : IBroadcastController
             var size = running.Source.EncodeSize;
             await control.SendAsync(new StartBroadcast(size.Width, size.Height, running.Fps), deadline.Token).ConfigureAwait(false);
 
+            // The PC answers once its display can take pictures; only then is it given a keyframe (AddClient asks
+            // the source for one). This is the only read of the control stream on this side, within the connect
+            // deadline; a PC whose display did not come up answers nothing and is unreachable like any other.
+            if (await control.ReceiveAsync(deadline.Token).ConfigureAwait(false) is not BroadcastReady)
+            {
+                throw new InvalidOperationException("The PC answered the start with something other than BroadcastReady.");
+            }
+
             var peer = new Peer(channel, control);
             if (running.Peers.TryGetValue(pc.DeviceId, out var replaced))
             {

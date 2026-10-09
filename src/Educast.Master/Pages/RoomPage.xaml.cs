@@ -67,28 +67,18 @@ public sealed partial class RoomPage : Page
         base.OnNavigatedFrom(e);
     }
 
-    // The message, as an InfoBar needs it.
-
-    public bool HasValue(object? value) => value is not null;
+    // The bindings' helpers. Every argument is a value type: a function over a null object is never re-run.
 
     public Visibility Not(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
 
     public Visibility SelectionLinksVisibility(bool onAir, bool emptyRoom) => onAir || emptyRoom ? Visibility.Collapsed : Visibility.Visible;
 
-    public InfoBarSeverity SeverityOf(WallMessage? message) => message?.Kind switch
+    public InfoBarSeverity SeverityOf(WallMessageKind kind) => kind switch
     {
         WallMessageKind.Error => InfoBarSeverity.Error,
         WallMessageKind.Warning => InfoBarSeverity.Warning,
         _ => InfoBarSeverity.Informational,
     };
-
-    public string TitleOf(WallMessage? message) => message?.Title ?? string.Empty;
-
-    public string TextOf(WallMessage? message) => message?.Text ?? string.Empty;
-
-    public string ActionOf(WallMessage? message) => message?.ActionLabel ?? string.Empty;
-
-    public Visibility ActionVisibilityOf(WallMessage? message) => message?.ActionLabel is null ? Visibility.Collapsed : Visibility.Visible;
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
