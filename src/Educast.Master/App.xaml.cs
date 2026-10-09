@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Educast.Master.Core;
 using Educast.Master.Services;
 using Microsoft.UI.Xaml;
 
@@ -18,6 +20,15 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // First, so that whatever goes wrong after this is written down. Without a log the console starts anyway.
+        if (ConsoleLog.TryOpen(AppServices.RootDirectory) is { } log)
+        {
+            Trace.Listeners.Add(log);
+            Trace.AutoFlush = true;
+        }
+
+        Trace.TraceInformation("Educast console {0} started.", typeof(App).Assembly.GetName().Version);
+
         Services = AppServices.Create();
 
         _window = new MainWindow(Services.Health);
