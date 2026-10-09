@@ -52,6 +52,34 @@ public sealed class ConsoleLogTests : IDisposable
         Assert.Equal(string.Empty, File.ReadAllText(Current));
     }
 
+    /// <summary>The broadcast traces from its capture loop and its teardown; a full disk must not reach them.</summary>
+    [Theory]
+    [InlineData(typeof(IOException))]
+    [InlineData(typeof(UnauthorizedAccessException))]
+    [InlineData(typeof(ObjectDisposedException))]
+    public void AWriteOrAFlushThatFails_IsSwallowed(Type failure)
+    {
+        using var log = new ConsoleLog(new FailingWriter(() => (Exception)Activator.CreateInstance(failure, "the disk")!));
+
+        log.TraceEvent(null, "Educast", TraceEventType.Information, 0, "Keyframe: {0} bytes.", 52_000);
+        log.TraceEvent(null, "Educast", TraceEventType.Error, 0, "The broadcast could not start.");
+        log.WriteLine("a line");
+        log.Flush();
+    }
+
+    private sealed class FailingWriter(Func<Exception> failure) : TextWriter
+    {
+        public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+
+        public override void Write(char value) => throw failure();
+
+        public override void Write(string? value) => throw failure();
+
+        public override void WriteLine(string? value) => throw failure();
+
+        public override void Flush() => throw failure();
+    }
+
     [Fact]
     public void TryOpen_IsNull_WhenTheLogCannotBeOpened()
     {

@@ -9,7 +9,8 @@ namespace Educast.Master.Core;
 /// </summary>
 public sealed class ConsoleLog : TextWriterTraceListener
 {
-    private ConsoleLog(TextWriter writer)
+    /// <summary>For <see cref="TryOpen"/>, and for a test that needs a writer that fails.</summary>
+    public ConsoleLog(TextWriter writer)
         : base(writer)
     {
     }
@@ -36,6 +37,31 @@ public sealed class ConsoleLog : TextWriterTraceListener
         catch (Exception)
         {
             return null;
+        }
+    }
+
+    // Logging never throws: the broadcast writes here from its capture loop and its teardown, and a full disk
+    // or a folder that has gone must not end a lesson. There is nowhere to say that a line was lost.
+
+    public override void WriteLine(string? message)
+    {
+        try
+        {
+            base.WriteLine(message);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ObjectDisposedException)
+        {
+        }
+    }
+
+    public override void Flush()
+    {
+        try
+        {
+            base.Flush();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ObjectDisposedException)
+        {
         }
     }
 
