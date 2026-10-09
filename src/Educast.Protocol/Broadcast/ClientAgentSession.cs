@@ -60,8 +60,10 @@ public interface IFramePresenter
 /// <para>
 /// <b>Staying live.</b> When the caller says more frames are already waiting (<c>moreWaiting</c>), a frame is
 /// still decoded, in order, because a delta needs the one before it, but its picture is not shown: only the last
-/// picture of the batch is. A decoded picture that was replaced or lost before it could be shown is counted in
-/// <see cref="SkippedPictureCount"/>.
+/// picture of the batch is. A student PC that never catches up would then show almost nothing, so no more than
+/// two decoded pictures in a row go unshown: the picture after two such skips is shown even though more frames
+/// are waiting (under permanent backlog, every third decoded picture). A decoded picture that was replaced or
+/// lost before it could be shown is counted in <see cref="SkippedPictureCount"/>.
 /// </para>
 /// <para>
 /// <b>Counters.</b> All are running totals for the life of the object and are not cleared by
@@ -84,6 +86,12 @@ public sealed class ClientAgentSession(IFramePresenter presenter)
     private bool _awaitingKeyframe = true;
     private int _oversizedFrameCount;
 
+    // Most decoded pictures that may go unshown in a row while more frames are waiting.
+    private const int MaxConsecutiveSkippedPictures = 2;
+
+    // Decoded pictures replaced unshown since a picture was last shown (or the broadcast started).
+    private int _consecutiveSkippedPictures;
+
     // The id of a picture that has been decoded and not yet shown.
     private uint? _pendingPictureId;
 
@@ -99,7 +107,7 @@ public sealed class ClientAgentSession(IFramePresenter presenter)
     /// <summary>Frames handed to the decoder that gave no picture.</summary>
     public int RefusedFrameCount { get; private set; }
 
-    /// <summary>Pictures decoded and not shown, because a newer one was waiting or the decoder lost them.</summary>
+    /// <summary>Pictures decoded and not shown, because a newer one was waiting (at most two in a row) or the decoder lost them.</summary>
     public int SkippedPictureCount { get; private set; }
 
     /// <summary>Pictures shown.</summary>
@@ -117,6 +125,7 @@ public sealed class ClientAgentSession(IFramePresenter presenter)
         _lastAcceptedId = null;
         _awaitingKeyframe = true;
         GiveUpPendingPicture();
+        _consecutiveSkippedPictures = 0;
     }
 
     /// <summary>
@@ -125,12 +134,13 @@ public sealed class ClientAgentSession(IFramePresenter presenter)
     /// </summary>
     /// <param name="moreWaiting">
     /// True when another frame is already waiting to be given to this method straight after this one. The
-    /// picture of this frame is then not shown unless nothing newer is decoded.
+    /// picture of this frame is then not shown unless nothing newer is decoded, or two pictures in a row have
+    /// already gone unshown.
     /// </param>
     public void OnVideoFrameReceived(ReadOnlyMemory<byte> streamPayload, bool moreWaiting = false)
     {
         Handle(streamPayload);
-        if (!moreWaiting)
+        if (!moreWaiting || _consecutiveSkippedPictures >= MaxConsecutiveSkippedPictures)
         {
             PresentPendingPicture();
         }
@@ -179,6 +189,7 @@ public sealed class ClientAgentSession(IFramePresenter presenter)
         if (_pendingPictureId is not null)
         {
             SkippedPictureCount++; // replaced before it was shown
+            _consecutiveSkippedPictures++;
         }
 
         _pendingPictureId = envelope.FrameId;
@@ -192,6 +203,7 @@ public sealed class ClientAgentSession(IFramePresenter presenter)
         }
 
         _pendingPictureId = null;
+        _consecutiveSkippedPictures = 0;
         presenter.PresentDecoded();
         PresentedFrameCount++;
         FramePresented?.Invoke(frameId);

@@ -469,6 +469,41 @@ public class ClientAgentSessionTests
     }
 
     [Fact]
+    public void UnderPermanentBacklog_EveryThirdDecodedPictureIsShown()
+    {
+        var (session, presenter, shown) = Create();
+
+        for (uint id = 1; id <= 9; id++)
+        {
+            session.OnVideoFrameReceived(Payload(id, isKeyframe: id == 1), moreWaiting: true);
+        }
+
+        Assert.Equal([1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u], presenter.OfferedIds);
+        Assert.Equal([3u, 6u, 9u], presenter.PresentedIds);
+        Assert.Equal([3u, 6u, 9u], shown);
+        Assert.Equal(3, session.PresentedFrameCount);
+        Assert.Equal(6, session.SkippedPictureCount);
+    }
+
+    [Fact]
+    public void AStart_RestartsTheCountOfConsecutiveSkips()
+    {
+        var (session, presenter, shown) = Create();
+        // One picture replaced unshown; picture 1 is pending and one more skip would force a picture out.
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false), moreWaiting: true);
+        Assert.Empty(shown);
+
+        session.OnBroadcastStarted(); // gives up pending picture 1 as well as clearing the count
+        session.OnVideoFrameReceived(Payload(0, isKeyframe: true), moreWaiting: true);
+        session.OnVideoFrameReceived(Payload(1, isKeyframe: false), moreWaiting: true);
+        Assert.Empty(shown); // a count left over from before would have forced picture 1 out here
+
+        session.OnVideoFrameReceived(Payload(2, isKeyframe: false), moreWaiting: true);
+        Assert.Equal([2u], shown); // two skips since the start, so the third picture shows
+    }
+
+    [Fact]
     public void AKeyframeInTheMiddleOfABatch_IsStillDecoded()
     {
         var (session, presenter, shown) = Create();
@@ -480,8 +515,8 @@ public class ClientAgentSessionTests
 
         Assert.Equal([0u, 1u, 2u, 3u], presenter.OfferedIds);
         Assert.True(presenter.Offers[2].IsKeyframe);
-        Assert.Equal([3u], presenter.PresentedIds);
-        Assert.Equal(3, session.SkippedPictureCount);
+        Assert.Equal([2u, 3u], presenter.PresentedIds); // two skipped in a row, so the keyframe's picture is shown
+        Assert.Equal(2, session.SkippedPictureCount);
     }
 
     [Fact]
