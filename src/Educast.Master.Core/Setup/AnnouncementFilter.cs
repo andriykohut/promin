@@ -10,8 +10,8 @@ namespace Educast.Master.Core.Setup;
 /// <item>A device this console has paired is always followed, and is not counted.</item>
 /// <item>
 /// At most <see cref="MaxDevices"/> other devices are followed. When that many are and a new one
-/// announces itself, those not heard from for ten seconds are forgotten first; the new one is
-/// ignored only if the table is still full.
+/// announces itself, those not heard from for ten seconds are forgotten first (looked for at most
+/// once a second); the new one is ignored only if the table is still full.
 /// </item>
 /// </list>
 /// </summary>
@@ -28,10 +28,12 @@ public sealed class AnnouncementFilter(Func<string, bool> isPinned)
 
     private const long PostIntervalMilliseconds = 500;
     private const long ForgetAfterMilliseconds = 10_000;
+    private const long SweepIntervalMilliseconds = 1000;
 
     // When each device was last passed on. Paired ones apart, because only the others are bounded.
     private readonly Dictionary<string, long> _paired = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> _others = new(StringComparer.Ordinal);
+    private long? _sweptAt;
 
     /// <summary>How many devices this console has not paired are followed now; never more than <see cref="MaxDevices"/>.</summary>
     public int UnpinnedTracked => _others.Count;
@@ -51,6 +53,13 @@ public sealed class AnnouncementFilter(Func<string, bool> isPinned)
         }
         else if (!paired && _others.Count >= MaxDevices)
         {
+            // Looking through the table costs the same whoever asks; a flood of new ids gets one look a second.
+            if (_sweptAt is { } swept && nowMilliseconds - swept < SweepIntervalMilliseconds)
+            {
+                return false;
+            }
+
+            _sweptAt = nowMilliseconds;
             foreach (var quiet in _others.Where(o => nowMilliseconds - o.Value >= ForgetAfterMilliseconds).Select(o => o.Key).ToList())
             {
                 _others.Remove(quiet);

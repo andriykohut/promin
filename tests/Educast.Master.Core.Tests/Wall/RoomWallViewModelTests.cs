@@ -707,6 +707,27 @@ public sealed class RoomWallViewModelTests
     }
 
     [Fact]
+    public async Task UnpairedWhileConnecting_IsNotSentTo_WhenTheStartReturns()
+    {
+        var vm = TenWithSevenOffline();
+        _broadcast.PendingStart = new TaskCompletionSource<IReadOnlyCollection<string>>();
+        var starting = vm.StartAsync();
+
+        // Removed on Set up devices, which takes its pin away; the wall has not read the room again.
+        _pairing.Trusted = id => id != Id(4);
+        _discovery.Raise(new StudentPc(Id(4), "PC-04", "192.168.1.99", 17900));
+        _broadcast.PendingStart.SetResult([]);
+        await starting;
+
+        Assert.True(vm.IsOnAir);
+        Assert.Equal([Id(4)], _broadcast.StoppedSendingTo);
+        Assert.Equal(PcTileState.Reconnecting, Tile(vm, 4).State);
+        Assert.Equal(["8 receiving", "2 reconnecting"], vm.Pills.Select(p => p.Text));
+        Assert.Null(vm.Message);
+        Assert.Equal(0, _store.Saves);
+    }
+
+    [Fact]
     public async Task LostWhileConnecting_IsReconnecting_WhenTheStartReturns_AndIsRejoined()
     {
         var vm = TenWithSevenOffline();

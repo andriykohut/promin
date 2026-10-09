@@ -84,8 +84,21 @@ public sealed class AnnouncementFilterTests
     {
         Forge200(at: 0);
 
-        Assert.False(_filter.ShouldPost(Pc(201), 9_999));
+        Assert.False(_filter.ShouldPost(Pc(201), 9_000));
         Assert.True(_filter.ShouldPost(Pc(201), 10_000));
+    }
+
+    /// <summary>A flood of new ids against a full table must not buy a pass over all of it per datagram.</summary>
+    [Fact]
+    public void AFullTable_IsLookedThroughForTheQuiet_AtMostOnceASecond()
+    {
+        Forge200(at: 0);
+
+        Assert.False(_filter.ShouldPost(Pc(201), 9_500));
+        Assert.False(_filter.ShouldPost(Pc(201), 10_000));
+        Assert.False(_filter.ShouldPost(Pc(202), 10_499));
+        Assert.True(_filter.ShouldPost(Pc(201), 10_500));
+        Assert.True(_filter.ShouldPost(Pc(202), 10_500));
     }
 
     [Fact]

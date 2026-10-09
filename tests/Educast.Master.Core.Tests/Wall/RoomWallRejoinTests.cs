@@ -474,8 +474,8 @@ public sealed class RoomWallRejoinTests
         _discovery.Raise(new StudentPc(Id(7), "PC-07", "192.168.1.99", 17900));
         vm.Tick();
 
-        // Set up devices saves the room without the PC; the wall has not read the file again.
-        _store.Members.RemoveAll(m => m.DeviceId == Id(7));
+        // Set up devices removes the PC, which always takes its pin away; the wall has not read the room again.
+        _pairing.Trusted = id => id != Id(7);
         _broadcast.PendingAdd.SetResult(true);
 
         Assert.Equal([Id(7)], _broadcast.StoppedSendingTo);
@@ -483,7 +483,24 @@ public sealed class RoomWallRejoinTests
         Assert.Equal(["9 receiving", "1 reconnecting"], vm.Pills.Select(p => p.Text));
         Assert.Null(vm.Message);
         Assert.Equal(0, _store.Saves);
-        Assert.DoesNotContain(_store.Members, m => m.DeviceId == Id(7));
+    }
+
+    [Fact]
+    public async Task ARoomFileThatIsMissingOrEmptied_DoesNotMakeATrustedPcsRejoinCountAsRemoved()
+    {
+        var vm = await OnAir(AllTen);
+        _broadcast.RaiseLost(Id(7));
+
+        // The file is gone, or was set aside as corrupt: the store then reads as an empty room.
+        _store.Members.Clear();
+        _discovery.Raise(new StudentPc(Id(7), "PC-07", "192.168.1.99", 17900));
+
+        vm.Tick();
+
+        Assert.Equal(PcTileState.Receiving, Tile(vm, 7).State);
+        Assert.Empty(_broadcast.StoppedSendingTo);
+        Assert.Equal("PC-07 is back.", vm.Message?.Title);
+        Assert.Equal(0, _store.Saves);
     }
 
     [Fact]

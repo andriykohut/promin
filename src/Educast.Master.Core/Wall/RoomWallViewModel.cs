@@ -285,8 +285,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
                 continue;
             }
 
-            // Removed from the room while the start was connecting: it is not sent the picture.
-            if (MemberOf(target.DeviceId) is null)
+            // Removed from the room while the start was connecting, here or on Set up devices (which takes
+            // its pin away before the wall reads the room again): it is not sent the picture.
+            if (MemberOf(target.DeviceId) is null || !_pairing.IsTrusted(target.DeviceId))
             {
                 _broadcast.StopSendingTo(target.DeviceId);
                 continue;
@@ -482,16 +483,16 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         // The broadcast ended, or the PC was stopped or removed, while it was connecting: it is not sent the
-        // picture. Removed includes removed on Set up devices, which the wall only sees in the stored room.
-        var stored = StoredRoom();
-        if (!IsWanted(MemberOf(id)) || stored?.Any(m => m.DeviceId == id) == false)
+        // picture. Removed includes removed on Set up devices, which takes its pin away before the wall reads
+        // the room again.
+        if (!IsWanted(MemberOf(id)) || !_pairing.IsTrusted(id))
         {
             _broadcast.StopSendingTo(id);
             return;
         }
 
         _sendingTo.Add(id);
-        RememberAddresses(stored, [member]);
+        RememberAddresses(StoredRoom(), [member]);
         var tile = TileOf(id);
         tile.Drops.Reset();
         _backId = id;
