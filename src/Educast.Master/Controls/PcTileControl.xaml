@@ -142,6 +142,7 @@
 
         <!-- The checkbox, top left of the screen area; off air only. -->
         <CheckBox
+            x:Name="SelectBox"
             MinWidth="0"
             MinHeight="0"
             Margin="6,6,0,0"

@@ -53,6 +53,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private bool _active;
     private bool _starting;
     private bool _onAir;
+    private bool _onAirShown;
     private DateTimeOffset _startedAt;
     private bool _roomUnreadable;
     private bool _saveFailed;
@@ -643,7 +644,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         Set(ref _elapsedText, _onAir ? WallText.Elapsed(now - _startedAt) : string.Empty, nameof(ElapsedText));
         Set(ref _canStart, selectable && !_roomUnreadable && selectedAndOnline > 0, nameof(CanStart));
         Set(ref _canChooseQuality, selectable && hardware, nameof(CanChooseQuality));
-        Raise(nameof(IsOnAir));
+        Set(ref _onAirShown, _onAir, nameof(IsOnAir));
 
         Set(ref _message, _roomUnreadable ? WallMessage.RoomUnreadable
             : _broadcastStopped ? WallMessage.BroadcastStopped

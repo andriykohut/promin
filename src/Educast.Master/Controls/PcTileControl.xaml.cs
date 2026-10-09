@@ -3,6 +3,7 @@ using Educast.Master.Core.Wall;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 
 namespace Educast.Master.Controls;
@@ -108,8 +109,19 @@ public sealed partial class PcTileControl : UserControl
     // 16:10, whatever width the grid gives the tile.
     private void Screen_SizeChanged(object sender, SizeChangedEventArgs e) => Screen.Height = e.NewSize.Width * 10 / 16;
 
-    // The checkbox and the More button handle their own taps, so this is a tap on the card itself.
-    private void Card_Tapped(object sender, TappedRoutedEventArgs e) => RaiseToggled();
+    // A tap anywhere on the card toggles, except on the checkbox and the More button, which answer for themselves.
+    private void Card_Tapped(object sender, TappedRoutedEventArgs e)
+    {
+        for (var element = e.OriginalSource as DependencyObject; element is not null && element != Card; element = VisualTreeHelper.GetParent(element))
+        {
+            if (element == SelectBox || element == More)
+            {
+                return;
+            }
+        }
+
+        RaiseToggled();
+    }
 
     private void SelectBox_Click(object sender, RoutedEventArgs e) => RaiseToggled();
 
