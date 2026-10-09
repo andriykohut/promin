@@ -4,8 +4,6 @@ namespace Educast.Agent;
 internal sealed class DisplayStepException(string step, Exception inner)
     : Exception($"{step} failed: {inner.GetType().Name}: {inner.Message}", inner)
 {
-    public string Step { get; } = step;
-
     /// <summary>Runs <paramref name="action"/>; whatever it throws comes out as a <see cref="DisplayStepException"/> naming <paramref name="step"/>.</summary>
     public static void Run(string step, Action action)
     {

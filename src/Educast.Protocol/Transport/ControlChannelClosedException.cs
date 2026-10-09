@@ -14,5 +14,4 @@ namespace Educast.Protocol.Transport;
 public sealed class ControlChannelClosedException : IOException
 {
     public ControlChannelClosedException(string message) : base(message) { }
-    public ControlChannelClosedException(string message, Exception innerException) : base(message, innerException) { }
 }

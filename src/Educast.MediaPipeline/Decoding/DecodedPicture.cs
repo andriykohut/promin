@@ -33,8 +33,6 @@ internal sealed class DecodedPicture : IDisposable
     /// <summary>Software decoding: the buffer holding the NV12 bytes. Null for a picture on the GPU.</summary>
     internal IMFMediaBuffer? Memory { get; }
 
-    internal bool IsOnGpu => Texture is not null;
-
     /// <summary>Takes over <paramref name="sample"/>, <paramref name="buffer"/> and <paramref name="dxgi"/> and <paramref name="texture"/>.</summary>
     internal static DecodedPicture OnGpu(
         PictureGeometry geometry, IMFSample sample, IMFMediaBuffer buffer, IMFDXGIBuffer dxgi, ID3D11Texture2D texture, uint subresource) =>

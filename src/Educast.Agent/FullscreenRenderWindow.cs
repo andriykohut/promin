@@ -40,7 +40,6 @@ internal sealed class FullscreenRenderWindow : IDisposable
     // The native side holds a function pointer to this, so it must never be collected.
     private static readonly WindowProcedure s_windowProcedure = RouteMessage;
 
-    private readonly ID3D11Device _device;
     private readonly bool _windowed;
     private readonly PictureBlitter _blitter;
     private readonly IDXGISwapChain1 _swapChain;
@@ -64,7 +63,6 @@ internal sealed class FullscreenRenderWindow : IDisposable
     public FullscreenRenderWindow(ID3D11Device device, bool windowed)
     {
         ArgumentNullException.ThrowIfNull(device);
-        _device = device;
         _windowed = windowed;
         _blitter = new PictureBlitter(device);
         try
