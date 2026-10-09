@@ -54,27 +54,14 @@ public sealed partial class SetupPage : Page
         base.OnNavigatedFrom(e);
     }
 
-    // The banners, as an InfoBar needs them.
+    // The one bindings' helper; its argument is a value type, because a function over a null object is never re-run.
 
-    public bool HasValue(object? value) => value is not null;
-
-    /// <summary>A bar that is not open takes no layout space either (a closed InfoBar still counts as a panel child).</summary>
-    public Visibility VisibilityOf(object? value) => value is null ? Visibility.Collapsed : Visibility.Visible;
-
-    /// <summary>Go to This room is offered on the success bar only.</summary>
-    public Visibility GoToRoomVisibility(SetupBanner? banner) =>
-        banner?.Kind == SetupBannerKind.Success ? Visibility.Visible : Visibility.Collapsed;
-
-    public InfoBarSeverity SeverityOf(SetupBanner? banner) => banner?.Kind switch
+    public InfoBarSeverity SeverityOf(SetupBannerKind kind) => kind switch
     {
         SetupBannerKind.Success => InfoBarSeverity.Success,
         SetupBannerKind.Error => InfoBarSeverity.Error,
         _ => InfoBarSeverity.Warning,
     };
-
-    public string TitleOf(SetupBanner? banner) => banner?.Title ?? string.Empty;
-
-    public string MessageOf(SetupBanner? banner) => banner?.Message ?? string.Empty;
 
     // The room code field: a stock PasswordBox. Its content is forwarded to CodeText as it is;
     // the one write back is the view model clearing the code when every PC is in the room (the

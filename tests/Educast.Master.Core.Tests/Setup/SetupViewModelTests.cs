@@ -699,6 +699,114 @@ public sealed class SetupViewModelTests
 
     // A4: discovery that cannot start.
 
+    // The bars bind plain, never-null values: an x:Bind function over a null object is never re-run.
+
+    [Fact]
+    public async Task TheResultBar_HasPlainValues_ThatChangeWithTheBanner_BothWays()
+    {
+        var vm = Activated();
+        Raise(1);
+        vm.CodeText = "482913";
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        await vm.PairAllAsync();
+
+        Assert.True(vm.IsBannerOpen);
+        Assert.Equal("1 PC is in this room.", vm.BannerTitle);
+        Assert.Equal("You only do this once. They reconnect by themselves from now on.", vm.BannerMessage);
+        Assert.Equal(SetupBannerKind.Success, vm.BannerKind);
+        Assert.True(vm.ShowsGoToRoom);
+        Assert.Contains(nameof(SetupViewModel.IsBannerOpen), raised);
+
+        raised.Clear();
+        vm.Remove(Row(vm, 1));
+
+        Assert.Null(vm.Banner);
+        Assert.False(vm.IsBannerOpen);
+        Assert.Equal(string.Empty, vm.BannerTitle);
+        Assert.Equal(string.Empty, vm.BannerMessage);
+        Assert.False(vm.ShowsGoToRoom);
+        Assert.Contains(nameof(SetupViewModel.IsBannerOpen), raised);
+        Assert.Contains(nameof(SetupViewModel.BannerTitle), raised);
+
+        raised.Clear();
+        vm.CodeText = "482913"; // cleared by the view model once every PC was in the room
+        await vm.PairAllAsync();
+
+        Assert.True(vm.IsBannerOpen);
+        Assert.Contains(nameof(SetupViewModel.IsBannerOpen), raised);
+    }
+
+    [Fact]
+    public async Task TheStoreErrorBar_HasPlainValues_ThatChangeWithTheError_BothWays()
+    {
+        var vm = Activated();
+        Raise(1);
+        vm.CodeText = "482913";
+        await vm.PairAllAsync();
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _store.SaveThrows = new IOException("disk full");
+        vm.Rename(Row(vm, 1), "Front left");
+
+        Assert.True(vm.HasStoreError);
+        Assert.Equal("Educast could not save this room.", vm.StoreErrorTitle);
+        Assert.Equal("Check that this PC's disk is not full, then try again.", vm.StoreErrorMessage);
+        Assert.Contains(nameof(SetupViewModel.HasStoreError), raised);
+
+        raised.Clear();
+        _store.SaveThrows = null;
+        vm.Rename(Row(vm, 1), "Front left");
+
+        Assert.Null(vm.StoreError);
+        Assert.False(vm.HasStoreError);
+        Assert.Equal(string.Empty, vm.StoreErrorTitle);
+        Assert.Equal(string.Empty, vm.StoreErrorMessage);
+        Assert.Contains(nameof(SetupViewModel.HasStoreError), raised);
+        Assert.Contains(nameof(SetupViewModel.StoreErrorTitle), raised);
+
+        raised.Clear();
+        _store.SaveThrows = new IOException("disk full");
+        vm.Rename(Row(vm, 1), "Back right");
+
+        Assert.True(vm.HasStoreError);
+        Assert.Contains(nameof(SetupViewModel.HasStoreError), raised);
+    }
+
+    [Fact]
+    public void TheDiscoveryErrorBar_HasPlainValues_ThatChangeWithTheError_BothWays()
+    {
+        _discovery.CanStart = false;
+        var vm = Activated();
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        Assert.True(vm.HasDiscoveryError);
+        Assert.Equal("Educast cannot look for student PCs.", vm.DiscoveryErrorTitle);
+        Assert.Equal(
+            "Another program on this PC is using network port 17844. Close any other copy of Educast, then open this screen again.",
+            vm.DiscoveryErrorMessage);
+
+        _discovery.CanStart = true;
+        vm.Activate();
+
+        Assert.Null(vm.DiscoveryError);
+        Assert.False(vm.HasDiscoveryError);
+        Assert.Equal(string.Empty, vm.DiscoveryErrorTitle);
+        Assert.Equal(string.Empty, vm.DiscoveryErrorMessage);
+        Assert.Contains(nameof(SetupViewModel.HasDiscoveryError), raised);
+        Assert.Contains(nameof(SetupViewModel.DiscoveryErrorTitle), raised);
+
+        raised.Clear();
+        _discovery.CanStart = false;
+        vm.Activate();
+
+        Assert.True(vm.HasDiscoveryError);
+        Assert.Contains(nameof(SetupViewModel.HasDiscoveryError), raised);
+    }
+
     [Fact]
     public void WhenDiscoveryCannotStart_ShowsTheErrorBar_AndNoLookingState()
     {

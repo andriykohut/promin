@@ -225,34 +225,34 @@
             -->
             <InfoBar
                 IsClosable="False"
-                IsOpen="{x:Bind HasValue(ViewModel.Banner), Mode=OneWay}"
-                Message="{x:Bind MessageOf(ViewModel.Banner), Mode=OneWay}"
-                Severity="{x:Bind SeverityOf(ViewModel.Banner), Mode=OneWay}"
-                Title="{x:Bind TitleOf(ViewModel.Banner), Mode=OneWay}"
-                Visibility="{x:Bind VisibilityOf(ViewModel.Banner), Mode=OneWay}">
+                IsOpen="{x:Bind ViewModel.IsBannerOpen, Mode=OneWay}"
+                Message="{x:Bind ViewModel.BannerMessage, Mode=OneWay}"
+                Severity="{x:Bind SeverityOf(ViewModel.BannerKind), Mode=OneWay}"
+                Title="{x:Bind ViewModel.BannerTitle, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.IsBannerOpen, Mode=OneWay}">
                 <InfoBar.ActionButton>
                     <Button
                         Click="Back_Click"
                         Content="Go to This room"
-                        Visibility="{x:Bind GoToRoomVisibility(ViewModel.Banner), Mode=OneWay}" />
+                        Visibility="{x:Bind ViewModel.ShowsGoToRoom, Mode=OneWay}" />
                 </InfoBar.ActionButton>
             </InfoBar>
 
             <!-- What this PC could not do: read or save the room; look for PCs. Never closable. -->
             <InfoBar
                 IsClosable="False"
-                IsOpen="{x:Bind HasValue(ViewModel.StoreError), Mode=OneWay}"
-                Message="{x:Bind MessageOf(ViewModel.StoreError), Mode=OneWay}"
+                IsOpen="{x:Bind ViewModel.HasStoreError, Mode=OneWay}"
+                Message="{x:Bind ViewModel.StoreErrorMessage, Mode=OneWay}"
                 Severity="Error"
-                Title="{x:Bind TitleOf(ViewModel.StoreError), Mode=OneWay}"
-                Visibility="{x:Bind VisibilityOf(ViewModel.StoreError), Mode=OneWay}" />
+                Title="{x:Bind ViewModel.StoreErrorTitle, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.HasStoreError, Mode=OneWay}" />
             <InfoBar
                 IsClosable="False"
-                IsOpen="{x:Bind HasValue(ViewModel.DiscoveryError), Mode=OneWay}"
-                Message="{x:Bind MessageOf(ViewModel.DiscoveryError), Mode=OneWay}"
+                IsOpen="{x:Bind ViewModel.HasDiscoveryError, Mode=OneWay}"
+                Message="{x:Bind ViewModel.DiscoveryErrorMessage, Mode=OneWay}"
                 Severity="Error"
-                Title="{x:Bind TitleOf(ViewModel.DiscoveryError), Mode=OneWay}"
-                Visibility="{x:Bind VisibilityOf(ViewModel.DiscoveryError), Mode=OneWay}" />
+                Title="{x:Bind ViewModel.DiscoveryErrorTitle, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.HasDiscoveryError, Mode=OneWay}" />
 
             <!-- 3. The room code card. -->
             <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.ShowCodeCard, Mode=OneWay}">

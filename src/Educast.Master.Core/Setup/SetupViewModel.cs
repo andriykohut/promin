@@ -222,11 +222,37 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
     }
 
+    // The bars bind these, never the banners themselves: a binding through a null object is never re-evaluated.
+
+    public bool IsBannerOpen => Banner is not null;
+
+    public string BannerTitle => Banner?.Title ?? string.Empty;
+
+    public string BannerMessage => Banner?.Message ?? string.Empty;
+
+    /// <summary><see cref="SetupBannerKind.Warning"/> when there is no banner.</summary>
+    public SetupBannerKind BannerKind => Banner?.Kind ?? SetupBannerKind.Warning;
+
+    /// <summary>Go to This room is offered on the success bar only.</summary>
+    public bool ShowsGoToRoom => Banner?.Kind == SetupBannerKind.Success;
+
     /// <summary>Set while this screen cannot look for PCs because the discovery port is taken.</summary>
     public SetupBanner? DiscoveryError => _discoveryError;
 
+    public bool HasDiscoveryError => _discoveryError is not null;
+
+    public string DiscoveryErrorTitle => _discoveryError?.Title ?? string.Empty;
+
+    public string DiscoveryErrorMessage => _discoveryError?.Message ?? string.Empty;
+
     /// <summary>Set when the room could not be read at start, or the last save failed.</summary>
     public SetupBanner? StoreError => _storeError;
+
+    public bool HasStoreError => _storeError is not null;
+
+    public string StoreErrorTitle => _storeError?.Title ?? string.Empty;
+
+    public string StoreErrorMessage => _storeError?.Message ?? string.Empty;
 
     public bool ShowCodeCard => !(Rows.Count > 0 && Rows.All(r => r.Status == SetupRowStatus.InRoom));
 
@@ -327,7 +353,12 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
 
         _discoveryRunning = started;
-        Set(ref _discoveryError, started ? null : SetupBanner.DiscoveryUnavailable, nameof(DiscoveryError));
+        if (Set(ref _discoveryError, started ? null : SetupBanner.DiscoveryUnavailable, nameof(DiscoveryError)))
+        {
+            Raise(nameof(HasDiscoveryError));
+            Raise(nameof(DiscoveryErrorTitle));
+            Raise(nameof(DiscoveryErrorMessage));
+        }
 
         _lastNothingFound = NothingFound;
         SetChecklist(NothingFound);
@@ -739,7 +770,15 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         _settingChecklist = false;
     }
 
-    private void SetStoreError(SetupBanner? error) => Set(ref _storeError, error, nameof(StoreError));
+    private void SetStoreError(SetupBanner? error)
+    {
+        if (Set(ref _storeError, error, nameof(StoreError)))
+        {
+            Raise(nameof(HasStoreError));
+            Raise(nameof(StoreErrorTitle));
+            Raise(nameof(StoreErrorMessage));
+        }
+    }
 
     private void RefreshActions()
     {
@@ -778,6 +817,11 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         Raise(nameof(PairAllLabel));
         Raise(nameof(CountText));
         Raise(nameof(Banner));
+        Raise(nameof(IsBannerOpen));
+        Raise(nameof(BannerTitle));
+        Raise(nameof(BannerMessage));
+        Raise(nameof(BannerKind));
+        Raise(nameof(ShowsGoToRoom));
         Raise(nameof(ShowCodeCard));
         Raise(nameof(NothingFound));
         Raise(nameof(HasRows));
