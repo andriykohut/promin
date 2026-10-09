@@ -123,7 +123,13 @@ public sealed partial class PcTileControl : UserControl
         RaiseToggled();
     }
 
-    private void SelectBox_Click(object sender, RoutedEventArgs e) => RaiseToggled();
+    private void SelectBox_Click(object sender, RoutedEventArgs e)
+    {
+        RaiseToggled();
+
+        // The click flipped the box; the tile decided (a failed save keeps the stored state), so the box shows the tile.
+        SelectBox.IsChecked = Tile?.IsSelected;
+    }
 
     private void RaiseToggled()
     {
@@ -132,8 +138,6 @@ public sealed partial class PcTileControl : UserControl
             Toggled?.Invoke(tile);
         }
     }
-
-    private void More_Click(object sender, RoutedEventArgs e) => Details.ShowAt(More);
 
     private void StopSending_Click(object sender, RoutedEventArgs e) => Ask(StopSendingRequested);
 

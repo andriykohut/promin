@@ -71,8 +71,6 @@ public sealed partial class RoomPage : Page
 
     public bool HasValue(object? value) => value is not null;
 
-    public Visibility VisibilityOf(object? value) => value is null ? Visibility.Collapsed : Visibility.Visible;
-
     public Visibility Not(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
 
     public Visibility SelectionLinksVisibility(bool onAir, bool emptyRoom) => onAir || emptyRoom ? Visibility.Collapsed : Visibility.Visible;

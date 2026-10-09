@@ -32,6 +32,7 @@ public sealed partial class SetupPage : Page
             services.Discovery,
             services.RoomStore,
             services.Health,
+            services.Broadcast,
             () => DateOnly.FromDateTime(DateTime.Now),
             action => DispatcherQueue.TryEnqueue(() => action()));
 

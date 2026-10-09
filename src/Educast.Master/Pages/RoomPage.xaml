@@ -35,7 +35,7 @@
                         VerticalAlignment="Center"
                         FontSize="12"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}">
-                        <Run FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorPrimaryBrush}" Text="{x:Bind controls:PcTileColours.CountOf(Text)}" /><Run Text="{x:Bind controls:PcTileColours.WordOf(Text)}" />
+                        <Run FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorPrimaryBrush}" Text="{x:Bind Count}" /><Run Text=" " /><Run Text="{x:Bind Word}" />
                     </TextBlock>
                 </StackPanel>
             </Border>
@@ -102,8 +102,7 @@
             IsOpen="{x:Bind HasValue(ViewModel.Message), Mode=OneWay}"
             Message="{x:Bind TextOf(ViewModel.Message), Mode=OneWay}"
             Severity="{x:Bind SeverityOf(ViewModel.Message), Mode=OneWay}"
-            Title="{x:Bind TitleOf(ViewModel.Message), Mode=OneWay}"
-            Visibility="{x:Bind VisibilityOf(ViewModel.Message), Mode=OneWay}">
+            Title="{x:Bind TitleOf(ViewModel.Message), Mode=OneWay}">
             <InfoBar.ActionButton>
                 <Button
                     Click="SetUpDevices_Click"
@@ -245,7 +244,7 @@
                     Visibility="{x:Bind Not(ViewModel.IsOnAir), Mode=OneWay}" />
                 <DropDownButton
                     VerticalAlignment="Center"
-                    AutomationProperties.Name="Quality"
+                    AutomationProperties.Name="{x:Bind ViewModel.QualityPickerName, Mode=OneWay}"
                     Content="{x:Bind ViewModel.QualityButtonText, Mode=OneWay}"
                     Visibility="{x:Bind Not(ViewModel.IsOnAir), Mode=OneWay}">
                     <DropDownButton.Flyout>

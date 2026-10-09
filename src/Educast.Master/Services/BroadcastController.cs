@@ -40,7 +40,15 @@ public sealed class BroadcastController : IBroadcastController
     {
         ArgumentNullException.ThrowIfNull(connector);
         _connector = connector;
-        HardwareEncoderAvailable = MediaFoundationH264Encoder.IsHardwareEncoderAvailable();
+        try
+        {
+            HardwareEncoderAvailable = MediaFoundationH264Encoder.IsHardwareEncoderAvailable();
+        }
+        catch (Exception failure)
+        {
+            // A probe that cannot even run means no hardware encoder; the first start learns the truth.
+            Trace.TraceError("The hardware encoder probe failed: {0}", failure);
+        }
     }
 
     public bool HardwareEncoderAvailable { get; private set; }
@@ -75,9 +83,22 @@ public sealed class BroadcastController : IBroadcastController
             _running = running;
         }
 
-        var reached = await Task.WhenAll(pcs.Select(pc => TryAddAsync(running, pc, ct))).ConfigureAwait(false);
-        running.Session.Start();
-        return pcs.Where((_, i) => !reached[i]).Select(pc => pc.DeviceId).ToList();
+        // From here a start ends running, or with everything it built released and nothing left set.
+        try
+        {
+            var reached = await Task.WhenAll(pcs.Select(pc => TryAddAsync(running, pc, ct))).ConfigureAwait(false);
+            running.Session.Start();
+            return pcs.Where((_, i) => !reached[i]).Select(pc => pc.DeviceId).ToList();
+        }
+        catch
+        {
+            if (Release(running))
+            {
+                await TearDownAsync(running).ConfigureAwait(false);
+            }
+
+            throw;
+        }
     }
 
     public Task<bool> AddAsync(RoomMember pc, CancellationToken ct)
@@ -105,14 +126,7 @@ public sealed class BroadcastController : IBroadcastController
 
     public void Stop()
     {
-        Running? running;
-        lock (_gate)
-        {
-            running = _running;
-            _running = null;
-        }
-
-        if (running is not null)
+        if (Current is { } running && Release(running))
         {
             _ = TearDownAsync(running);
         }
@@ -131,6 +145,21 @@ public sealed class BroadcastController : IBroadcastController
             {
                 return _running;
             }
+        }
+    }
+
+    /// <summary>Clears <paramref name="running"/> as the current broadcast. False when it already was not (someone else is releasing it).</summary>
+    private bool Release(Running running)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_running, running))
+            {
+                return false;
+            }
+
+            _running = null;
+            return true;
         }
     }
 
@@ -174,19 +203,15 @@ public sealed class BroadcastController : IBroadcastController
             running.Session.AddClient(pc.DeviceId, new QuicVideoSink(channel));
             return true;
         }
-        catch (Exception failure) when (!ct.IsCancellationRequested)
+        catch (Exception failure)
         {
+            await CloseAsync(control, channel).ConfigureAwait(false);
+            if (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+
             Trace.TraceInformation("Could not reach {0} at {1}:{2}: {3}", pc.DeviceId, pc.LastAddress, pc.Port, failure.Message);
-            if (control is not null)
-            {
-                await control.DisposeAsync().ConfigureAwait(false);
-            }
-
-            if (channel is not null)
-            {
-                await channel.DisposeAsync().ConfigureAwait(false);
-            }
-
             return false;
         }
     }
@@ -203,14 +228,9 @@ public sealed class BroadcastController : IBroadcastController
 
     private void OnSourceFailed(Running running, Exception failure)
     {
-        lock (_gate)
+        if (!Release(running))
         {
-            if (!ReferenceEquals(_running, running))
-            {
-                return;
-            }
-
-            _running = null;
+            return;
         }
 
         Trace.TraceError("The broadcast's picture source failed: {0}", failure);
@@ -218,35 +238,17 @@ public sealed class BroadcastController : IBroadcastController
         BroadcastFailed?.Invoke();
     }
 
-    /// <summary>The display changed size: every connected PC is told the new encoded size over the same connection.</summary>
-    private static async Task ResendStartAsync(Running running, PixelSize size)
-    {
-        foreach (var peer in running.Peers.Values)
-        {
-            try
-            {
-                using var deadline = new CancellationTokenSource(GoodbyeTimeout);
-                await peer.Control.SendAsync(new StartBroadcast(size.Width, size.Height, running.Fps), deadline.Token).ConfigureAwait(false);
-            }
-            catch (Exception failure)
-            {
-                // The session reports the PC lost when its next frame fails; nothing more to do here.
-                Trace.TraceInformation("Could not tell a PC about the new picture size: {0}", failure.Message);
-            }
-        }
-    }
+    /// <summary>The display changed size: every connected PC is told the new encoded size over the same connection, all at once.</summary>
+    private static Task ResendStartAsync(Running running, PixelSize size) =>
+        Task.WhenAll(running.Peers.Values.Select(peer => TellAsync(peer, new StartBroadcast(size.Width, size.Height, running.Fps))));
 
-    /// <summary>Stops the session, says goodbye to every PC, then releases the encoder and the capture, in that order.</summary>
+    /// <summary>Stops the session, says goodbye to every PC together, then releases the encoder and the capture, in that order.</summary>
     private static async Task TearDownAsync(Running running)
     {
         try
         {
             await Task.Run(running.Session.Stop).ConfigureAwait(false);
-            foreach (var peer in running.Peers.Values)
-            {
-                await SayGoodbyeAsync(peer).ConfigureAwait(false);
-            }
-
+            await Task.WhenAll(running.Peers.Values.Select(SayGoodbyeAsync)).ConfigureAwait(false);
             running.Peers.Clear();
             running.Source.Dispose();
         }
@@ -258,25 +260,40 @@ public sealed class BroadcastController : IBroadcastController
 
     private static async Task SayGoodbyeAsync(Peer peer)
     {
-        try
-        {
-            using var deadline = new CancellationTokenSource(GoodbyeTimeout);
-            await peer.Control.SendAsync(new StopBroadcast(), deadline.Token).ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            // The PC is gone or slow; closing the connection tells it the same thing.
-        }
-
+        await TellAsync(peer, new StopBroadcast()).ConfigureAwait(false);
         await CloseAsync(peer).ConfigureAwait(false);
     }
 
-    private static async Task CloseAsync(Peer peer)
+    /// <summary>Sends one control message within a second. A PC that is gone or slow is left to the session, which reports it lost when its next frame fails.</summary>
+    private static async Task TellAsync(Peer peer, ControlMessage message)
     {
         try
         {
-            await peer.Control.DisposeAsync().ConfigureAwait(false);
-            await peer.Channel.DisposeAsync().ConfigureAwait(false);
+            using var deadline = new CancellationTokenSource(GoodbyeTimeout);
+            await peer.Control.SendAsync(message, deadline.Token).ConfigureAwait(false);
+        }
+        catch (Exception failure)
+        {
+            Trace.TraceInformation("Could not tell a PC {0}: {1}", message.GetType().Name, failure.Message);
+        }
+    }
+
+    private static Task CloseAsync(Peer peer) => CloseAsync(peer.Control, peer.Channel);
+
+    /// <summary>Best effort: closing is how a PC is told its connection is over, and nothing here may throw.</summary>
+    private static async Task CloseAsync(QuicControlChannel? control, QuicChannel? channel)
+    {
+        try
+        {
+            if (control is not null)
+            {
+                await control.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (channel is not null)
+            {
+                await channel.DisposeAsync().ConfigureAwait(false);
+            }
         }
         catch (Exception failure)
         {

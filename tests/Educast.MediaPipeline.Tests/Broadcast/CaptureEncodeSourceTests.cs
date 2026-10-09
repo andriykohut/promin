@@ -146,10 +146,16 @@ public class CaptureEncodeSourceTests
         _nextEncoder.Fallback = FakeVideoEncoder.Answer.Refuse;
         var source = Source(capture);
 
-        for (var i = 0; i < 2 * CaptureEncodeSource.MaxConsecutiveRefusals - 1; i++)
+        // Four refusals, one picture, four more refusals: nine calls, none of them the failure.
+        var calls = 2 * CaptureEncodeSource.MaxConsecutiveRefusals - 1;
+        var produced = 0;
+        for (var i = 0; i < calls; i++)
         {
-            source.TryGetNextFrame(Tick, forceKeyframe: false, out _);
+            produced += source.TryGetNextFrame(Tick, forceKeyframe: false, out _) ? 1 : 0;
         }
+
+        Assert.Equal(1, produced);
+        Assert.Equal(calls, Encoder.Encoded.Count);
     }
 
     // Rule 4: the display changed size on air.

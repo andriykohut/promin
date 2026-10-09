@@ -107,6 +107,8 @@ public sealed class DxgiScreenCapture : IScreenCapture
         }
     }
 
+    // The frame texture is rewritten or replaced only on the path that returns true (Step.Frame and CopyDesktop):
+    // CaptureEncodeSource re-encodes the last frame it was handed when a keyframe is forced on a still screen.
     public bool TryGetNextFrame(TimeSpan timeout, out CapturedFrame frame)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

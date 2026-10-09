@@ -40,6 +40,7 @@
         Padding="8,8,8,9"
         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+        AutomationProperties.Name="{x:Bind Tile.TileName, Mode=OneWay}"
         BorderThickness="1"
         CornerRadius="8"
         Tapped="Card_Tapped">
@@ -149,7 +150,7 @@
             Padding="0"
             HorizontalAlignment="Left"
             VerticalAlignment="Top"
-            AutomationProperties.Name="Selected"
+            AutomationProperties.Name="{x:Bind Tile.SelectBoxName, Mode=OneWay}"
             Click="SelectBox_Click"
             IsChecked="{x:Bind Tile.IsSelected, Mode=OneWay}"
             IsEnabled="{x:Bind Tile.CanSelect, Mode=OneWay}"
@@ -176,10 +177,9 @@
                 Height="20"
                 Padding="0"
                 VerticalAlignment="Center"
-                AutomationProperties.Name="More"
+                AutomationProperties.Name="{x:Bind Tile.DetailsButtonName, Mode=OneWay}"
                 Background="Transparent"
                 BorderThickness="0"
-                Click="More_Click"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}">
                 <FontIcon FontSize="14" Glyph="&#xE712;" />
                 <Button.Flyout>
