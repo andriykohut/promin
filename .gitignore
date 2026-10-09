@@ -5,3 +5,4 @@ docs/superpowers/
 bin/
 obj/
 *.user
+*.pubxml
