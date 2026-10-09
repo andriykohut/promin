@@ -315,7 +315,7 @@ public sealed class BroadcastController : IBroadcastController
                 throw new InvalidOperationException("The PC answered the start with something other than BroadcastReady.");
             }
 
-            var peer = new Peer(channel, control);
+            var peer = new Peer(channel, control, pc.DisplayName);
             Peer? replaced;
             lock (_gate)
             {
@@ -364,7 +364,7 @@ public sealed class BroadcastController : IBroadcastController
         // A late report from a broadcast that has ended says nothing about the PCs of the one running now.
         if (ReferenceEquals(Current, running))
         {
-            Trace.TraceInformation("Lost {0}.", deviceId);
+            Trace.TraceInformation("Lost {0}.", peer is null ? deviceId : $"{peer.Name} ({deviceId})");
             ClientLost?.Invoke(deviceId);
         }
     }
@@ -470,7 +470,8 @@ public sealed class BroadcastController : IBroadcastController
         public ConcurrentDictionary<string, Peer> Peers { get; } = new(StringComparer.Ordinal);
     }
 
-    private sealed record Peer(QuicChannel Channel, QuicControlChannel Control);
+    /// <param name="Name">The PC's name in the room, for the log.</param>
+    private sealed record Peer(QuicChannel Channel, QuicControlChannel Control, string Name);
 
     /// <summary>
     /// Writes the size of every keyframe the source produces to the log, about one every two seconds: it is

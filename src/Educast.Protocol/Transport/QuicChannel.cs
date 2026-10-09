@@ -65,7 +65,8 @@ public sealed class QuicChannel : IAsyncDisposable
     /// <param name="acceptsStreams">
     /// False for a connection that grants its peer no streams of either kind, which is every one
     /// the master dials: there is nothing to accept, and .NET refuses to wait for a stream on
-    /// such a connection. Nothing then arrives on this channel; it only sends.
+    /// such a connection. No stream the peer opens then arrives on this channel. What the peer
+    /// writes on a stream this side opened still does: the replies on the control stream.
     /// </param>
     internal QuicChannel(
         QuicConnection connection,

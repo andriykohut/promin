@@ -24,8 +24,12 @@ public interface IBroadcastController
     event Action? BroadcastFailed;
 
     /// <summary>
-    /// Connects to each PC and starts sending. Returns the ids that could not be reached. Throws
-    /// when the screen cannot be captured or the encoder cannot be built.
+    /// Connects to each PC and starts sending. The picture starts once every PC has answered, or
+    /// after one second for those that have; the others join as they answer. Returns, once the
+    /// last has answered or given up, the ids that are not receiving: those that could not be
+    /// reached, and any that answered and were lost again before this returned. Throws when the
+    /// screen cannot be captured or the encoder cannot be built, or when the broadcast ended
+    /// while it was starting.
     /// </summary>
     Task<IReadOnlyCollection<string>> StartAsync(
         IReadOnlyCollection<RoomMember> pcs, QualityPreset preset, Sharpness sharpness, CancellationToken ct);
