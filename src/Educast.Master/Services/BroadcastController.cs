@@ -188,6 +188,14 @@ public sealed class BroadcastController : IBroadcastController
         {
             var endpoint = new IPEndPoint(IPAddress.Parse(pc.LastAddress), pc.Port);
             channel = await _connector.ConnectAsync(endpoint, pc.DeviceId, deadline.Token).ConfigureAwait(false);
+
+            // The connector's handshake admits only the certificate pinned for this PC. A channel that does not
+            // say so (the pin was removed while it connected) is not told to show anything.
+            if (channel.PinnedDeviceId != pc.DeviceId)
+            {
+                throw new InvalidOperationException("The connection is not pinned to the PC that was dialled.");
+            }
+
             control = await channel.OpenControlChannelAsync(deadline.Token).ConfigureAwait(false);
             var size = running.Source.EncodeSize;
             await control.SendAsync(new StartBroadcast(size.Width, size.Height, running.Fps), deadline.Token).ConfigureAwait(false);
@@ -231,7 +239,11 @@ public sealed class BroadcastController : IBroadcastController
             _ = CloseAsync(peer);
         }
 
-        ClientLost?.Invoke(deviceId);
+        // A late report from a broadcast that has ended says nothing about the PCs of the one running now.
+        if (ReferenceEquals(Current, running))
+        {
+            ClientLost?.Invoke(deviceId);
+        }
     }
 
     private void OnSourceFailed(Running running, Exception failure)
