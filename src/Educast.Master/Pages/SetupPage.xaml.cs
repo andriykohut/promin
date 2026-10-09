@@ -212,21 +212,9 @@ public sealed partial class SetupPage : Page
 
         await Guarded(async () =>
         {
-            var box = new TextBox { MaxLength = 64, Text = row.Name };
-            box.SelectAll();
-            var dialog = new ContentDialog
+            if (await RoomDialogs.RenameAsync(XamlRoot, row.Name) is { } newName)
             {
-                XamlRoot = XamlRoot,
-                Title = $"Rename {row.Name}",
-                Content = box,
-                PrimaryButtonText = "Rename",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Primary,
-            };
-
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-            {
-                ViewModel.Rename(row, box.Text);
+                ViewModel.Rename(row, newName);
             }
         });
     }
@@ -240,17 +228,7 @@ public sealed partial class SetupPage : Page
 
         await Guarded(async () =>
         {
-            var dialog = new ContentDialog
-            {
-                XamlRoot = XamlRoot,
-                Title = $"Remove {row.Name} from this room?",
-                Content = "It stops receiving your broadcasts. To add it back you will need the room code.",
-                PrimaryButtonText = "Remove",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Close,
-            };
-
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            if (await RoomDialogs.ConfirmRemoveAsync(XamlRoot, row.Name))
             {
                 ViewModel.Remove(row);
             }

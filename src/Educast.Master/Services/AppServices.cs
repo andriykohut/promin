@@ -4,6 +4,7 @@ using System.Net.Quic;
 using Educast.Master.Core;
 using Educast.Master.Core.Rooms;
 using Educast.Master.Core.Setup;
+using Educast.Master.Core.Wall;
 using Educast.Protocol.Transport;
 using Microsoft.UI.Dispatching;
 
@@ -12,7 +13,8 @@ namespace Educast.Master.Services;
 /// <summary>
 /// Everything the console owns for its whole life, built once in <c>App.OnLaunched</c>: the
 /// paths under <c>%LocalAppData%\Educast\</c>, this PC's identity, the one QUIC connector, the
-/// trust store, the room store, and the two adapters the setup screen talks to.
+/// trust store, the room store, the two adapters the setup screen talks to, and the broadcast
+/// controller and wall settings the room wall talks to.
 /// </summary>
 /// <remarks>
 /// The paths are per Windows account because the identity is: its private key lives in the key
@@ -34,6 +36,8 @@ public sealed class AppServices : IDisposable
         RoomStore = new JsonRoomStore(RoomPath);
         Pairing = new QuicPairingClient(Connector, TrustedAgents, TrustPath);
         Discovery = new LanDiscovery();
+        WallSettings = new JsonWallSettings(Path.Combine(rootDirectory, "settings.json"));
+        Broadcast = new BroadcastController(Connector);
     }
 
     /// <summary>Where this Windows account's Educast state lives.</summary>
@@ -59,6 +63,10 @@ public sealed class AppServices : IDisposable
     public IDiscovery Discovery { get; }
 
     public ConsoleHealth Health { get; } = new();
+
+    public IWallSettings WallSettings { get; }
+
+    public IBroadcastController Broadcast { get; }
 
     public static AppServices Create() => new(RootDirectory);
 
@@ -115,6 +123,7 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        Broadcast.Stop();
         Discovery.Stop();
         Identity.Dispose();
     }
