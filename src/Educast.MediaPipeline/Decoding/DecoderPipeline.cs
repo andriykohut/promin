@@ -44,7 +44,8 @@ internal sealed class DecoderPipeline<TPicture> : IDisposable where TPicture : c
     internal string? LastFailure { get; private set; }
 
     /// <summary>
-    /// What the caller should do about keyframes. True from construction and again after anything that breaks the
+    /// Whether the stream has nothing to build a picture on until a keyframe arrives; nothing in the product reads it.
+    /// True from construction and again after anything that breaks the
     /// stream (bytes refused, a transform that refused or failed, a flush), and it stays true until a picture has
     /// come out of a call made after a keyframe was accepted: accepting a keyframe is not enough, because a
     /// transform can accept one and give nothing back. A decoder that holds one picture back therefore reports

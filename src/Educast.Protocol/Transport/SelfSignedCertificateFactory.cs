@@ -54,7 +54,7 @@ public static class SelfSignedCertificateFactory
     /// <see cref="Create"/> gives, signed by <paramref name="key"/>. For a key that already lives
     /// in a key store and never leaves it (see <see cref="DeviceIdentity"/>): the caller keeps the
     /// bytes and binds the certificate to the key with
-    /// <see cref="X509Certificate2.CopyWithPrivateKey(ECDsa)"/>. The key must be on the NIST
+    /// <see cref="ECDsaCertificateExtensions.CopyWithPrivateKey(X509Certificate2, ECDsa)"/>. The key must be on the NIST
     /// P-256 curve.
     /// </summary>
     internal static byte[] CreatePublicCertificate(string subjectName, ECDsa key)

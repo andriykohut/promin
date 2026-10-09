@@ -29,6 +29,11 @@ public sealed record PairJPakeRound1(byte[] Gx1, byte[] Gx2, byte[][] ProofX1, b
 /// J-PAKE round 2 (RFC 8236), sent by each side: the group element <c>A</c> that carries the
 /// room code, and a Schnorr proof of knowledge for the exponent behind it.
 /// </summary>
+/// <remarks>
+/// Note: both fields are <c>byte[]</c>/<c>byte[][]</c>, which have reference equality semantics.
+/// Record-level <c>==</c> comparisons will use reference equality, not value equality.
+/// Tests must compare bytes element-wise or use <c>SequenceEqual</c>.
+/// </remarks>
 public sealed record PairJPakeRound2(byte[] A, byte[][] ProofX2s) : ControlMessage;
 
 /// <summary>
@@ -61,6 +66,11 @@ public sealed record PairChallengeResponse(byte[] AgentProof, byte[] AgentNonce)
 /// <c>PairAck(Success: false, MasterProof: null)</c> — see <see cref="Rejected"/> — is also the
 /// abort signal either side sends when it gives up mid-handshake, so the peer fails fast instead
 /// of blocking on a receive that will never complete.
+/// <para>
+/// Note: <c>MasterProof</c> is a <c>byte[]</c>, which has reference equality semantics.
+/// Record-level <c>==</c> comparisons will use reference equality, not value equality.
+/// Tests must compare bytes element-wise or use <c>SequenceEqual</c>.
+/// </para>
 /// </remarks>
 public sealed record PairAck(bool Success, byte[]? MasterProof = null) : ControlMessage
 {

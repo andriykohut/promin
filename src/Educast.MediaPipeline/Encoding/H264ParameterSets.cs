@@ -11,13 +11,13 @@ internal sealed class H264ParameterSets
     private byte[]? _sps;
     private byte[]? _pps;
 
+    /// <summary>True when both a sequence and a picture parameter set are remembered.</summary>
+    public bool KnowsBoth => _sps is not null && _pps is not null;
+
     /// <summary>
     /// Starts from the parameter sets the encoder published in its output type (an Annex B block with both),
     /// until the stream shows its own. Anything that is not such a block is ignored.
     /// </summary>
-    /// <summary>True when both a sequence and a picture parameter set are remembered.</summary>
-    public bool KnowsBoth => _sps is not null && _pps is not null;
-
     public void Seed(byte[]? annexBBlock)
     {
         if (annexBBlock is not null && H264Stream.IsParameterSetBlock(annexBBlock))

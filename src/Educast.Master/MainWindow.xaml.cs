@@ -9,7 +9,7 @@ using Windows.Graphics;
 namespace Educast.Master;
 
 /// <summary>
-/// The console's one window: Mica, the title bar, the fault bar, and the <see cref="Frame"/>
+/// The console's one window: Mica, the title bar, the fault bar, and the <c>Frame</c>
 /// that holds the two pages. It opens on the room page.
 /// </summary>
 public sealed partial class MainWindow : Window

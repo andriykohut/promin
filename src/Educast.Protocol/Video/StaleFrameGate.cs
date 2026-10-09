@@ -13,12 +13,12 @@ public sealed class StaleFrameGate
     /// <summary>
     /// Frames discarded for being stale, duplicate, or malformed, for the
     /// lifetime of this gate instance. This is a cumulative, session-wide
-    /// counter: it is what the console surfaces as "dropped frames" for a
-    /// client, and it is intentionally NOT cleared by <see cref="Reset"/> —
-    /// an operator watching a client that keeps needing resets (e.g. because
-    /// the master keeps restarting broadcasts, or the client keeps
-    /// reconnecting) needs the running total to stay visible, not silently
-    /// zero itself out on every reset.
+    /// counter: it is for the student PC's own log (nothing carries it to the
+    /// console, whose "dropped frames" come from the broadcast session), and it
+    /// is intentionally NOT cleared by <see cref="Reset"/> — a log of a client
+    /// that keeps needing resets (e.g. because the master keeps restarting
+    /// broadcasts, or the client keeps reconnecting) needs the running total
+    /// to stay visible, not silently zero itself out on every reset.
     /// </summary>
     public int DroppedFrameCount { get; private set; }
 

@@ -25,7 +25,7 @@ public sealed class QuicChannel : IAsyncDisposable
     public const long VideoStreamAbortErrorCode = 0x1;
 
     /// <summary>
-    /// Ceiling on a single inbound frame. A 1080p keyframe out of the Task 6 encoder sits far
+    /// Ceiling on a single inbound frame. A 1080p keyframe out of the encoder sits far
     /// below this; the bound exists so a peer cannot stream unbounded bytes into the receiver's
     /// memory on one stream. An offending stream is aborted and dropped, and the connection
     /// carries on — every other frame is on its own stream and is unaffected.
@@ -142,7 +142,7 @@ public sealed class QuicChannel : IAsyncDisposable
     /// Sends one whole encoded frame (envelope followed by the encoded bytes)
     /// as its own unidirectional stream. Cancelling <paramref name="ct"/>
     /// aborts that stream's write side — this is the per-client backpressure
-    /// mechanism Task 9 drives when a client falls behind.
+    /// mechanism the broadcast session uses when a client falls behind.
     /// </summary>
     public async ValueTask SendVideoFrameAsync(ReadOnlyMemory<byte> envelopeAndFrame, CancellationToken ct)
     {

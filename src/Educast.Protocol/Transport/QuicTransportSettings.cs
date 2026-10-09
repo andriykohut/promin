@@ -18,20 +18,20 @@ public static class QuicTransportSettings
     /// <summary>
     /// PING cadence on an otherwise idle connection. Two seconds costs a few dozen bytes a
     /// second on a LAN and keeps <see cref="IdleTimeout"/> from firing on a healthy but quiet
-    /// link (between broadcasts, the control stream is silent for minutes at a time).
+    /// link (after the start-up exchange, the control stream says nothing until the broadcast ends).
     /// </summary>
     public static TimeSpan KeepAliveInterval { get; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// How long silence is tolerated before QUIC declares the peer gone: 25 seconds, a dozen
     /// missed keep-alives. The number is set by the master, not by the link. The master is a
-    /// dual-core machine doing capture, encode and twenty concurrent senders; one long GC
+    /// dual-core machine doing capture, encode and one sender for every student PC; one long GC
     /// pause, thermal stall or swap storm silences <i>every</i> connection at once, and a
     /// timeout shorter than that stall drops the whole class together and forces a full
     /// reconnect mid-broadcast. The cost is that a genuinely dead client — switched off,
     /// unplugged — is noticed up to 25 seconds after it went, rather than 10. QUIC negotiates
     /// the smaller of the two peers' values, so both sides set the same number. This value is
-    /// reasoned, not measured: Task 15 measures the real one.
+    /// reasoned, not measured.
     /// </summary>
     public static TimeSpan IdleTimeout { get; } = TimeSpan.FromSeconds(25);
 
@@ -83,7 +83,7 @@ public static class QuicTransportSettings
     /// <summary>
     /// Bidirectional credit the <b>agent</b> grants the master, which is the side that opens the
     /// control stream. Control messages need exactly one bidirectional stream. Four leaves room for a
-    /// reconnect whose replacement control stream overlaps the old one briefly (Task 14)
+    /// reconnect whose replacement control stream overlaps the old one briefly
     /// without ever granting enough credit for a peer to open control streams as a DoS.
     /// </summary>
     public const int MaxInboundBidirectionalStreams = 4;
@@ -104,7 +104,7 @@ public static class QuicTransportSettings
     /// inside <c>OpenOutboundStreamAsync</c> and frames queue behind each other, which is
     /// precisely the head-of-line blocking per-frame streams exist to avoid. 256 is roughly 17
     /// seconds of credit at 15fps, far longer than any stall worth riding out (past that the
-    /// frames are stale anyway and Task 9 drops them). Credit bounds how many streams may be
+    /// frames are stale anyway and the broadcast session drops them). Credit bounds how many streams may be
     /// open; <see cref="MaxConcurrentInboundVideoStreams"/> bounds how many are buffered.
     /// </summary>
     public const int AgentMaxInboundUnidirectionalStreams = 256;
@@ -113,7 +113,7 @@ public static class QuicTransportSettings
     /// Inbound video credit the <b>master</b> grants an agent: none. Agents send no video, and
     /// agent machines are student-controlled — every stream of credit is up to
     /// <see cref="QuicChannel.MaxVideoFrameBytes"/> that a student's PC can make the teacher's
-    /// laptop allocate, per connection, times twenty connections. If a later sub-project ever
+    /// laptop allocate, per connection, times the number of student PCs. If a later sub-project ever
     /// needs agent-to-master streams, this is the one constant to change.
     /// </summary>
     public const int MasterMaxInboundUnidirectionalStreams = 0;
@@ -122,8 +122,9 @@ public static class QuicTransportSettings
     /// How many inbound video streams one connection reads into memory at once. Streams beyond
     /// this wait their turn unread (QUIC flow control holds the sender), so the most a peer can
     /// make the receiver buffer is this many frames of <see cref="QuicChannel.MaxVideoFrameBytes"/>
-    /// — 32 MB — rather than one frame per stream of credit. Eight matches the inbound frame
-    /// queue: more frames than that in flight are frames the consumer would drop anyway.
+    /// — 32 MB — rather than one frame per stream of credit. Eight is the default size of the
+    /// inbound frame queue (the student app uses a smaller one): more frames than that in flight
+    /// are frames the consumer would drop anyway.
     /// </summary>
     public const int MaxConcurrentInboundVideoStreams = 8;
 

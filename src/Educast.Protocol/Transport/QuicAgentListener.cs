@@ -96,8 +96,8 @@ public sealed class QuicAgentListener : IAsyncDisposable
 
     /// <summary>
     /// Accept failures since the last connection that was accepted. Zero on a healthy listener;
-    /// a number that keeps climbing is a machine being dialled by something it does not trust,
-    /// and is what a diagnostics view would show.
+    /// a number that keeps climbing is a machine being dialled by something it does not trust.
+    /// Nothing in the product shows it; the tests read it.
     /// </summary>
     public int ConsecutiveAcceptFailures => _pump?.ConsecutiveFailures ?? 0;
 

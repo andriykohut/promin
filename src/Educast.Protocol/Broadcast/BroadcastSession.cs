@@ -12,7 +12,7 @@ namespace Educast.Protocol.Broadcast;
 /// <remarks>
 /// <para>
 /// Backpressure is per client. Each client has a small bounded queue of whole frames and its own send loop.
-/// When the queue is full the oldest frame is dropped and the frame still in flight is aborted: it is older
+/// When the queue is full the oldest frame is dropped and the frame still in flight is aborted if it is a delta: it is older
 /// than everything behind it, so finishing it would only push the client further behind. Each frame's send
 /// also has a deadline of <c>max(200 ms, 2 x frameIntervalMs)</c> (a keyframe, the largest frame, gets
 /// <c>max(that, keyframeIntervalMs / 2)</c>); on expiry the frame is aborted and counted as dropped. A
@@ -61,7 +61,7 @@ public sealed class BroadcastSession
 
             // DropOldest plus the itemDropped callback gives exact drop accounting for free. The callback
             // runs on the capture thread that enqueued the newer frame, so it stays a counter increment, a
-            // flag and an asynchronous cancellation.
+            // monotonic-maximum update and an asynchronous cancellation of a delta in flight.
             Queue = Channel.CreateBounded<byte[]>(
                 new BoundedChannelOptions(queueCapacity)
                 {

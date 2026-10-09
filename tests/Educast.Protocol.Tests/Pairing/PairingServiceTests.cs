@@ -391,7 +391,7 @@ public class PairingServiceTests
 
     /// <summary>
     /// The agent must SIGNAL a peer it is giving up on. Returning silently leaves the master
-    /// blocked on a receive until its deadline expires, which is the Task 3 review requirement
+    /// blocked on a receive until its deadline expires, which is the requirement
     /// this pins. Here the J-PAKE rounds are fine and the challenge position holds another message.
     /// </summary>
     [Fact]

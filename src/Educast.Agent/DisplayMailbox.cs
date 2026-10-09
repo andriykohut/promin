@@ -6,7 +6,8 @@ namespace Educast.Agent;
 /// <summary>
 /// How many frames may wait on a student PC before it starts losing the oldest, so that a PC that cannot keep up
 /// stays close to live instead of falling behind: at most <see cref="DisplayMailboxFrames"/> in the display's
-/// mailbox plus <see cref="ReceiveQueueFrames"/> in the transport's receive queue, and one being decoded.
+/// mailbox plus <see cref="ReceiveQueueFrames"/> in the transport's receive queue, one being decoded, and the one a blocked
+/// submitter is holding.
 /// </summary>
 internal static class LiveBounds
 {

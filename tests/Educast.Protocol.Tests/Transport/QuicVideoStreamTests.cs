@@ -103,7 +103,7 @@ public class QuicVideoStreamTests
     }
 
     /// <summary>
-    /// Cancelling a send abandons that one frame — Task 9 drives this as per-client
+    /// Cancelling a send abandons that one frame — the broadcast session uses this as per-client
     /// backpressure. Fails an implementation that ignores the token and delivers the frame
     /// anyway, and one whose abandoned stream wedges the connection for the frames after it.
     /// </summary>

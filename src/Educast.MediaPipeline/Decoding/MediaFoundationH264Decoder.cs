@@ -75,8 +75,8 @@ public sealed class MediaFoundationH264Decoder : IVideoDecoder
     /// <summary>
     /// What was wrong with the stream or the decoder in the last call (for example "waiting for a keyframe"), for
     /// diagnostics; null when nothing was, which includes a decoder that simply held the picture back. A call
-    /// that returns a picture can still set it, when the stream broke right after that picture; use
-    /// <see cref="NeedsKeyframe"/> to decide what to do.
+    /// that returns a picture can still set it, when the stream broke right after that picture, and then
+    /// <see cref="NeedsKeyframe"/> is true too. Nothing in the product reads <see cref="NeedsKeyframe"/>.
     /// </summary>
     public string? LastFailure => _presentFailure ?? _pipeline!.LastFailure;
 

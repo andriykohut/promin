@@ -118,7 +118,7 @@ public sealed partial class DeviceIdentityTests : IDisposable
     {
         using var identity = Load(NewDirectory());
 
-        // Task 5's pairing refuses a certificate whose common name is not the id it dialled,
+        // Pairing refuses a certificate whose common name is not the id it dialled,
         // and reads that name the way CertificateIdentity does.
         Assert.Equal($"CN={identity.DeviceId}", identity.Certificate.Subject);
         Assert.Equal(identity.DeviceId, CertificateIdentity.ReadDeviceId(identity.Certificate));
