@@ -173,16 +173,87 @@ public sealed class RoomWallViewModelTests
     }
 
     [Fact]
-    public void SeenWithANewAddress_IsSaved_SoTheBroadcastDialsTheRightOne()
+    public async Task SeenWithANewAddress_IsDialledThere_AndSavedOnceItWorked()
     {
         var vm = TenWithSevenOffline();
 
         _discovery.Raise(new StudentPc(Id(1), "PC-01", "192.168.1.99", 17900));
         vm.Tick();
 
+        // An announcement is a claim anyone on the network can make: nothing is written for it.
+        Assert.Equal(0, _store.Saves);
+        Assert.Equal("192.168.1.21", Stored(_store, 1).LastAddress);
+        Assert.Equal("192.168.1.21", Tile(vm, 1).Address);
+
+        await vm.StartAsync();
+
+        var dialled = Assert.Single(_broadcast.Starts).Pcs.Single(p => p.DeviceId == Id(1));
+        Assert.Equal("192.168.1.99", dialled.LastAddress);
+        Assert.Equal(17900, dialled.Port);
+        Assert.Equal(1, _store.Saves);
         Assert.Equal("192.168.1.99", Stored(_store, 1).LastAddress);
         Assert.Equal(17900, Stored(_store, 1).Port);
         Assert.Equal("192.168.1.99", Tile(vm, 1).Address);
+        Assert.Equal("192.168.1.22", Stored(_store, 2).LastAddress);
+    }
+
+    [Fact]
+    public async Task AnAnnouncedAddressThatNeverWorks_IsNeverSaved_AndTheStoredOneIsUsedAfterARestart()
+    {
+        var vm = TenWithSevenOffline();
+        _broadcast.Unreachable.Add(Id(1));
+        _discovery.Raise(new StudentPc(Id(1), "PC-01", "192.168.1.99", 17900));
+
+        await vm.StartAsync();
+        vm.Tick();
+
+        Assert.Equal("192.168.1.99", Assert.Single(_broadcast.Starts).Pcs.Single(p => p.DeviceId == Id(1)).LastAddress);
+        Assert.Equal("192.168.1.99", Assert.Single(_broadcast.Adds).LastAddress);
+        Assert.Equal(0, _store.Saves);
+        Assert.Equal("192.168.1.21", Stored(_store, 1).LastAddress);
+
+        // The console is closed and opened again; the PC announces itself from where it really is.
+        _broadcast.Unreachable.Clear();
+        var restarted = Activated();
+        See(1);
+        restarted.Tick();
+        await restarted.StartAsync();
+
+        Assert.Equal("192.168.1.21", _broadcast.Starts[^1].Pcs.Single().LastAddress);
+        Assert.Equal(0, _store.Saves);
+    }
+
+    [Fact]
+    public void AnAnnouncement_WhileSetUpDevicesIsOpen_DoesNotOverwriteTheRoomItChanged()
+    {
+        var vm = TenWithSevenOffline();
+
+        // Set up devices keeps its own copy of the room; it removes one PC and pairs another.
+        _store.Members.RemoveAll(m => m.DeviceId == Id(4));
+        _store.Members.Add(Member(11));
+        _discovery.Raise(new StudentPc(Id(1), "PC-01", "192.168.1.99", 17900));
+        vm.Tick();
+
+        Assert.Equal(0, _store.Saves);
+        Assert.DoesNotContain(_store.Members, m => m.DeviceId == Id(4));
+        Assert.Contains(_store.Members, m => m.DeviceId == Id(11));
+    }
+
+    [Fact]
+    public void AnAnnouncementForAPcOutsideTheRoom_IsNotKept()
+    {
+        Room(10);
+        var vm = Activated();
+        See(11);
+
+        // Paired on Set up devices a moment later: it reads online once it announces itself as a member.
+        _store.Members.Add(Member(11));
+        vm.Activate();
+        Assert.Equal(PcTileState.Offline, Tile(vm, 11).State);
+
+        See(11);
+        vm.Tick();
+        Assert.Equal(PcTileState.Ready, Tile(vm, 11).State);
     }
 
     // ---- start -------------------------------------------------------------------------------

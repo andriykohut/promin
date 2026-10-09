@@ -426,6 +426,25 @@ public sealed class RoomWallRejoinTests
     }
 
     [Fact]
+    public async Task RejoinedAtANewAddress_IsDialledThere_AndTheAddressIsSavedOnceItWorked()
+    {
+        var vm = await OnAir(AllTen);
+        _broadcast.RaiseLost(Id(7));
+        _discovery.Raise(new StudentPc(Id(7), "PC-07", "192.168.1.99", 17900));
+        Assert.Equal(0, _store.Saves);
+
+        vm.Tick();
+
+        Assert.Equal("192.168.1.99", Assert.Single(_broadcast.Adds).LastAddress);
+        Assert.Equal(PcTileState.Receiving, Tile(vm, 7).State);
+        Assert.Equal(1, _store.Saves);
+        var stored = _store.Members.Single(m => m.DeviceId == Id(7));
+        Assert.Equal("192.168.1.99", stored.LastAddress);
+        Assert.Equal(17900, stored.Port);
+        Assert.Equal("192.168.1.99", Tile(vm, 7).Address);
+    }
+
+    [Fact]
     public async Task EndingTheBroadcast_LetsNothingOutOfACancelledAttempt_AndTheNextBroadcastRejoinsAsUsual()
     {
         _broadcast.PendingAdd = new TaskCompletionSource<bool>();

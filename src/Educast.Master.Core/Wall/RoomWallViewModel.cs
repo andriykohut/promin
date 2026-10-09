@@ -56,6 +56,10 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private readonly HashSet<string> _sendingTo = new(StringComparer.Ordinal);
     private readonly HashSet<string> _stoppedByTeacher = new(StringComparer.Ordinal);
     private readonly HashSet<string> _rejoining = new(StringComparer.Ordinal);
+
+    // Where each member last announced itself from: where it is dialled next. Anyone on the network can send an
+    // announcement, so this is kept in memory only; the room file gets an address once a connection worked there.
+    private readonly Dictionary<string, (string Address, int Port)> _announcedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _rejoinTriedAt = new(StringComparer.Ordinal);
 
     // Cancelled when the broadcast ends, so a PC still connecting is let go instead of being left waiting for a picture.
@@ -243,7 +247,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         var now = _now();
-        var targets = _members.Where(m => m.Selected && _presence.IsOnline(m.DeviceId, now)).ToList();
+        var targets = _members.Where(m => m.Selected && _presence.IsOnline(m.DeviceId, now)).Select(AsDialled).ToList();
 
         _starting = true;
         _broadcastStopped = false;
@@ -286,6 +290,8 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
             _sendingTo.Add(target.DeviceId);
         }
+
+        RememberAddresses(targets.Where(t => _sendingTo.Contains(t.DeviceId)));
 
         foreach (var tile in Tiles)
         {
@@ -440,7 +446,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
                 && !_rejoining.Contains(member.DeviceId)
                 && !(_rejoinTriedAt.TryGetValue(member.DeviceId, out var triedAt) && now - triedAt < RejoinInterval))
             {
-                _ = RejoinAsync(member, now);
+                _ = RejoinAsync(AsDialled(member), now);
             }
         }
 
@@ -479,6 +485,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         _sendingTo.Add(id);
+        RememberAddresses([member]);
         var tile = TileOf(id);
         tile.Drops.Reset();
         _backId = id;
@@ -546,24 +553,53 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     private void OnSeen(StudentPc pc)
     {
-        _presence.Seen(pc.DeviceId, _now());
-
-        // The broadcast dials the address the PC was last seen at.
-        var index = _members.FindIndex(m => m.DeviceId == pc.DeviceId);
-        if (index < 0 || (_members[index].LastAddress == pc.Address && _members[index].Port == pc.Port))
+        // Nothing is kept for a PC that is not in this room, and nothing is saved here: see _announcedAt.
+        if (MemberOf(pc.DeviceId) is null)
         {
             return;
         }
 
-        var before = _members[index];
-        _members[index] = before with { LastAddress = pc.Address, Port = pc.Port };
-        if (TrySave())
+        _presence.Seen(pc.DeviceId, _now());
+        _announcedAt[pc.DeviceId] = (pc.Address, pc.Port);
+    }
+
+    /// <summary>The member with the address it last announced itself from, which is where the broadcast dials it.</summary>
+    private RoomMember AsDialled(RoomMember member) =>
+        _announcedAt.TryGetValue(member.DeviceId, out var at)
+            ? member with { LastAddress = at.Address, Port = at.Port }
+            : member;
+
+    /// <summary>
+    /// A connection to each of these PCs, pinned to it, just worked at the address it carries: that
+    /// is the address the room remembers. One save, only if something differs; a failed save changes nothing.
+    /// </summary>
+    private void RememberAddresses(IEnumerable<RoomMember> reached)
+    {
+        var before = _members.ToList();
+        foreach (var pc in reached)
         {
-            TileOf(pc.DeviceId).Address = pc.Address;
+            var index = _members.FindIndex(m => m.DeviceId == pc.DeviceId);
+            if (index >= 0)
+            {
+                _members[index] = _members[index] with { LastAddress = pc.LastAddress, Port = pc.Port };
+            }
         }
-        else
+
+        if (_members.SequenceEqual(before))
         {
-            _members[index] = before;
+            return;
+        }
+
+        if (!TrySave())
+        {
+            _members.Clear();
+            _members.AddRange(before);
+            return;
+        }
+
+        foreach (var tile in Tiles)
+        {
+            tile.Address = MemberOf(tile.DeviceId)!.LastAddress;
         }
     }
 
