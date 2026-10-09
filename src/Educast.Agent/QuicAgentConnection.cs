@@ -18,6 +18,10 @@ internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnectio
 
     public ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct) => channel.ReceiveVideoFrameAsync(ct);
 
+    // Only ever called after a message was received, so the stream is there; sends and receives do not block each other.
+    public Task SendControlAsync(ControlMessage message, CancellationToken ct) =>
+        (_control ?? throw new InvalidOperationException("The teacher PC has not opened its control stream yet.")).SendAsync(message, ct);
+
     public async ValueTask DisposeAsync()
     {
         if (_control is not null)

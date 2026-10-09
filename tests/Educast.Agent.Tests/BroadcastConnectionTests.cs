@@ -18,6 +18,29 @@ public class BroadcastConnectionTests
 
         public ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct) => _video.Reader.ReadAsync(ct);
 
+        public List<ControlMessage> Sent { get; } = [];
+
+        public Task SendControlAsync(ControlMessage message, CancellationToken ct)
+        {
+            lock (Sent)
+            {
+                Sent.Add(message);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public int SentReady
+        {
+            get
+            {
+                lock (Sent)
+                {
+                    return Sent.Count(m => m is BroadcastReady);
+                }
+            }
+        }
+
         public void Send(ControlMessage message) => _control.Writer.TryWrite(message);
 
         public void SendFrame(params byte[] payload) => _video.Writer.TryWrite(payload);
@@ -181,6 +204,28 @@ public class BroadcastConnectionTests
         Assert.Equal([new byte[] { 1 }, [2], [3]], display.Received);
     }
 
+    /// <summary>
+    /// The teacher PC holds its first keyframe until the display can take it, so a display that is ready says so;
+    /// one that could not be made says nothing, and a restarted one says so again.
+    /// </summary>
+    [Fact]
+    public async Task AReadyDisplay_IsAnnouncedToTheTeacherPc_AFailedOneIsNot()
+    {
+        var factory = new FakeFactory().Then(() => null);
+        await using var rig = new Rig(factory);
+        rig.Start();
+
+        await rig.StartedAsync(expectDisplay: false);
+        Assert.Equal(0, rig.Connection.SentReady);
+
+        await rig.StartedAsync();
+        await rig.UntilAsync(() => rig.Connection.SentReady == 1, "ready announced");
+
+        rig.Connection.Send(new StartBroadcast(1280, 720, 15));
+        await rig.UntilAsync(() => rig.Connection.SentReady == 2, "ready announced again after the restart");
+        Assert.Equal(1, factory.Created[0].Restarts);
+    }
+
     [Fact]
     public async Task FramesThatArriveWithNoBroadcast_GoNowhere()
     {
@@ -268,6 +313,8 @@ public class BroadcastConnectionTests
         public Task<ControlMessage> ReceiveControlAsync(CancellationToken ct) => Control.Reader.ReadAsync(ct).AsTask();
 
         public ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct) => Video.Reader.ReadAsync(ct);
+
+        public Task SendControlAsync(ControlMessage message, CancellationToken ct) => Task.CompletedTask;
     }
 
     [Fact]
@@ -354,8 +401,13 @@ public class BroadcastConnectionTests
         Assert.Single(factory.Created);
     }
 
+    /// <summary>
+    /// The teacher PC can only tell a PC apart from a receiving one by its connection: a display that ended on its
+    /// own ends the connection, with one log line, so the wall reads Reconnecting. A display removed by
+    /// StopBroadcast is not "by itself" and the connection carries on (StopBroadcast_RemovesTheDisplay_...).
+    /// </summary>
     [Fact]
-    public async Task ADisplayThatClosedByItself_IsReplacedByTheNextStartBroadcast()
+    public async Task ADisplayThatClosedByItself_EndsTheConnection_WithOneLogLine()
     {
         await using var rig = new Rig();
         rig.Start();
@@ -364,14 +416,13 @@ public class BroadcastConnectionTests
 
         first.IsOpen = false; // the student closed the window (--windowed), or the GPU failed
         rig.Connection.SendFrame(1);
-        await rig.FramesReadAsync();
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5));
+
         Assert.Empty(first.Received);
-
-        await rig.StartedAsync();
-
-        Assert.Equal(2, rig.Factory.Created.Count);
         Assert.True(first.Disposed);
-        Assert.Equal(0, first.Restarts);
+        Assert.True(rig.Running.IsCompletedSuccessfully);
+        Assert.Single(rig.Log, line => line.Contains("ended by itself"));
+        Assert.DoesNotContain(rig.Log, line => line.Contains("were dropped"));
     }
 
     [Theory]

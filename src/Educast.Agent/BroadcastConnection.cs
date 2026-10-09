@@ -7,6 +7,8 @@ namespace Educast.Agent;
 /// created when <see cref="StartBroadcast"/> arrives, removed on <see cref="StopBroadcast"/> and when the
 /// connection ends. <b>Never</b> because no frame has come for a while: a still teacher screen sends none for as
 /// long as it stays still, and a dead teacher PC shows up as the connection ending (QUIC's idle timeout).
+/// A display that ends by itself (it failed, or its window was closed) ends the connection, so the teacher PC
+/// sees the PC as lost rather than receiving.
 /// </summary>
 /// <remarks>
 /// Two things run at once, both ending the other when they end: the control loop (messages) and the frame
@@ -40,7 +42,7 @@ internal sealed class BroadcastConnection(
             while (true)
             {
                 var message = await connection.ReceiveControlAsync(ending.Token).ConfigureAwait(false);
-                await HandleAsync(message, ending.Token).ConfigureAwait(false);
+                await HandleAsync(connection, message, ending.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (ending.IsCancellationRequested)
@@ -63,12 +65,17 @@ internal sealed class BroadcastConnection(
         }
     }
 
-    private async Task HandleAsync(ControlMessage message, CancellationToken ct)
+    private async Task HandleAsync(IAgentConnection connection, ControlMessage message, CancellationToken ct)
     {
         switch (message)
         {
             case StartBroadcast { Width: > 0, Height: > 0, TargetFps: > 0 } start:
-                await StartAsync(start, ct).ConfigureAwait(false);
+                if (await StartAsync(start, ct).ConfigureAwait(false))
+                {
+                    // The teacher PC holds its first keyframe until the display can take it.
+                    await connection.SendControlAsync(new BroadcastReady(), ct).ConfigureAwait(false);
+                }
+
                 break;
 
             case StartBroadcast start:
@@ -90,13 +97,14 @@ internal sealed class BroadcastConnection(
         }
     }
 
-    private async Task StartAsync(StartBroadcast start, CancellationToken ct)
+    /// <summary>True when a display is ready to take the stream's pictures; false when none could be made.</summary>
+    private async Task<bool> StartAsync(StartBroadcast start, CancellationToken ct)
     {
         if (_display is { IsOpen: true } open)
         {
             log($"The teacher PC started a new stream ({start.Width}x{start.Height} at {start.TargetFps} fps).");
             await open.RestartAsync(ct).ConfigureAwait(false);
-            return;
+            return true;
         }
 
         // One that ended by itself is replaced.
@@ -116,7 +124,7 @@ internal sealed class BroadcastConnection(
         {
             log($"The broadcast could not be shown: the display was not ready after {_startTimeout.TotalSeconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} seconds.");
             DisposeWhenReady(starting);
-            return;
+            return false;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -126,16 +134,17 @@ internal sealed class BroadcastConnection(
         catch (Exception failure)
         {
             log($"The broadcast could not be shown: {failure.Message}");
-            return;
+            return false;
         }
 
         if (display is null)
         {
             log("The broadcast is not shown on this PC. It will be tried again if the teacher PC starts it again.");
-            return;
+            return false;
         }
 
         Volatile.Write(ref _display, display);
+        return true;
     }
 
     // A display that was given up on and then turned up anyway is not wanted.
@@ -159,13 +168,22 @@ internal sealed class BroadcastConnection(
             while (true)
             {
                 var payload = await connection.ReceiveVideoFrameAsync(ending.Token).ConfigureAwait(false);
-                if (Volatile.Read(ref _display) is { IsOpen: true } display)
+                var display = Volatile.Read(ref _display);
+                if (display is null)
+                {
+                    _framesDroppedWithNoDisplay++;
+                }
+                else if (display.IsOpen)
                 {
                     await display.SubmitFrameAsync(payload, ending.Token).ConfigureAwait(false);
                 }
                 else
                 {
-                    _framesDroppedWithNoDisplay++;
+                    // Only a display that ended on its own is still here while closed: StopBroadcast, a newer
+                    // connection and a lost connection all remove it. Ending the connection is how the teacher
+                    // PC gets to know; its wall then reads Reconnecting instead of Receiving.
+                    log("The broadcast's display on this PC ended by itself; this connection is closed so the teacher PC can see it.");
+                    break;
                 }
             }
         }

@@ -16,6 +16,9 @@ internal interface IAgentConnection
 
     /// <summary>The next whole video frame (envelope and encoded bytes). Throws when the connection has ended.</summary>
     ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct);
+
+    /// <summary>Sends one control message back to the teacher PC, on the stream it opened. Throws when the connection has ended.</summary>
+    Task SendControlAsync(ControlMessage message, CancellationToken ct);
 }
 
 /// <summary>What shows one broadcast on the student's screen: a window, a decoder, and the session that decides what reaches them.</summary>
