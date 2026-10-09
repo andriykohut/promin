@@ -275,11 +275,10 @@ public sealed class QuicMasterConnector
             KeepAliveInterval = QuicTransportSettings.KeepAliveInterval,
             HandshakeTimeout = QuicTransportSettings.HandshakeTimeout,
 
-            // The master receives control messages, not video. It grants the agent enough
-            // bidirectional credit for the control stream plus reconnect overlap, and no
-            // unidirectional credit at all: agent machines are student-controlled, and every
+            // The master opens the control stream itself and receives no video, so it grants the
+            // agent no stream credit of either kind: agent machines are student-controlled, and every
             // stream of credit is memory a student's PC can make the teacher's laptop allocate.
-            MaxInboundBidirectionalStreams = QuicTransportSettings.MaxInboundBidirectionalStreams,
+            MaxInboundBidirectionalStreams = QuicTransportSettings.MasterMaxInboundBidirectionalStreams,
             MaxInboundUnidirectionalStreams = QuicTransportSettings.MasterMaxInboundUnidirectionalStreams,
 
             ClientAuthenticationOptions = new SslClientAuthenticationOptions
@@ -309,7 +308,7 @@ public sealed class QuicMasterConnector
         var pinnedDeviceId = connection.RemoteCertificate is { } presented && IsPinnedAs(deviceId, presented)
             ? deviceId
             : null;
-        return new QuicChannel(connection, pinnedDeviceId);
+        return new QuicChannel(connection, pinnedDeviceId, acceptsStreams: false);
     }
 
     private bool IsPinnedAs(string deviceId, X509Certificate certificate) =>

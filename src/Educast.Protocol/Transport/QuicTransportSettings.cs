@@ -81,11 +81,20 @@ public static class QuicTransportSettings
     public const int ListenBacklog = 512;
 
     /// <summary>
-    /// Control messages need exactly one bidirectional stream. Four leaves room for a
+    /// Bidirectional credit the <b>agent</b> grants the master, which is the side that opens the
+    /// control stream. Control messages need exactly one bidirectional stream. Four leaves room for a
     /// reconnect whose replacement control stream overlaps the old one briefly (Task 14)
     /// without ever granting enough credit for a peer to open control streams as a DoS.
     /// </summary>
     public const int MaxInboundBidirectionalStreams = 4;
+
+    /// <summary>
+    /// Bidirectional credit the <b>master</b> grants an agent: none. The master opens the control
+    /// stream itself, for pairing and for a broadcast alike, and never accepts one, so a stream
+    /// an agent opened would only wait unread on the teacher's laptop for as long as the
+    /// connection lasts, and agent machines are student-controlled.
+    /// </summary>
+    public const int MasterMaxInboundBidirectionalStreams = 0;
 
     /// <summary>
     /// Inbound video credit the <b>agent</b> grants the master. Video is one unidirectional

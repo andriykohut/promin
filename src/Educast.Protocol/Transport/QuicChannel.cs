@@ -62,8 +62,16 @@ public sealed class QuicChannel : IAsyncDisposable
     /// only. <paramref name="pinnedDeviceId"/> is what they found by looking the presented
     /// certificate up in their pins; it is not something a caller gets to assert.
     /// </summary>
+    /// <param name="acceptsStreams">
+    /// False for a connection that grants its peer no streams of either kind, which is every one
+    /// the master dials: there is nothing to accept, and .NET refuses to wait for a stream on
+    /// such a connection. Nothing then arrives on this channel; it only sends.
+    /// </param>
     internal QuicChannel(
-        QuicConnection connection, string? pinnedDeviceId, int inboundFrameQueueCapacity = DefaultInboundFrameQueueCapacity)
+        QuicConnection connection,
+        string? pinnedDeviceId,
+        int inboundFrameQueueCapacity = DefaultInboundFrameQueueCapacity,
+        bool acceptsStreams = true)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentOutOfRangeException.ThrowIfLessThan(inboundFrameQueueCapacity, 1);
@@ -78,7 +86,7 @@ public sealed class QuicChannel : IAsyncDisposable
             RemoteCertificateSubjectName = CertificateIdentity.ReadDeviceId(certificate);
         }
 
-        _acceptLoop = RunAcceptLoopAsync(_acceptCts.Token);
+        _acceptLoop = acceptsStreams ? RunAcceptLoopAsync(_acceptCts.Token) : Task.CompletedTask;
     }
 
     /// <summary>

@@ -28,6 +28,14 @@ public class QuicTransportSettingsTests
         Assert.Equal(256, QuicTransportSettings.AgentMaxInboundUnidirectionalStreams);
     }
 
+    /// <summary>The master opens the control stream; an agent is granted none of its own.</summary>
+    [Fact]
+    public void ControlStreamCredit_IsGrantedByTheAgentOnly()
+    {
+        Assert.Equal(0, QuicTransportSettings.MasterMaxInboundBidirectionalStreams);
+        Assert.Equal(4, QuicTransportSettings.MaxInboundBidirectionalStreams);
+    }
+
     /// <summary>The buffered worst case per connection is 8 frames of 4 MB, not 256.</summary>
     [Fact]
     public void InboundVideo_BuffersAtMostThirtyTwoMegabytesPerConnection()

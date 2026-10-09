@@ -42,6 +42,37 @@ public class QuicControlStreamTests
     }
 
     /// <summary>
+    /// The master opens the control stream itself and never accepts one, so it grants an agent
+    /// no bidirectional streams: whatever a student's PC opened would only pile up unread on the
+    /// teacher's laptop. The agent's attempt never gets a stream. Fails the credit of four the
+    /// master used to grant, under which the stream opens at once.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    public async Task Master_GrantsAnAgentNoInboundControlStreams()
+    {
+        using var deadline = QuicLoopbackHarness.Deadline();
+        await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
+        var (master, agent) = await harness.ConnectAsync(deadline.Token);
+
+        using var attempt = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        attempt.CancelAfter(TimeSpan.FromSeconds(2));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await using var opened = await agent.OpenControlChannelAsync(attempt.Token);
+        });
+
+        // The direction that matters is untouched: the master opens, the agent accepts, both speak.
+        var (masterControl, agentPending) =
+            await QuicLoopbackHarness.OpenControlPairAsync(master, agent, deadline.Token);
+        await using var ownedMasterControl = masterControl;
+        await masterControl.SendAsync(new StartBroadcast(1920, 1080, 15), deadline.Token);
+        await using var agentControl = await agentPending;
+        Assert.Equal(new StartBroadcast(1920, 1080, 15), await agentControl.ReceiveAsync(deadline.Token));
+        await agentControl.SendAsync(new BroadcastReady(), deadline.Token);
+        Assert.IsType<BroadcastReady>(await masterControl.ReceiveAsync(deadline.Token));
+    }
+
+    /// <summary>
     /// A frame split across writes must be buffered and retried, which is what TryDecode
     /// returning false means. Fails an implementation that marks the partial buffer consumed
     /// (losing the prefix), or that treats "incomplete" as an error.
