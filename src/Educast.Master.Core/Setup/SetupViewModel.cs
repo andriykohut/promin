@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Educast.Master.Core.Rooms;
+using Educast.Master.Core.Wall;
 using Educast.Protocol.Pairing;
 
 namespace Educast.Master.Core.Setup;
@@ -42,6 +43,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     private readonly IDiscovery _discovery;
     private readonly IRoomStore _store;
     private readonly ConsoleHealth _health;
+    private readonly IBroadcastController _broadcast;
     private readonly Func<DateOnly> _today;
     private readonly Action<Action> _runOnUiThread;
 
@@ -72,6 +74,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         IDiscovery discovery,
         IRoomStore store,
         ConsoleHealth health,
+        IBroadcastController broadcast,
         Func<DateOnly> today,
         Action<Action> runOnUiThread)
     {
@@ -79,6 +82,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         ArgumentNullException.ThrowIfNull(discovery);
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(health);
+        ArgumentNullException.ThrowIfNull(broadcast);
         ArgumentNullException.ThrowIfNull(today);
         ArgumentNullException.ThrowIfNull(runOnUiThread);
 
@@ -86,6 +90,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         _discovery = discovery;
         _store = store;
         _health = health;
+        _broadcast = broadcast;
         _today = today;
         _runOnUiThread = runOnUiThread;
 
@@ -484,9 +489,9 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Takes the PC out of the room and forgets its certificate on this machine. The row stays,
-    /// as Not paired, while the PC is still being seen; otherwise it goes. A failed save changes
-    /// nothing.
+    /// Takes the PC out of the room, stops any broadcast to it, and forgets its certificate on this
+    /// machine. The row stays, as Not paired, while the PC is still being seen; otherwise it goes.
+    /// A failed save changes nothing.
     /// </summary>
     public void Remove(SetupRow row)
     {
@@ -503,6 +508,8 @@ public sealed class SetupViewModel : INotifyPropertyChanged
                 return;
             }
         }
+
+        _broadcast.StopSendingTo(row.DeviceId);
 
         try
         {

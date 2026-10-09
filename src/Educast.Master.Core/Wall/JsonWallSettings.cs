@@ -67,15 +67,15 @@ public sealed class JsonWallSettings : IWallSettings
 
             File.Move(temporary, _path, overwrite: true);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (Exception)
         {
             // A quality choice that is not remembered is not worth a message; the choice holds for this run.
-        }
-        finally
-        {
-            if (File.Exists(temporary))
+            try
             {
                 File.Delete(temporary);
+            }
+            catch (Exception)
+            {
             }
         }
     }

@@ -34,6 +34,9 @@ public sealed class FakeBroadcastController : IBroadcastController
     /// <summary>Thrown by <see cref="StartAsync"/> when set.</summary>
     public Exception? StartThrows { get; set; }
 
+    /// <summary>When set, <see cref="StartAsync"/> returns its task instead of answering at once: the connect is still running.</summary>
+    public TaskCompletionSource<IReadOnlyCollection<string>>? PendingStart { get; set; }
+
     public Task<IReadOnlyCollection<string>> StartAsync(
         IReadOnlyCollection<RoomMember> pcs, QualityPreset preset, Sharpness sharpness, CancellationToken ct)
     {
@@ -43,7 +46,7 @@ public sealed class FakeBroadcastController : IBroadcastController
             throw StartThrows;
         }
 
-        return Task.FromResult<IReadOnlyCollection<string>>(
+        return PendingStart?.Task ?? Task.FromResult<IReadOnlyCollection<string>>(
             pcs.Select(p => p.DeviceId).Where(Unreachable.Contains).ToList());
     }
 

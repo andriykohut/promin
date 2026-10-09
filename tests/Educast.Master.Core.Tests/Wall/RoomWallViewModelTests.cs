@@ -577,7 +577,94 @@ public sealed class RoomWallViewModelTests
         Assert.True(vm.CanStart);
     }
 
+    // ---- while the start is still connecting ---------------------------------------------------
+
+    [Fact]
+    public async Task Remove_WhileConnecting_IsNotSentTo_WhenTheStartReturns()
+    {
+        var vm = TenWithSevenOffline();
+        _broadcast.PendingStart = new TaskCompletionSource<IReadOnlyCollection<string>>();
+        var starting = vm.StartAsync();
+
+        vm.Remove(Tile(vm, 4));
+        Assert.Empty(_broadcast.StoppedSendingTo);
+
+        _broadcast.PendingStart.SetResult([]);
+        await starting;
+
+        Assert.True(vm.IsOnAir);
+        Assert.Equal([Id(4)], _broadcast.StoppedSendingTo);
+        Assert.DoesNotContain(vm.Tiles, t => t.DeviceId == Id(4));
+        Assert.Equal(["8 receiving", "1 reconnecting"], vm.Pills.Select(p => p.Text));
+        Assert.Equal([Id(4)], _pairing.Unpaired);
+    }
+
+    [Fact]
+    public async Task WhileConnecting_NothingCanBeStartedOrChanged()
+    {
+        var vm = TenWithSevenOffline();
+        _broadcast.PendingStart = new TaskCompletionSource<IReadOnlyCollection<string>>();
+        var starting = vm.StartAsync();
+
+        Assert.False(vm.IsOnAir);
+        Assert.False(vm.CanStart);
+        Assert.False(vm.CanChooseQuality);
+        Assert.All(vm.Tiles, t => Assert.False(t.CanSelect));
+
+        await vm.StartAsync();
+        vm.ToggleSelected(Tile(vm, 1));
+        vm.SelectAll();
+        vm.SelectedPreset = QualityPreset.Sd10;
+        vm.SelectedSharpness = vm.SharpnessChoices.Single(c => c.Value == Sharpness.Sharp);
+
+        Assert.Single(_broadcast.Starts);
+        Assert.True(Stored(_store, 1).Selected);
+        Assert.Equal(0, _store.Saves);
+        Assert.Equal(QualityPreset.Default, vm.SelectedPreset);
+        Assert.Equal(Sharpness.Standard, vm.SelectedSharpness.Value);
+
+        _broadcast.PendingStart.SetResult([]);
+        await starting;
+        Assert.True(vm.IsOnAir);
+    }
+
+    // ---- what a screen reader hears -----------------------------------------------------------
+
+    [Fact]
+    public async Task Names_SayWhichPc_AndItsState()
+    {
+        var vm = TenWithSevenOffline();
+
+        Assert.Equal("Select PC-04", Tile(vm, 4).SelectBoxName);
+        Assert.Equal("Details for PC-04", Tile(vm, 4).DetailsButtonName);
+        Assert.Equal("PC-04, Ready", Tile(vm, 4).TileName);
+        Assert.Equal("PC-07, Offline", Tile(vm, 7).TileName);
+        Assert.Equal("Quality, 1080p, 15 fps, 6.2 Mbit/s", vm.QualityPickerName);
+
+        vm.Rename(Tile(vm, 4), "Front left");
+        await vm.StartAsync();
+
+        Assert.Equal("Select Front left", Tile(vm, 4).SelectBoxName);
+        Assert.Equal("Front left, Receiving", Tile(vm, 4).TileName);
+        Assert.Equal("PC-07, Reconnecting", Tile(vm, 7).TileName);
+    }
+
     // ---- activate again (back from Set up devices) ---------------------------------------------
+
+    [Fact]
+    public async Task Activate_OnAir_WithAnUnreadableRoom_KeepsSending_AndSaysSo()
+    {
+        var vm = await OnAir();
+        _store.LoadThrows = new RoomStoreException("locked", new IOException());
+
+        vm.Activate();
+
+        Assert.True(vm.IsOnAir);
+        Assert.Empty(_broadcast.StoppedSendingTo);
+        Assert.Equal(10, vm.Tiles.Count);
+        Assert.Equal(9, vm.Tiles.Count(t => t.State == PcTileState.Receiving));
+        Assert.Equal("Educast could not read this room.", vm.Message?.Title);
+    }
 
     [Fact]
     public async Task Activate_OnAir_FollowsTheRoom_AndStopsSendingToAPcRemovedElsewhere()

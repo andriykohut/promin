@@ -99,6 +99,40 @@ public class WallTextTests
         Assert.Equal(expected, WallText.NetworkLoad(6_220_800, pcs, CultureInfo.InvariantCulture));
 
     [Fact]
+    public void TheBarsFixedLines_AreTheTables()
+    {
+        Assert.Equal("No PCs to broadcast to", WallText.EmptyRoomLine1);
+        Assert.Equal("Set up devices to add the first one.", WallText.EmptyRoomLine2);
+        Assert.Equal("On air", WallText.OnAirLine1);
+    }
+
+    [Fact]
+    public void Pills_CarryTheirCountAndWord()
+    {
+        var pill = Assert.Single(WallText.PillsOffAir(0, 3));
+
+        Assert.Equal(3, pill.Count);
+        Assert.Equal("offline", pill.Word);
+        Assert.Equal("3 offline", pill.Text);
+    }
+
+    [Theory]
+    [InlineData("PC-04", "Select PC-04", "Details for PC-04")]
+    [InlineData("Front left", "Select Front left", "Details for Front left")]
+    public void AccessibleNames_NameThePc(string name, string selectBox, string details)
+    {
+        Assert.Equal(selectBox, WallText.SelectBoxName(name));
+        Assert.Equal(details, WallText.DetailsButtonName(name));
+    }
+
+    [Fact]
+    public void AccessibleNames_NameTheStateAndTheChoice()
+    {
+        Assert.Equal("PC-04, 37 frames dropped", WallText.TileName("PC-04", "37 frames dropped"));
+        Assert.Equal("Quality, 1080p, 15 fps, 6.2 Mbit/s", WallText.QualityPickerName("1080p, 15 fps, 6.2 Mbit/s"));
+    }
+
+    [Fact]
     public void Rates_FollowTheCulture() =>
         Assert.Equal("Standard, 6,2 Mbit/s", WallText.SharpnessText(Sharpness.Standard, 6_220_800, CultureInfo.GetCultureInfo("de-DE")));
 }

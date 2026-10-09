@@ -72,6 +72,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private IReadOnlyList<SharpnessChoice> _sharpnessChoices = [];
     private SharpnessChoice _selectedSharpness = null!;
     private string _qualityButtonText = string.Empty;
+    private string _qualityPickerName = string.Empty;
     private string _networkLoadText = string.Empty;
 
     public RoomWallViewModel(
@@ -171,6 +172,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     /// <summary>The picker's button: quality and rate together.</summary>
     public string QualityButtonText => _qualityButtonText;
 
+    /// <summary>What a screen reader says for the picker: <c>Quality, {QualityButtonText}</c>.</summary>
+    public string QualityPickerName => _qualityPickerName;
+
     /// <summary>What the broadcast costs the network for the PCs selected and online.</summary>
     public string NetworkLoadText => _networkLoadText;
 
@@ -237,10 +241,19 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _stoppedByTeacher.Clear();
         foreach (var target in targets)
         {
-            if (!unreachable.Contains(target.DeviceId))
+            if (unreachable.Contains(target.DeviceId))
             {
-                _sendingTo.Add(target.DeviceId);
+                continue;
             }
+
+            // Removed from the room while the start was connecting: it is not sent the picture.
+            if (MemberOf(target.DeviceId) is null)
+            {
+                _broadcast.StopSendingTo(target.DeviceId);
+                continue;
+            }
+
+            _sendingTo.Add(target.DeviceId);
         }
 
         foreach (var tile in Tiles)
@@ -389,8 +402,10 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
         catch (Exception)
         {
-            loaded = [];
+            // A room that could not be read is not a room that was emptied: the wall keeps what it
+            // has (and keeps sending), and says so.
             _roomUnreadable = true;
+            return;
         }
 
         _members.Clear();
@@ -606,6 +621,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             tile.IsSelected = tile.CanSelect && member.Selected;
             tile.IsOnAir = _onAir;
             tile.ReceivingForText = _onAir ? WallText.Elapsed(now - _startedAt) : string.Empty;
+            tile.SelectBoxName = WallText.SelectBoxName(tile.Name);
+            tile.DetailsButtonName = WallText.DetailsButtonName(tile.Name);
+            tile.TileName = WallText.TileName(tile.Name, tile.StatusText);
 
             if (member.Selected && online)
             {
@@ -637,9 +655,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         Set(ref _pills, _onAir
             ? WallText.PillsOnAir(receiving, droppingNames.Count, reconnectingNames.Count)
             : WallText.PillsOffAir(ready, offline), nameof(Pills), SamePills);
-        Set(ref _barLine1, empty ? "No PCs to broadcast to" : _onAir ? "On air" : WallText.SelectedLine(selectedAndOnline, Tiles.Count), nameof(BarLine1));
+        Set(ref _barLine1, empty ? WallText.EmptyRoomLine1 : _onAir ? WallText.OnAirLine1 : WallText.SelectedLine(selectedAndOnline, Tiles.Count), nameof(BarLine1));
         Set(ref _barLine2, empty
-            ? "Set up devices to add the first one."
+            ? WallText.EmptyRoomLine2
             : _onAir ? WallText.OnAirLine(receiving, droppingNames, reconnectingNames) : WallText.OfflineLine(offlineNames), nameof(BarLine2));
         Set(ref _elapsedText, _onAir ? WallText.Elapsed(now - _startedAt) : string.Empty, nameof(ElapsedText));
         Set(ref _canStart, selectable && !_roomUnreadable && selectedAndOnline > 0, nameof(CanStart));
@@ -666,6 +684,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         Set(ref _sharpnessChoices, choices, nameof(SharpnessChoices), (a, b) => a.SequenceEqual(b));
         Set(ref _selectedSharpness, choices.Single(c => c.Value == _sharpness), nameof(SelectedSharpness));
         Set(ref _qualityButtonText, WallText.QualityButton(_selectedPreset.Label, rate, culture), nameof(QualityButtonText));
+        Set(ref _qualityPickerName, WallText.QualityPickerName(_qualityButtonText), nameof(QualityPickerName));
         Set(ref _networkLoadText, WallText.NetworkLoad(rate, selectedAndOnline, culture), nameof(NetworkLoadText));
     }
 

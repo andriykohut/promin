@@ -15,10 +15,11 @@ public sealed class SetupViewModelTests
     private readonly FakeDiscovery _discovery = new();
     private readonly InMemoryRoomStore _store = new();
     private readonly ConsoleHealth _health = new();
+    private readonly FakeBroadcastController _broadcast = new();
 
     private SetupViewModel Activated(Action<Action>? runOnUiThread = null)
     {
-        var vm = new SetupViewModel(_client, _discovery, _store, _health, () => Today, runOnUiThread ?? (a => a()));
+        var vm = new SetupViewModel(_client, _discovery, _store, _health, _broadcast, () => Today, runOnUiThread ?? (a => a()));
         vm.Activate();
         return vm;
     }
@@ -400,6 +401,17 @@ public sealed class SetupViewModelTests
         Assert.Equal(SetupRowStatus.NotPaired, row.Status);
         Assert.Null(vm.Banner);
         Assert.True(vm.ShowCodeCard);
+    }
+
+    [Fact]
+    public void Remove_StopsTheBroadcastToThatPc_AtOnce()
+    {
+        _store.Members.Add(new RoomMember(Id(1), "PC-01", "192.168.1.21", 17843, Today, Selected: true));
+        var vm = Activated();
+
+        vm.Remove(vm.Rows[0]);
+
+        Assert.Equal([Id(1)], _broadcast.StoppedSendingTo);
     }
 
     [Fact]

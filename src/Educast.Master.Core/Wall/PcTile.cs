@@ -22,6 +22,9 @@ public sealed class PcTile : INotifyPropertyChanged
     private int _framesDropped;
     private int _framesOffered;
     private string _receivingForText = string.Empty;
+    private string _selectBoxName = string.Empty;
+    private string _detailsButtonName = string.Empty;
+    private string _tileName = string.Empty;
 
     public PcTile(RoomMember member, TimeSpan dropWindow)
     {
@@ -109,6 +112,27 @@ public sealed class PcTile : INotifyPropertyChanged
     {
         get => _receivingForText;
         internal set => Set(ref _receivingForText, value);
+    }
+
+    /// <summary>What a screen reader says for the checkbox: <c>Select {name}</c>.</summary>
+    public string SelectBoxName
+    {
+        get => _selectBoxName;
+        internal set => Set(ref _selectBoxName, value);
+    }
+
+    /// <summary>What a screen reader says for the details button: <c>Details for {name}</c>.</summary>
+    public string DetailsButtonName
+    {
+        get => _detailsButtonName;
+        internal set => Set(ref _detailsButtonName, value);
+    }
+
+    /// <summary>What a screen reader says for the tile: <c>{name}, {status}</c>.</summary>
+    public string TileName
+    {
+        get => _tileName;
+        internal set => Set(ref _tileName, value);
     }
 
     internal RecentDrops Drops { get; }

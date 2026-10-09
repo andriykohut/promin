@@ -6,6 +6,12 @@ namespace Educast.Master.Core.Wall;
 /// <summary>Every string the room wall shows, from counts and names, so the wording is tested on its own.</summary>
 public static class WallText
 {
+    public const string EmptyRoomLine1 = "No PCs to broadcast to";
+
+    public const string EmptyRoomLine2 = "Set up devices to add the first one.";
+
+    public const string OnAirLine1 = "On air";
+
     public static string Status(PcTileState state, int framesDropped) => state switch
     {
         PcTileState.Ready => "Ready",
@@ -89,8 +95,18 @@ public static class WallText
         };
     }
 
+    // What a screen reader hears.
+
+    public static string SelectBoxName(string pcName) => $"Select {pcName}";
+
+    public static string DetailsButtonName(string pcName) => $"Details for {pcName}";
+
+    public static string TileName(string pcName, string statusText) => $"{pcName}, {statusText}";
+
+    public static string QualityPickerName(string qualityButtonText) => $"Quality, {qualityButtonText}";
+
     private static string Mbit(int bitsPerSecond, CultureInfo culture) => (bitsPerSecond / 1_000_000.0).ToString("0.0", culture);
 
     private static IReadOnlyList<WallPill> Pills(params (PcTileState State, int Count, string Word)[] pills) =>
-        pills.Where(p => p.Count > 0).Select(p => new WallPill(p.State, $"{p.Count} {p.Word}")).ToList();
+        pills.Where(p => p.Count > 0).Select(p => new WallPill(p.State, p.Count, p.Word)).ToList();
 }
