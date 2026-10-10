@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using Promin.Master.Core;
 using Promin.Master.Core.Setup;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -145,11 +146,11 @@ public sealed partial class SetupPage : Page
             var code = new EnterCodeViewModel();
             var box = new PasswordBox
             {
-                PlaceholderText = "6 digits",
+                PlaceholderText = Strings.Setup_CodePlaceholder,
                 PasswordRevealMode = PasswordRevealMode.Peek,
                 InputScope = NumericPinScope(),
             };
-            AutomationProperties.SetName(box, "Room code");
+            AutomationProperties.SetName(box, Strings.RoomCode);
             var hint = new TextBlock
             {
                 Text = EnterCodeViewModel.HintText,
@@ -163,10 +164,10 @@ public sealed partial class SetupPage : Page
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
-                Title = $"Room code for {row.Name}",
+                Title = Phrase.Format(Strings.Dialog_CodeTitle, ("name", row.Name)),
                 Content = new StackPanel { Children = { box, hint } },
-                PrimaryButtonText = "Pair",
-                CloseButtonText = "Cancel",
+                PrimaryButtonText = Strings.Pair,
+                CloseButtonText = Strings.Cancel,
                 DefaultButton = ContentDialogButton.Primary,
                 IsPrimaryButtonEnabled = false,
             };

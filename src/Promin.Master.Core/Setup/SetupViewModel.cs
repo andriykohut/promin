@@ -110,7 +110,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     public IReadOnlyList<ChecklistItem> Checklist => SetupChecklist.Items;
 
     /// <summary>The hint under the room code field while it holds something that is not a code.</summary>
-    public const string CodeHintText = "The code is 6 digits";
+    public static string CodeHintText => Strings.Setup_CodeHint;
 
     /// <summary>
     /// Whatever the room code field holds, raw — spaces, hyphens and letters included. Never
@@ -149,17 +149,17 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         {
             if (_isPairing)
             {
-                return $"Pairing {_batchIndex} of {_batchTotal}";
+                return Phrase.Format(Strings.Setup_PairingProgress, ("index", _batchIndex), ("total", _batchTotal));
             }
 
             var failed = Rows.Count(r => r.IsFailed);
             if (failed > 0)
             {
-                return $"Try the {failed} again";
+                return Phrase.Format(Strings.Setup_TryFailedAgain, ("count", failed));
             }
 
             var toPair = Rows.Count(r => r.IsPairable);
-            return toPair > 0 ? $"Pair all {toPair}" : "Pair all";
+            return toPair > 0 ? Phrase.Format(Strings.Setup_PairAllCount, ("count", toPair)) : Strings.Setup_PairAll;
         }
     }
 
@@ -176,15 +176,17 @@ public sealed class SetupViewModel : INotifyPropertyChanged
             var paired = Rows.Count(r => r.Status == SetupRowStatus.InRoom);
             if (_isPairing)
             {
-                return $"{paired} paired so far";
+                return Phrase.Format(Strings.Setup_PairedSoFar, ("count", paired));
             }
 
             if (paired == 0)
             {
-                return $"{all} found, none paired yet";
+                return Phrase.Format(Strings.Setup_FoundNonePaired, ("count", all));
             }
 
-            return paired == all ? $"{all} paired" : $"{paired} paired, {all - paired} not";
+            return paired == all
+                ? Phrase.Format(Strings.Setup_AllPaired, ("count", all))
+                : Phrase.Format(Strings.Setup_SomePaired, ("paired", paired), ("rest", all - paired));
         }
     }
 
@@ -204,16 +206,18 @@ public sealed class SetupViewModel : INotifyPropertyChanged
 
             if (failed > 0 && paired > 0)
             {
-                var attention = failed == 1 ? "1 needs attention below." : $"{failed} need attention below.";
-                return new SetupBanner(SetupBannerKind.Warning, $"{paired} of {all} PCs are in this room.", attention);
+                return new SetupBanner(
+                    SetupBannerKind.Warning,
+                    Phrase.Format(Strings.Setup_SomeInRoom, ("paired", paired), ("all", all)),
+                    Phrase.Format(Strings.Setup_NeedAttention, ("count", failed)));
             }
 
             if (paired == all)
             {
                 return new SetupBanner(
                     SetupBannerKind.Success,
-                    all == 1 ? "1 PC is in this room." : $"All {all} PCs are in this room.",
-                    "You only do this once. They reconnect by themselves from now on.");
+                    Phrase.Format(Strings.Setup_AllInRoom, ("count", all)),
+                    Strings.Setup_OnlyOnce);
             }
 
             return null;

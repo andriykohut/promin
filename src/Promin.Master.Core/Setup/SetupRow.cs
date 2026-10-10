@@ -98,22 +98,22 @@ public sealed class SetupRow : INotifyPropertyChanged
 
     public string StatusText => _status switch
     {
-        SetupRowStatus.NotPaired => "Not paired",
-        SetupRowStatus.Waiting => "Waiting",
-        SetupRowStatus.Pairing => "Pairing",
-        SetupRowStatus.InRoom => "In this room",
-        SetupRowStatus.WrongCode => "Wrong room code",
-        SetupRowStatus.Unreachable => "Cannot reach this PC",
-        SetupRowStatus.CannotPairNow => "Cannot pair right now",
+        SetupRowStatus.NotPaired => Strings.Row_NotPaired,
+        SetupRowStatus.Waiting => Strings.Row_Waiting,
+        SetupRowStatus.Pairing => Strings.Row_Pairing,
+        SetupRowStatus.InRoom => Strings.Row_InRoom,
+        SetupRowStatus.WrongCode => Strings.Row_WrongCode,
+        SetupRowStatus.Unreachable => Strings.Row_Unreachable,
+        SetupRowStatus.CannotPairNow => Strings.Row_CannotPairNow,
         _ => string.Empty,
     };
 
     /// <summary>The second line under a failure; null for every other status.</summary>
     public string? StatusDetail => _status switch
     {
-        SetupRowStatus.WrongCode => "This PC was installed with a different code.",
-        SetupRowStatus.Unreachable => "It is announcing itself, but its firewall may be blocking Promin.",
-        SetupRowStatus.CannotPairNow => "Restart Promin on it and try again.",
+        SetupRowStatus.WrongCode => Strings.Row_WrongCodeDetail,
+        SetupRowStatus.Unreachable => Strings.Row_UnreachableDetail,
+        SetupRowStatus.CannotPairNow => Strings.Row_CannotPairNowDetail,
         _ => null,
     };
 

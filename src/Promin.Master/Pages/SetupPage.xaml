@@ -3,6 +3,7 @@
     x:Class="Promin.Master.Pages.SetupPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:core="using:Promin.Master.Core"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:setup="using:Promin.Master.Core.Setup"
@@ -157,21 +158,21 @@
                         <!-- Pair and Try again use the main field's code, so they need a valid one. -->
                         <Button
                             Click="Pair_Click"
-                            Content="Pair"
+                            Content="{x:Bind core:Strings.Pair}"
                             IsEnabled="{x:Bind CanPairNow, Mode=OneWay}"
                             Visibility="{x:Bind ShowsPair, Mode=OneWay}" />
                         <Button
                             Click="EnterCode_Click"
-                            Content="Enter its code"
+                            Content="{x:Bind core:Strings.Setup_EnterItsCode}"
                             IsEnabled="{x:Bind CanAct, Mode=OneWay}"
                             Visibility="{x:Bind ShowsEnterCode, Mode=OneWay}" />
                         <Button
                             Click="Pair_Click"
-                            Content="Try again"
+                            Content="{x:Bind core:Strings.TryAgain}"
                             IsEnabled="{x:Bind CanPairNow, Mode=OneWay}"
                             Visibility="{x:Bind ShowsTryAgain, Mode=OneWay}" />
                         <Button
-                            AutomationProperties.Name="More"
+                            AutomationProperties.Name="{x:Bind core:Strings.More}"
                             Style="{StaticResource IconButtonStyle}"
                             Visibility="{x:Bind ShowsMenu, Mode=OneWay}">
                             <FontIcon FontSize="14" Glyph="&#xE712;" />
@@ -181,12 +182,12 @@
                                         Click="Rename_Click"
                                         IsEnabled="{x:Bind CanEdit, Mode=OneWay}"
                                         Tag="{x:Bind}"
-                                        Text="Rename" />
+                                        Text="{x:Bind core:Strings.Rename}" />
                                     <MenuFlyoutItem
                                         Click="Remove_Click"
                                         IsEnabled="{x:Bind CanEdit, Mode=OneWay}"
                                         Tag="{x:Bind}"
-                                        Text="Remove from this room" />
+                                        Text="{x:Bind core:Strings.RemoveFromRoom}" />
                                 </MenuFlyout>
                             </Button.Flyout>
                         </Button>
@@ -207,7 +208,7 @@
                 <Button
                     Margin="-8,0,0,0"
                     VerticalAlignment="Center"
-                    AutomationProperties.Name="Back"
+                    AutomationProperties.Name="{x:Bind core:Strings.Back}"
                     Click="Back_Click"
                     Style="{StaticResource IconButtonStyle}">
                     <FontIcon FontSize="14" Glyph="&#xE72B;" />
@@ -215,7 +216,7 @@
                 <TextBlock
                     VerticalAlignment="Center"
                     Style="{StaticResource TitleTextBlockStyle}"
-                    Text="Set up devices" />
+                    Text="{x:Bind core:Strings.SetUpDevices}" />
             </StackPanel>
 
             <!--
@@ -233,7 +234,7 @@
                 <InfoBar.ActionButton>
                     <Button
                         Click="Back_Click"
-                        Content="Go to This room"
+                        Content="{x:Bind core:Strings.Setup_GoToRoom}"
                         Visibility="{x:Bind ViewModel.ShowsGoToRoom, Mode=OneWay}" />
                 </InfoBar.ActionButton>
             </InfoBar>
@@ -273,13 +274,13 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Room code" />
+                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="{x:Bind core:Strings.RoomCode}" />
                         <TextBlock
                             MaxWidth="480"
                             Margin="0,2,0,0"
                             HorizontalAlignment="Left"
                             Style="{StaticResource SecondaryTextStyle}"
-                            Text="The 6-digit code you chose when installing Promin on the student PCs."
+                            Text="{x:Bind core:Strings.Setup_CodeHelp}"
                             TextWrapping="Wrap" />
                     </StackPanel>
                     <!--
@@ -293,11 +294,11 @@
                         Grid.Column="1"
                         MinWidth="160"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Room code"
+                        AutomationProperties.Name="{x:Bind core:Strings.RoomCode}"
                         InputScope="NumericPin"
                         PasswordChanged="CodeBox_PasswordChanged"
                         PasswordRevealMode="Peek"
-                        PlaceholderText="6 digits" />
+                        PlaceholderText="{x:Bind core:Strings.Setup_CodePlaceholder}" />
                     <!--
                         The hint keeps its line whether or not it shows: hidden by opacity, not
                         collapsed, and then out of the automation tree too. It is a polite live
@@ -334,7 +335,7 @@
                         Grid.Column="3"
                         VerticalAlignment="Center"
                         Click="Cancel_Click"
-                        Content="Cancel"
+                        Content="{x:Bind core:Strings.Cancel}"
                         Visibility="{x:Bind ViewModel.IsPairing, Mode=OneWay}" />
                 </Grid>
             </Border>
@@ -349,7 +350,7 @@
                 <TextBlock
                     VerticalAlignment="Bottom"
                     Style="{StaticResource SectionHeadingStyle}"
-                    Text="Student PCs" />
+                    Text="{x:Bind core:Strings.Setup_StudentPcs}" />
                 <TextBlock
                     Grid.Column="1"
                     Margin="0,0,0,1"
@@ -363,7 +364,7 @@
                     Spacing="8"
                     Visibility="{x:Bind ViewModel.ShowsStillLooking, Mode=OneWay}">
                     <ProgressRing IsActive="{x:Bind ViewModel.ShowsStillLooking, Mode=OneWay}" Style="{StaticResource SmallRingStyle}" />
-                    <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="Still looking" />
+                    <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="{x:Bind core:Strings.Setup_StillLooking}" />
                 </StackPanel>
             </Grid>
 
@@ -395,12 +396,12 @@
                         HorizontalAlignment="Center"
                         FontSize="18"
                         FontWeight="SemiBold"
-                        Text="Looking for student PCs" />
+                        Text="{x:Bind core:Strings.Setup_Looking}" />
                     <TextBlock
                         Margin="0,2,0,0"
                         HorizontalAlignment="Center"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="They appear here a few seconds after they start."
+                        Text="{x:Bind core:Strings.Setup_LookingText}"
                         TextAlignment="Center"
                         TextWrapping="Wrap" />
                 </StackPanel>
@@ -414,7 +415,7 @@
             <Expander
                 HorizontalAlignment="Stretch"
                 HorizontalContentAlignment="Stretch"
-                Header="A PC is missing?"
+                Header="{x:Bind core:Strings.Setup_MissingHeader}"
                 IsExpanded="{x:Bind ViewModel.IsChecklistExpanded, Mode=TwoWay}">
                 <ItemsRepeater ItemTemplate="{StaticResource ChecklistTemplate}" ItemsSource="{x:Bind ViewModel.Checklist}">
                     <ItemsRepeater.Layout>

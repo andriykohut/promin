@@ -7,4 +7,6 @@ public sealed class InMemoryWallSettings : IWallSettings
     public string? QualityLabel { get; set; }
 
     public string? SharpnessName { get; set; }
+
+    public string? Language { get; set; }
 }

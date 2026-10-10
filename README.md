@@ -84,6 +84,12 @@ Nothing starts the agent with Windows or restarts it if it exits; for now that i
 - On **Set up devices**, pair only the PCs you can account for. A device that knows the code can announce itself under any name.
 - Any device on the same network can disrupt Promin (for example, keep PCs from connecting), though it cannot watch.
 
+## Languages
+
+The console is in English and Ukrainian. It starts in the Windows display language; the globe button in the title bar changes it, from the next start.
+
+Every text the console shows is in `src/Promin.Master.Core/Strings.resx` (English, the source). A translation is a file beside it named for its language, such as `Strings.uk.resx`. Counted texts use the ICU plural format, so each language lists the forms it needs. Logs and the agent's terminal lines stay in English.
+
 ## Where things are kept
 
 | What | Where |

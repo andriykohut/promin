@@ -1,0 +1,405 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="SetUpDevices" xml:space="preserve">
+    <value>Set up devices</value>
+  </data>
+  <data name="Pair" xml:space="preserve">
+    <value>Pair</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Rename" xml:space="preserve">
+    <value>Rename</value>
+  </data>
+  <data name="Remove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="RemoveFromRoom" xml:space="preserve">
+    <value>Remove from this room</value>
+  </data>
+  <data name="TryAgain" xml:space="preserve">
+    <value>Try again</value>
+  </data>
+  <data name="More" xml:space="preserve">
+    <value>More</value>
+  </data>
+  <data name="Back" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="RoomCode" xml:space="preserve">
+    <value>Room code</value>
+  </data>
+  <data name="Quality" xml:space="preserve">
+    <value>Quality</value>
+  </data>
+  <data name="Sharpness" xml:space="preserve">
+    <value>Sharpness</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="Language_System" xml:space="preserve">
+    <value>Windows language</value>
+  </data>
+  <data name="Language_RestartTitle" xml:space="preserve">
+    <value>Restart Promin to change the language?</value>
+  </data>
+  <data name="Language_RestartText" xml:space="preserve">
+    <value>A broadcast that is running will stop. If you choose Later, the language changes the next time Promin starts.</value>
+  </data>
+  <data name="Language_RestartNow" xml:space="preserve">
+    <value>Restart now</value>
+  </data>
+  <data name="Later" xml:space="preserve">
+    <value>Later</value>
+  </data>
+  <data name="Room_Title" xml:space="preserve">
+    <value>This room</value>
+  </data>
+  <data name="Room_EmptyTitle" xml:space="preserve">
+    <value>No PCs in this room yet</value>
+  </data>
+  <data name="Room_EmptyText" xml:space="preserve">
+    <value>Pair each student PC once. After that they appear here every time you open Promin.</value>
+  </data>
+  <data name="Room_SelectAll" xml:space="preserve">
+    <value>Select all</value>
+  </data>
+  <data name="Room_ClearSelection" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Room_Start" xml:space="preserve">
+    <value>Start broadcast</value>
+  </data>
+  <data name="Room_Stop" xml:space="preserve">
+    <value>Stop broadcast</value>
+  </data>
+  <data name="Tile_FramesDropped" xml:space="preserve">
+    <value>Frames dropped</value>
+  </data>
+  <data name="Tile_FramesOf" xml:space="preserve">
+    <value>{dropped} of {offered}</value>
+    <comment>Frames dropped out of frames sent, for one PC.</comment>
+  </data>
+  <data name="Tile_ReceivingFor" xml:space="preserve">
+    <value>Receiving for</value>
+  </data>
+  <data name="Tile_Address" xml:space="preserve">
+    <value>Address</value>
+  </data>
+  <data name="Tile_Paired" xml:space="preserve">
+    <value>Paired</value>
+    <comment>Label of the date this PC was paired.</comment>
+  </data>
+  <data name="Tile_StopSending" xml:space="preserve">
+    <value>Stop sending to this PC</value>
+  </data>
+  <data name="Dialog_RenameTitle" xml:space="preserve">
+    <value>Rename {name}</value>
+  </data>
+  <data name="Dialog_RemoveTitle" xml:space="preserve">
+    <value>Remove {name} from this room?</value>
+  </data>
+  <data name="Dialog_RemoveText" xml:space="preserve">
+    <value>It stops receiving your broadcasts. To add it back you will need the room code.</value>
+  </data>
+  <data name="Dialog_CodeTitle" xml:space="preserve">
+    <value>Room code for {name}</value>
+  </data>
+  <data name="Setup_EnterItsCode" xml:space="preserve">
+    <value>Enter its code</value>
+  </data>
+  <data name="Setup_GoToRoom" xml:space="preserve">
+    <value>Go to This room</value>
+  </data>
+  <data name="Setup_CodeHelp" xml:space="preserve">
+    <value>The 6-digit code you chose when installing Promin on the student PCs.</value>
+  </data>
+  <data name="Setup_CodePlaceholder" xml:space="preserve">
+    <value>6 digits</value>
+  </data>
+  <data name="Setup_CodeHint" xml:space="preserve">
+    <value>The code is 6 digits</value>
+  </data>
+  <data name="Setup_StudentPcs" xml:space="preserve">
+    <value>Student PCs</value>
+  </data>
+  <data name="Setup_StillLooking" xml:space="preserve">
+    <value>Still looking</value>
+  </data>
+  <data name="Setup_Looking" xml:space="preserve">
+    <value>Looking for student PCs</value>
+  </data>
+  <data name="Setup_LookingText" xml:space="preserve">
+    <value>They appear here a few seconds after they start.</value>
+  </data>
+  <data name="Setup_MissingHeader" xml:space="preserve">
+    <value>A PC is missing?</value>
+  </data>
+  <data name="Setup_PairingProgress" xml:space="preserve">
+    <value>Pairing {index} of {total}</value>
+  </data>
+  <data name="Setup_TryFailedAgain" xml:space="preserve">
+    <value>Try the {count} again</value>
+    <comment>Button: retry the PCs that failed to pair.</comment>
+  </data>
+  <data name="Setup_PairAllCount" xml:space="preserve">
+    <value>Pair all {count}</value>
+  </data>
+  <data name="Setup_PairAll" xml:space="preserve">
+    <value>Pair all</value>
+  </data>
+  <data name="Setup_PairedSoFar" xml:space="preserve">
+    <value>{count} paired so far</value>
+  </data>
+  <data name="Setup_FoundNonePaired" xml:space="preserve">
+    <value>{count} found, none paired yet</value>
+  </data>
+  <data name="Setup_AllPaired" xml:space="preserve">
+    <value>{count} paired</value>
+  </data>
+  <data name="Setup_SomePaired" xml:space="preserve">
+    <value>{paired} paired, {rest} not</value>
+  </data>
+  <data name="Setup_NeedAttention" xml:space="preserve">
+    <value>{count, plural, one {{count} needs attention below.} other {{count} need attention below.}}</value>
+    <comment>How many PCs failed to pair.</comment>
+  </data>
+  <data name="Setup_SomeInRoom" xml:space="preserve">
+    <value>{paired} of {all} PCs are in this room.</value>
+  </data>
+  <data name="Setup_AllInRoom" xml:space="preserve">
+    <value>{count, plural, =1 {1 PC is in this room.} other {All {count} PCs are in this room.}}</value>
+  </data>
+  <data name="Setup_OnlyOnce" xml:space="preserve">
+    <value>You only do this once. They reconnect by themselves from now on.</value>
+  </data>
+  <data name="Row_NotPaired" xml:space="preserve">
+    <value>Not paired</value>
+  </data>
+  <data name="Row_Waiting" xml:space="preserve">
+    <value>Waiting</value>
+  </data>
+  <data name="Row_Pairing" xml:space="preserve">
+    <value>Pairing</value>
+  </data>
+  <data name="Row_InRoom" xml:space="preserve">
+    <value>In this room</value>
+  </data>
+  <data name="Row_WrongCode" xml:space="preserve">
+    <value>Wrong room code</value>
+  </data>
+  <data name="Row_Unreachable" xml:space="preserve">
+    <value>Cannot reach this PC</value>
+  </data>
+  <data name="Row_CannotPairNow" xml:space="preserve">
+    <value>Cannot pair right now</value>
+  </data>
+  <data name="Row_WrongCodeDetail" xml:space="preserve">
+    <value>This PC was installed with a different code.</value>
+  </data>
+  <data name="Row_UnreachableDetail" xml:space="preserve">
+    <value>It is announcing itself, but its firewall may be blocking Promin.</value>
+  </data>
+  <data name="Row_CannotPairNowDetail" xml:space="preserve">
+    <value>Restart Promin on it and try again.</value>
+  </data>
+  <data name="Check_OnLead" xml:space="preserve">
+    <value>Is it switched on</value>
+  </data>
+  <data name="Check_OnRest" xml:space="preserve">
+    <value>, and is Promin running on it? It starts with Windows after install.</value>
+  </data>
+  <data name="Check_NetworkLead" xml:space="preserve">
+    <value>Is it on the same network</value>
+  </data>
+  <data name="Check_NetworkRest" xml:space="preserve">
+    <value> as this PC? Guest Wi-Fi and separate VLANs do not work.</value>
+  </data>
+  <data name="Check_FirewallLead" xml:space="preserve">
+    <value>Is its firewall letting Promin through?</value>
+  </data>
+  <data name="Check_FirewallRest" xml:space="preserve">
+    <value> Allow UDP port {port}. The setup guide has the steps.</value>
+  </data>
+  <data name="Banner_SaveErrorTitle" xml:space="preserve">
+    <value>Promin could not save this room.</value>
+  </data>
+  <data name="Banner_SaveErrorText" xml:space="preserve">
+    <value>Check that this PC's disk is not full, then try again.</value>
+  </data>
+  <data name="Banner_ReadErrorTitle" xml:space="preserve">
+    <value>Promin could not read this room.</value>
+  </data>
+  <data name="Banner_ReadErrorText" xml:space="preserve">
+    <value>Close any other copy of Promin, then start it again.</value>
+  </data>
+  <data name="Banner_DiscoveryTitle" xml:space="preserve">
+    <value>Promin cannot look for student PCs.</value>
+  </data>
+  <data name="Banner_DiscoveryText" xml:space="preserve">
+    <value>Another program on this PC is using network port {port}. Close any other copy of Promin, then open this screen again.</value>
+  </data>
+  <data name="Fault_CertificateTitle" xml:space="preserve">
+    <value>This PC's certificate cannot be used.</value>
+  </data>
+  <data name="Fault_CertificateText" xml:space="preserve">
+    <value>Promin cannot pair or broadcast until it is repaired. Restart Promin; if this stays, remove the folder %LocalAppData%\Promin\identity and pair the room again.</value>
+  </data>
+  <data name="Fault_WindowsTitle" xml:space="preserve">
+    <value>Promin needs Windows 11.</value>
+  </data>
+  <data name="Fault_WindowsText" xml:space="preserve">
+    <value>This version of Windows cannot make the secure connections Promin uses.</value>
+  </data>
+  <data name="Status_Ready" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="Status_Offline" xml:space="preserve">
+    <value>Offline</value>
+  </data>
+  <data name="Status_Receiving" xml:space="preserve">
+    <value>Receiving</value>
+  </data>
+  <data name="Status_Reconnecting" xml:space="preserve">
+    <value>Reconnecting</value>
+  </data>
+  <data name="Status_FramesDropped" xml:space="preserve">
+    <value>{count, plural, one {{count} frame dropped} other {{count} frames dropped}}</value>
+  </data>
+  <data name="Detail_Dropping" xml:space="preserve">
+    <value>Its connection is slow. The other PCs are not affected.</value>
+  </data>
+  <data name="Detail_Reconnecting" xml:space="preserve">
+    <value>It dropped off the network. It rejoins by itself when it is back.</value>
+  </data>
+  <data name="Detail_Offline" xml:space="preserve">
+    <value>It is switched off or not on this network.</value>
+  </data>
+  <data name="Pill_Ready" xml:space="preserve">
+    <value>{count, plural, other {ready}}</value>
+    <comment>Shown after a number of PCs, as in: 3 ready.</comment>
+  </data>
+  <data name="Pill_Offline" xml:space="preserve">
+    <value>{count, plural, other {offline}}</value>
+    <comment>Shown after a number of PCs, as in: 2 offline.</comment>
+  </data>
+  <data name="Pill_Receiving" xml:space="preserve">
+    <value>{count, plural, other {receiving}}</value>
+    <comment>Shown after a number of PCs, as in: 5 receiving.</comment>
+  </data>
+  <data name="Pill_Dropping" xml:space="preserve">
+    <value>{count, plural, other {dropping frames}}</value>
+    <comment>Shown after a number of PCs, as in: 1 dropping frames.</comment>
+  </data>
+  <data name="Pill_Reconnecting" xml:space="preserve">
+    <value>{count, plural, other {reconnecting}}</value>
+    <comment>Shown after a number of PCs, as in: 2 reconnecting.</comment>
+  </data>
+  <data name="Wall_EmptyLine1" xml:space="preserve">
+    <value>No PCs to broadcast to</value>
+  </data>
+  <data name="Wall_EmptyLine2" xml:space="preserve">
+    <value>Set up devices to add the first one.</value>
+  </data>
+  <data name="Wall_OnAir" xml:space="preserve">
+    <value>On air</value>
+  </data>
+  <data name="Wall_Selected" xml:space="preserve">
+    <value>{selected} of {all} PCs selected</value>
+  </data>
+  <data name="Wall_OfflineOne" xml:space="preserve">
+    <value>{name} is offline. It joins by itself if it comes back.</value>
+  </data>
+  <data name="Wall_OfflineMany" xml:space="preserve">
+    <value>{count} PCs are offline. They join by themselves if they come back.</value>
+    <comment>count is 2 or more.</comment>
+  </data>
+  <data name="Wall_ReceivingNone" xml:space="preserve">
+    <value>No PCs are receiving.</value>
+  </data>
+  <data name="Wall_ReceivingAll" xml:space="preserve">
+    <value>All {count} PCs receiving well.</value>
+    <comment>count is 2 or more.</comment>
+  </data>
+  <data name="Wall_Receiving" xml:space="preserve">
+    <value>{count, plural, one {{count} PC receiving well.} other {{count} PCs receiving well.}}</value>
+  </data>
+  <data name="Wall_DroppingOne" xml:space="preserve">
+    <value>{name} is dropping frames.</value>
+  </data>
+  <data name="Wall_DroppingMany" xml:space="preserve">
+    <value>{count} PCs are dropping frames.</value>
+    <comment>count is 2 or more.</comment>
+  </data>
+  <data name="Wall_ReconnectingOne" xml:space="preserve">
+    <value>{name} is reconnecting.</value>
+  </data>
+  <data name="Wall_ReconnectingMany" xml:space="preserve">
+    <value>{count} PCs are reconnecting.</value>
+    <comment>count is 2 or more.</comment>
+  </data>
+  <data name="Sharpness_Light" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="Sharpness_Standard" xml:space="preserve">
+    <value>Standard</value>
+  </data>
+  <data name="Sharpness_Sharp" xml:space="preserve">
+    <value>Sharp</value>
+  </data>
+  <data name="Wall_WithRate" xml:space="preserve">
+    <value>{label}, {rate} Mbit/s</value>
+    <comment>A quality or sharpness name with its data rate.</comment>
+  </data>
+  <data name="Wall_LoadOne" xml:space="preserve">
+    <value>{rate} Mbit/s to 1 PC.</value>
+  </data>
+  <data name="Wall_LoadMany" xml:space="preserve">
+    <value>{rate} Mbit/s to each PC, about {total} Mbit/s for {count} PCs.</value>
+    <comment>count is 2 or more.</comment>
+  </data>
+  <data name="Wall_SelectName" xml:space="preserve">
+    <value>Select {name}</value>
+  </data>
+  <data name="Wall_DetailsName" xml:space="preserve">
+    <value>Details for {name}</value>
+  </data>
+  <data name="Message_StoppedTitle" xml:space="preserve">
+    <value>The broadcast stopped.</value>
+  </data>
+  <data name="Message_StoppedText" xml:space="preserve">
+    <value>This PC could not capture or encode its screen. Start the broadcast again.</value>
+  </data>
+  <data name="Message_NoPcTitle" xml:space="preserve">
+    <value>No student PCs can be reached.</value>
+  </data>
+  <data name="Message_NoPcText" xml:space="preserve">
+    <value>Check that they are switched on and on the same network as this PC.</value>
+  </data>
+  <data name="Message_SoftwareTitle" xml:space="preserve">
+    <value>Quality reduced to 720p, 10 fps.</value>
+  </data>
+  <data name="Message_SoftwareText" xml:space="preserve">
+    <value>This PC has no hardware video encoder, so Promin is encoding in software.</value>
+  </data>
+  <data name="Message_BackTitle" xml:space="preserve">
+    <value>{name} is back.</value>
+  </data>
+  <data name="Message_BackText" xml:space="preserve">
+    <value>It joined the broadcast by itself.</value>
+  </data>
+</root>

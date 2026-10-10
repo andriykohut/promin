@@ -1,0 +1,390 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="SetUpDevices" xml:space="preserve">
+    <value>Налаштувати пристрої</value>
+  </data>
+  <data name="Pair" xml:space="preserve">
+    <value>Додати</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Скасувати</value>
+  </data>
+  <data name="Rename" xml:space="preserve">
+    <value>Перейменувати</value>
+  </data>
+  <data name="Remove" xml:space="preserve">
+    <value>Вилучити</value>
+  </data>
+  <data name="RemoveFromRoom" xml:space="preserve">
+    <value>Вилучити з кімнати</value>
+  </data>
+  <data name="TryAgain" xml:space="preserve">
+    <value>Спробувати ще раз</value>
+  </data>
+  <data name="More" xml:space="preserve">
+    <value>Більше</value>
+  </data>
+  <data name="Back" xml:space="preserve">
+    <value>Назад</value>
+  </data>
+  <data name="RoomCode" xml:space="preserve">
+    <value>Код кімнати</value>
+  </data>
+  <data name="Quality" xml:space="preserve">
+    <value>Якість</value>
+  </data>
+  <data name="Sharpness" xml:space="preserve">
+    <value>Чіткість</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>Мова</value>
+  </data>
+  <data name="Language_System" xml:space="preserve">
+    <value>Мова Windows</value>
+  </data>
+  <data name="Language_RestartTitle" xml:space="preserve">
+    <value>Перезапустити Promin, щоб змінити мову?</value>
+  </data>
+  <data name="Language_RestartText" xml:space="preserve">
+    <value>Трансляція, якщо вона триває, зупиниться. Якщо вибрати «Пізніше», мова зміниться після наступного запуску Promin.</value>
+  </data>
+  <data name="Language_RestartNow" xml:space="preserve">
+    <value>Перезапустити зараз</value>
+  </data>
+  <data name="Later" xml:space="preserve">
+    <value>Пізніше</value>
+  </data>
+  <data name="Room_Title" xml:space="preserve">
+    <value>Ця кімната</value>
+  </data>
+  <data name="Room_EmptyTitle" xml:space="preserve">
+    <value>У цій кімнаті ще немає ПК</value>
+  </data>
+  <data name="Room_EmptyText" xml:space="preserve">
+    <value>Додайте кожен ПК учня один раз. Після цього вони з’являтимуться тут щоразу, коли ви відкриваєте Promin.</value>
+  </data>
+  <data name="Room_SelectAll" xml:space="preserve">
+    <value>Вибрати всі</value>
+  </data>
+  <data name="Room_ClearSelection" xml:space="preserve">
+    <value>Зняти вибір</value>
+  </data>
+  <data name="Room_Start" xml:space="preserve">
+    <value>Почати трансляцію</value>
+  </data>
+  <data name="Room_Stop" xml:space="preserve">
+    <value>Зупинити трансляцію</value>
+  </data>
+  <data name="Tile_FramesDropped" xml:space="preserve">
+    <value>Пропущено кадрів</value>
+  </data>
+  <data name="Tile_FramesOf" xml:space="preserve">
+    <value>{dropped} з {offered}</value>
+  </data>
+  <data name="Tile_ReceivingFor" xml:space="preserve">
+    <value>Отримує вже</value>
+  </data>
+  <data name="Tile_Address" xml:space="preserve">
+    <value>Адреса</value>
+  </data>
+  <data name="Tile_Paired" xml:space="preserve">
+    <value>Додано</value>
+  </data>
+  <data name="Tile_StopSending" xml:space="preserve">
+    <value>Не надсилати на цей ПК</value>
+  </data>
+  <data name="Dialog_RenameTitle" xml:space="preserve">
+    <value>Перейменувати {name}</value>
+  </data>
+  <data name="Dialog_RemoveTitle" xml:space="preserve">
+    <value>Вилучити {name} з цієї кімнати?</value>
+  </data>
+  <data name="Dialog_RemoveText" xml:space="preserve">
+    <value>Він більше не отримуватиме ваші трансляції. Щоб додати його знову, знадобиться код кімнати.</value>
+  </data>
+  <data name="Dialog_CodeTitle" xml:space="preserve">
+    <value>Код кімнати для {name}</value>
+  </data>
+  <data name="Setup_EnterItsCode" xml:space="preserve">
+    <value>Ввести його код</value>
+  </data>
+  <data name="Setup_GoToRoom" xml:space="preserve">
+    <value>Перейти до кімнати</value>
+  </data>
+  <data name="Setup_CodeHelp" xml:space="preserve">
+    <value>6-значний код, який ви вибрали, коли встановлювали Promin на ПК учнів.</value>
+  </data>
+  <data name="Setup_CodePlaceholder" xml:space="preserve">
+    <value>6 цифр</value>
+  </data>
+  <data name="Setup_CodeHint" xml:space="preserve">
+    <value>Код складається з 6 цифр</value>
+  </data>
+  <data name="Setup_StudentPcs" xml:space="preserve">
+    <value>ПК учнів</value>
+  </data>
+  <data name="Setup_StillLooking" xml:space="preserve">
+    <value>Пошук триває</value>
+  </data>
+  <data name="Setup_Looking" xml:space="preserve">
+    <value>Шукаємо ПК учнів</value>
+  </data>
+  <data name="Setup_LookingText" xml:space="preserve">
+    <value>Вони з’являються тут за кілька секунд після запуску.</value>
+  </data>
+  <data name="Setup_MissingHeader" xml:space="preserve">
+    <value>Бракує якогось ПК?</value>
+  </data>
+  <data name="Setup_PairingProgress" xml:space="preserve">
+    <value>Додаємо {index} з {total}</value>
+  </data>
+  <data name="Setup_TryFailedAgain" xml:space="preserve">
+    <value>Спробувати ще раз ({count})</value>
+  </data>
+  <data name="Setup_PairAllCount" xml:space="preserve">
+    <value>Додати всі {count}</value>
+  </data>
+  <data name="Setup_PairAll" xml:space="preserve">
+    <value>Додати всі</value>
+  </data>
+  <data name="Setup_PairedSoFar" xml:space="preserve">
+    <value>Додано поки що: {count}</value>
+  </data>
+  <data name="Setup_FoundNonePaired" xml:space="preserve">
+    <value>Знайдено: {count}, ще жоден не додано</value>
+  </data>
+  <data name="Setup_AllPaired" xml:space="preserve">
+    <value>Додано: {count}</value>
+  </data>
+  <data name="Setup_SomePaired" xml:space="preserve">
+    <value>Додано: {paired}, не додано: {rest}</value>
+  </data>
+  <data name="Setup_NeedAttention" xml:space="preserve">
+    <value>{count, plural, one {{count} потребує уваги нижче.} other {{count} потребують уваги нижче.}}</value>
+  </data>
+  <data name="Setup_SomeInRoom" xml:space="preserve">
+    <value>{paired} з {all} ПК у цій кімнаті.</value>
+  </data>
+  <data name="Setup_AllInRoom" xml:space="preserve">
+    <value>{count, plural, =1 {1 ПК у цій кімнаті.} other {Усі {count} ПК у цій кімнаті.}}</value>
+  </data>
+  <data name="Setup_OnlyOnce" xml:space="preserve">
+    <value>Це робиться лише один раз. Надалі вони під’єднуватимуться самі.</value>
+  </data>
+  <data name="Row_NotPaired" xml:space="preserve">
+    <value>Не додано</value>
+  </data>
+  <data name="Row_Waiting" xml:space="preserve">
+    <value>Очікує</value>
+  </data>
+  <data name="Row_Pairing" xml:space="preserve">
+    <value>Додаємо</value>
+  </data>
+  <data name="Row_InRoom" xml:space="preserve">
+    <value>У цій кімнаті</value>
+  </data>
+  <data name="Row_WrongCode" xml:space="preserve">
+    <value>Хибний код кімнати</value>
+  </data>
+  <data name="Row_Unreachable" xml:space="preserve">
+    <value>Не вдається зв’язатися з цим ПК</value>
+  </data>
+  <data name="Row_CannotPairNow" xml:space="preserve">
+    <value>Зараз не вдається додати</value>
+  </data>
+  <data name="Row_WrongCodeDetail" xml:space="preserve">
+    <value>На цьому ПК під час встановлення задано інший код.</value>
+  </data>
+  <data name="Row_UnreachableDetail" xml:space="preserve">
+    <value>Він повідомляє про себе, але його брандмауер, можливо, блокує Promin.</value>
+  </data>
+  <data name="Row_CannotPairNowDetail" xml:space="preserve">
+    <value>Перезапустіть на ньому Promin і спробуйте ще раз.</value>
+  </data>
+  <data name="Check_OnLead" xml:space="preserve">
+    <value>Чи він увімкнений</value>
+  </data>
+  <data name="Check_OnRest" xml:space="preserve">
+    <value> і чи запущено на ньому Promin? Після встановлення він запускається разом із Windows.</value>
+  </data>
+  <data name="Check_NetworkLead" xml:space="preserve">
+    <value>Чи він у тій самій мережі,</value>
+  </data>
+  <data name="Check_NetworkRest" xml:space="preserve">
+    <value> що й цей ПК? Гостьовий Wi-Fi та окремі VLAN не підходять.</value>
+  </data>
+  <data name="Check_FirewallLead" xml:space="preserve">
+    <value>Чи пропускає його брандмауер Promin?</value>
+  </data>
+  <data name="Check_FirewallRest" xml:space="preserve">
+    <value> Дозвольте UDP-порт {port}. Кроки є в посібнику з налаштування.</value>
+  </data>
+  <data name="Banner_SaveErrorTitle" xml:space="preserve">
+    <value>Promin не зміг зберегти цю кімнату.</value>
+  </data>
+  <data name="Banner_SaveErrorText" xml:space="preserve">
+    <value>Перевірте, чи не заповнений диск цього ПК, і спробуйте ще раз.</value>
+  </data>
+  <data name="Banner_ReadErrorTitle" xml:space="preserve">
+    <value>Promin не зміг прочитати цю кімнату.</value>
+  </data>
+  <data name="Banner_ReadErrorText" xml:space="preserve">
+    <value>Закрийте інші копії Promin і запустіть його знову.</value>
+  </data>
+  <data name="Banner_DiscoveryTitle" xml:space="preserve">
+    <value>Promin не може шукати ПК учнів.</value>
+  </data>
+  <data name="Banner_DiscoveryText" xml:space="preserve">
+    <value>Інша програма на цьому ПК використовує мережевий порт {port}. Закрийте інші копії Promin і відкрийте цей екран знову.</value>
+  </data>
+  <data name="Fault_CertificateTitle" xml:space="preserve">
+    <value>Сертифікат цього ПК не можна використати.</value>
+  </data>
+  <data name="Fault_CertificateText" xml:space="preserve">
+    <value>Promin не може додавати ПК і вести трансляцію, доки це не виправлено. Перезапустіть Promin; якщо не допоможе, видаліть папку %LocalAppData%\Promin\identity і додайте ПК до кімнати знову.</value>
+  </data>
+  <data name="Fault_WindowsTitle" xml:space="preserve">
+    <value>Для Promin потрібна Windows 11.</value>
+  </data>
+  <data name="Fault_WindowsText" xml:space="preserve">
+    <value>Ця версія Windows не може створювати захищені з’єднання, які використовує Promin.</value>
+  </data>
+  <data name="Status_Ready" xml:space="preserve">
+    <value>Готовий</value>
+  </data>
+  <data name="Status_Offline" xml:space="preserve">
+    <value>Не в мережі</value>
+  </data>
+  <data name="Status_Receiving" xml:space="preserve">
+    <value>Отримує</value>
+  </data>
+  <data name="Status_Reconnecting" xml:space="preserve">
+    <value>Відновлює зв’язок</value>
+  </data>
+  <data name="Status_FramesDropped" xml:space="preserve">
+    <value>{count, plural, one {Пропущено {count} кадр} few {Пропущено {count} кадри} many {Пропущено {count} кадрів} other {Пропущено {count} кадру}}</value>
+  </data>
+  <data name="Detail_Dropping" xml:space="preserve">
+    <value>Його з’єднання повільне. На інші ПК це не впливає.</value>
+  </data>
+  <data name="Detail_Reconnecting" xml:space="preserve">
+    <value>Він зник із мережі. Приєднається сам, коли повернеться.</value>
+  </data>
+  <data name="Detail_Offline" xml:space="preserve">
+    <value>Він вимкнений або не в цій мережі.</value>
+  </data>
+  <data name="Pill_Ready" xml:space="preserve">
+    <value>{count, plural, one {готовий} few {готові} other {готових}}</value>
+  </data>
+  <data name="Pill_Offline" xml:space="preserve">
+    <value>{count, plural, other {не в мережі}}</value>
+  </data>
+  <data name="Pill_Receiving" xml:space="preserve">
+    <value>{count, plural, one {отримує} other {отримують}}</value>
+  </data>
+  <data name="Pill_Dropping" xml:space="preserve">
+    <value>{count, plural, one {пропускає кадри} other {пропускають кадри}}</value>
+  </data>
+  <data name="Pill_Reconnecting" xml:space="preserve">
+    <value>{count, plural, one {відновлює зв’язок} other {відновлюють зв’язок}}</value>
+  </data>
+  <data name="Wall_EmptyLine1" xml:space="preserve">
+    <value>Немає ПК для трансляції</value>
+  </data>
+  <data name="Wall_EmptyLine2" xml:space="preserve">
+    <value>Налаштуйте пристрої, щоб додати перший.</value>
+  </data>
+  <data name="Wall_OnAir" xml:space="preserve">
+    <value>В ефірі</value>
+  </data>
+  <data name="Wall_Selected" xml:space="preserve">
+    <value>Вибрано {selected} з {all} ПК</value>
+  </data>
+  <data name="Wall_OfflineOne" xml:space="preserve">
+    <value>{name} не в мережі. Приєднається сам, коли повернеться.</value>
+  </data>
+  <data name="Wall_OfflineMany" xml:space="preserve">
+    <value>{count} ПК не в мережі. Приєднаються самі, коли повернуться.</value>
+  </data>
+  <data name="Wall_ReceivingNone" xml:space="preserve">
+    <value>Жоден ПК не отримує.</value>
+  </data>
+  <data name="Wall_ReceivingAll" xml:space="preserve">
+    <value>Усі {count} ПК отримують добре.</value>
+  </data>
+  <data name="Wall_Receiving" xml:space="preserve">
+    <value>{count, plural, one {{count} ПК отримує добре.} other {{count} ПК отримують добре.}}</value>
+  </data>
+  <data name="Wall_DroppingOne" xml:space="preserve">
+    <value>{name} пропускає кадри.</value>
+  </data>
+  <data name="Wall_DroppingMany" xml:space="preserve">
+    <value>{count} ПК пропускають кадри.</value>
+  </data>
+  <data name="Wall_ReconnectingOne" xml:space="preserve">
+    <value>{name} відновлює зв’язок.</value>
+  </data>
+  <data name="Wall_ReconnectingMany" xml:space="preserve">
+    <value>{count} ПК відновлюють зв’язок.</value>
+  </data>
+  <data name="Sharpness_Light" xml:space="preserve">
+    <value>Легка</value>
+  </data>
+  <data name="Sharpness_Standard" xml:space="preserve">
+    <value>Стандартна</value>
+  </data>
+  <data name="Sharpness_Sharp" xml:space="preserve">
+    <value>Висока</value>
+  </data>
+  <data name="Wall_WithRate" xml:space="preserve">
+    <value>{label}, {rate} Мбіт/с</value>
+  </data>
+  <data name="Wall_LoadOne" xml:space="preserve">
+    <value>{rate} Мбіт/с на 1 ПК.</value>
+  </data>
+  <data name="Wall_LoadMany" xml:space="preserve">
+    <value>{rate} Мбіт/с на кожен ПК, разом близько {total} Мбіт/с на {count} ПК.</value>
+  </data>
+  <data name="Wall_SelectName" xml:space="preserve">
+    <value>Вибрати {name}</value>
+  </data>
+  <data name="Wall_DetailsName" xml:space="preserve">
+    <value>Докладніше про {name}</value>
+  </data>
+  <data name="Message_StoppedTitle" xml:space="preserve">
+    <value>Трансляція зупинилася.</value>
+  </data>
+  <data name="Message_StoppedText" xml:space="preserve">
+    <value>Цей ПК не зміг захопити або закодувати свій екран. Почніть трансляцію знову.</value>
+  </data>
+  <data name="Message_NoPcTitle" xml:space="preserve">
+    <value>Не вдається зв’язатися з жодним ПК учнів.</value>
+  </data>
+  <data name="Message_NoPcText" xml:space="preserve">
+    <value>Перевірте, чи вони ввімкнені та чи в тій самій мережі, що й цей ПК.</value>
+  </data>
+  <data name="Message_SoftwareTitle" xml:space="preserve">
+    <value>Якість знижено до 720p, 10 кадр/с.</value>
+  </data>
+  <data name="Message_SoftwareText" xml:space="preserve">
+    <value>Цей ПК не має апаратного відеокодера, тому Promin кодує програмно.</value>
+  </data>
+  <data name="Message_BackTitle" xml:space="preserve">
+    <value>{name} повернувся.</value>
+  </data>
+  <data name="Message_BackText" xml:space="preserve">
+    <value>Він сам приєднався до трансляції.</value>
+  </data>
+</root>

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Promin.Master.Core;
+using Promin.Master.Core.Wall;
 using Promin.Master.Services;
 using Microsoft.UI.Xaml;
 
@@ -29,10 +30,21 @@ public partial class App : Application
 
         Trace.TraceInformation("Promin console {0} started.", typeof(App).Assembly.GetName().Version);
 
+        // Before anything builds a text: the language holds for the whole run.
+        AppLanguage.Apply(new JsonWallSettings(AppServices.SettingsPath).Language);
+
         Services = AppServices.Create();
 
-        _window = new MainWindow(Services.Health);
-        _window.Closed += (_, _) => Services.Dispose();
+        var window = new MainWindow(Services.Health);
+        window.Closed += (_, _) =>
+        {
+            Services.Dispose();
+            if (window.RestartRequested)
+            {
+                Microsoft.Windows.AppLifecycle.AppInstance.Restart(string.Empty);
+            }
+        };
+        _window = window;
         _window.Activate();
 
         _ = Services.CheckCertificateAsync(_window.DispatcherQueue);

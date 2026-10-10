@@ -1,3 +1,4 @@
+using System.Globalization;
 using Promin.Protocol;
 
 namespace Promin.Master.Core.Setup;
@@ -17,8 +18,11 @@ public static class SetupChecklist
 {
     public static IReadOnlyList<ChecklistItem> Items { get; } =
     [
-        new(1, "Is it switched on", ", and is Promin running on it? It starts with Windows after install."),
-        new(2, "Is it on the same network", " as this PC? Guest Wi-Fi and separate VLANs do not work."),
-        new(3, "Is its firewall letting Promin through?", $" Allow UDP port {ProminPorts.Quic}. The setup guide has the steps."),
+        new(1, Strings.Check_OnLead, Strings.Check_OnRest),
+        new(2, Strings.Check_NetworkLead, Strings.Check_NetworkRest),
+        new(
+            3,
+            Strings.Check_FirewallLead,
+            Phrase.Format(Strings.Check_FirewallRest, ("port", ProminPorts.Quic.ToString(CultureInfo.InvariantCulture)))),
     ];
 }

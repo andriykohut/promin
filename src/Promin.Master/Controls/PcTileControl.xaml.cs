@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Promin.Master.Core;
 using Promin.Master.Core.Wall;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -59,7 +60,8 @@ public sealed partial class PcTileControl : UserControl
     public Visibility IsBeingSentTo(PcTileState state) =>
         state is PcTileState.Receiving or PcTileState.DroppingFrames ? Visibility.Visible : Visibility.Collapsed;
 
-    public string FramesText(int dropped, int offered) => $"{dropped:N0} of {offered:N0}";
+    public string FramesText(int dropped, int offered) =>
+        Phrase.Format(Strings.Tile_FramesOf, ("dropped", dropped.ToString("N0")), ("offered", offered.ToString("N0")));
 
     private static Timeline Animate(DependencyObject target, string property, double from, double to)
     {

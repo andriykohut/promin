@@ -8,14 +8,13 @@ public sealed record LocalFault(string Title, string Message)
 {
     /// <summary>This PC's own certificate cannot complete a TLS handshake.</summary>
     public static LocalFault UnusableCertificate { get; } = new(
-        "This PC's certificate cannot be used.",
-        "Promin cannot pair or broadcast until it is repaired. Restart Promin; if this stays, remove the " +
-        @"folder %LocalAppData%\Promin\identity and pair the room again.");
+        Strings.Fault_CertificateTitle,
+        Strings.Fault_CertificateText);
 
     /// <summary>This Windows has no QUIC, so no secure connection can be made at all.</summary>
     public static LocalFault NoSecureTransport { get; } = new(
-        "Promin needs Windows 11.",
-        "This version of Windows cannot make the secure connections Promin uses.");
+        Strings.Fault_WindowsTitle,
+        Strings.Fault_WindowsText);
 }
 
 /// <summary>

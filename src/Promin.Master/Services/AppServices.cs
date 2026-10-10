@@ -38,13 +38,16 @@ public sealed class AppServices : IDisposable
         RoomStore = new JsonRoomStore(RoomPath);
         Pairing = new QuicPairingClient(Connector, TrustedAgents, TrustPath);
         Discovery = new LanDiscovery(deviceId => TrustedAgents.TryGetPinnedThumbprint(deviceId, out _));
-        WallSettings = new JsonWallSettings(Path.Combine(rootDirectory, "settings.json"));
+        WallSettings = new JsonWallSettings(SettingsPath);
         Broadcast = _broadcast = new BroadcastController(Connector);
     }
 
     /// <summary>Where this Windows account's Promin state lives.</summary>
     public static string RootDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Promin");
+
+    /// <summary>The console's own choices: quality, sharpness, language.</summary>
+    public static string SettingsPath => Path.Combine(RootDirectory, "settings.json");
 
     public string IdentityDirectory { get; }
 

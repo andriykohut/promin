@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Promin.Master.Core;
 using Promin.Master.Pages;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Graphics;
 
@@ -19,6 +21,8 @@ public sealed partial class MainWindow : Window
     private const int MinimumWidth = 760;
     private const int MinimumHeight = 520;
 
+    private readonly string? _languageAtStart;
+
     public MainWindow(ConsoleHealth health)
     {
         ArgumentNullException.ThrowIfNull(health);
@@ -34,7 +38,43 @@ public sealed partial class MainWindow : Window
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         SizeInEffectivePixels();
 
+        _languageAtStart = App.Services.WallSettings.Language;
+        foreach (var item in LanguageMenu.Items.OfType<RadioMenuFlyoutItem>())
+        {
+            item.IsChecked = (string?)item.Tag == _languageAtStart;
+        }
+
         RootFrame.Navigate(typeof(RoomPage), null, new SuppressNavigationTransitionInfo());
+    }
+
+    /// <summary>True when the person asked for a restart; the app starts again once this window has closed.</summary>
+    public bool RestartRequested { get; private set; }
+
+    // A language holds for a whole run, so a new one needs a restart: now, or whenever Promin next starts.
+    private async void OnLanguageChosen(object sender, RoutedEventArgs e)
+    {
+        var language = (string?)((RadioMenuFlyoutItem)sender).Tag;
+        App.Services.WallSettings.Language = language;
+        Trace.TraceInformation("Language chosen: {0}.", language ?? "the Windows language");
+        if (language == _languageAtStart)
+        {
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = Strings.Language_RestartTitle,
+            Content = Strings.Language_RestartText,
+            PrimaryButtonText = Strings.Language_RestartNow,
+            CloseButtonText = Strings.Later,
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            RestartRequested = true;
+            Close();
+        }
     }
 
     public ConsoleHealth Health { get; }

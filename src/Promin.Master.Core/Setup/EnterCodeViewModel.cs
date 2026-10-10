@@ -10,7 +10,7 @@ namespace Promin.Master.Core.Setup;
 /// </summary>
 public sealed class EnterCodeViewModel : INotifyPropertyChanged
 {
-    public const string HintText = SetupViewModel.CodeHintText;
+    public static string HintText => SetupViewModel.CodeHintText;
 
     private string _codeText = string.Empty;
 

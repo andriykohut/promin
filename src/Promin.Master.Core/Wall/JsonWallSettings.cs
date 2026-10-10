@@ -34,6 +34,12 @@ public sealed class JsonWallSettings : IWallSettings
         set => Save(_stored with { SharpnessName = value });
     }
 
+    public string? Language
+    {
+        get => _stored.Language;
+        set => Save(_stored with { Language = value });
+    }
+
     private static Stored Load(string path)
     {
         try
@@ -61,5 +67,5 @@ public sealed class JsonWallSettings : IWallSettings
         }
     }
 
-    private sealed record Stored(string? QualityLabel = null, string? SharpnessName = null);
+    private sealed record Stored(string? QualityLabel = null, string? SharpnessName = null, string? Language = null);
 }

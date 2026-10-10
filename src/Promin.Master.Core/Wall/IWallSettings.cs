@@ -6,4 +6,7 @@ public interface IWallSettings
     string? QualityLabel { get; set; }
 
     string? SharpnessName { get; set; }
+
+    /// <summary>The language chosen in the console, as a culture name such as <c>uk</c>; null follows Windows.</summary>
+    string? Language { get; set; }
 }

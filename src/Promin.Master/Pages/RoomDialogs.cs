@@ -1,3 +1,4 @@
+using Promin.Master.Core;
 using Promin.Master.Core.Rooms;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -15,10 +16,10 @@ internal static class RoomDialogs
         var dialog = new ContentDialog
         {
             XamlRoot = xamlRoot,
-            Title = $"Rename {currentName}",
+            Title = Phrase.Format(Strings.Dialog_RenameTitle, ("name", currentName)),
             Content = box,
-            PrimaryButtonText = "Rename",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Strings.Rename,
+            CloseButtonText = Strings.Cancel,
             DefaultButton = ContentDialogButton.Primary,
         };
 
@@ -31,10 +32,10 @@ internal static class RoomDialogs
         var dialog = new ContentDialog
         {
             XamlRoot = xamlRoot,
-            Title = $"Remove {name} from this room?",
-            Content = "It stops receiving your broadcasts. To add it back you will need the room code.",
-            PrimaryButtonText = "Remove",
-            CloseButtonText = "Cancel",
+            Title = Phrase.Format(Strings.Dialog_RemoveTitle, ("name", name)),
+            Content = Strings.Dialog_RemoveText,
+            PrimaryButtonText = Strings.Remove,
+            CloseButtonText = Strings.Cancel,
             DefaultButton = ContentDialogButton.Close,
         };
 
