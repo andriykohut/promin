@@ -6,7 +6,7 @@ using Promin.Master.Core.Rooms;
 namespace Promin.Master.Core.Wall;
 
 /// <summary>
-/// One student PC on the wall. The page binds to this and nothing else decides what a tile says:
+/// One agent PC on the wall. The page binds to this and nothing else decides what a tile says:
 /// <see cref="RoomWallViewModel"/> sets every value here on each tick.
 /// </summary>
 public sealed class PcTile : INotifyPropertyChanged

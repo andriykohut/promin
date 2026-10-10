@@ -25,7 +25,7 @@ public static class QuicTransportSettings
     /// <summary>
     /// How long silence is tolerated before QUIC declares the peer gone: 25 seconds, a dozen
     /// missed keep-alives. The number is set by the master, not by the link. The master is a
-    /// dual-core machine doing capture, encode and one sender for every student PC; one long GC
+    /// dual-core machine doing capture, encode and one sender for every agent PC; one long GC
     /// pause, thermal stall or swap storm silences <i>every</i> connection at once, and a
     /// timeout shorter than that stall drops the whole class together and forces a full
     /// reconnect mid-broadcast. The cost is that a genuinely dead client — switched off,
@@ -91,8 +91,8 @@ public static class QuicTransportSettings
     /// <summary>
     /// Bidirectional credit the <b>master</b> grants an agent: none. The master opens the control
     /// stream itself, for pairing and for a broadcast alike, and never accepts one, so a stream
-    /// an agent opened would only wait unread on the teacher's laptop for as long as the
-    /// connection lasts, and agent machines are student-controlled.
+    /// an agent opened would only wait unread on the presenter's laptop for as long as the
+    /// connection lasts, and agent machines are viewer-controlled.
     /// </summary>
     public const int MasterMaxInboundBidirectionalStreams = 0;
 
@@ -111,9 +111,9 @@ public static class QuicTransportSettings
 
     /// <summary>
     /// Inbound video credit the <b>master</b> grants an agent: none. Agents send no video, and
-    /// agent machines are student-controlled — every stream of credit is up to
-    /// <see cref="QuicChannel.MaxVideoFrameBytes"/> that a student's PC can make the teacher's
-    /// laptop allocate, per connection, times the number of student PCs. If a later sub-project ever
+    /// agent machines are viewer-controlled — every stream of credit is up to
+    /// <see cref="QuicChannel.MaxVideoFrameBytes"/> that an agent PC can make the presenter's
+    /// laptop allocate, per connection, times the number of agent PCs. If a later sub-project ever
     /// needs agent-to-master streams, this is the one constant to change.
     /// </summary>
     public const int MasterMaxInboundUnidirectionalStreams = 0;
@@ -123,7 +123,7 @@ public static class QuicTransportSettings
     /// this wait their turn unread (QUIC flow control holds the sender), so the most a peer can
     /// make the receiver buffer is this many frames of <see cref="QuicChannel.MaxVideoFrameBytes"/>
     /// — 32 MB — rather than one frame per stream of credit. Eight is the default size of the
-    /// inbound frame queue (the student app uses a smaller one): more frames than that in flight
+    /// inbound frame queue (the agent uses a smaller one): more frames than that in flight
     /// are frames the consumer would drop anyway.
     /// </summary>
     public const int MaxConcurrentInboundVideoStreams = 8;

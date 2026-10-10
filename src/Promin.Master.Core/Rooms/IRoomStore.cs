@@ -1,7 +1,7 @@
 namespace Promin.Master.Core.Rooms;
 
 /// <summary>
-/// Where the room lives on the teacher PC: the paired student PCs and what the teacher calls
+/// Where the room lives on the console PC: the paired agent PCs and what the presenter calls
 /// them. Never the room code.
 /// </summary>
 public interface IRoomStore

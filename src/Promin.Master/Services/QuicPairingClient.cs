@@ -37,7 +37,7 @@ public sealed class QuicPairingClient : IPairingClient
             trustPath);
     }
 
-    public Task<PairResult> PairAsync(StudentPc pc, string roomCode, CancellationToken ct) =>
+    public Task<PairResult> PairAsync(AgentPc pc, string roomCode, CancellationToken ct) =>
         _inner.PairAsync(pc, roomCode, ct);
 
     public void Unpair(string deviceId) => _inner.Unpair(deviceId);

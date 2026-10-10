@@ -7,7 +7,7 @@ using static Promin.Agent.Tests.Hardware.GpuPictures;
 
 namespace Promin.Agent.Tests.Hardware;
 
-// The test the student's display was missing: the decoder's OWN texture, not a converter's, handed to the
+// The test the agent PC's display was missing: the decoder's OWN texture, not a converter's, handed to the
 // blitter. PictureBlitterTests feed the blitter textures the capture side's converter makes (render-target
 // bound); the decoder makes its texture differently, and a texture the video processor refuses as input shows
 // up only in a real broadcast. This needs the GPU, the video processor and Media Foundation; it opens no window,

@@ -17,7 +17,7 @@ namespace Promin.Master.Services;
 /// <summary>
 /// <see cref="IBroadcastController"/> over the real pipeline: one <see cref="DxgiScreenCapture"/>
 /// and <see cref="MediaFoundationH264Encoder"/> behind a <see cref="CaptureEncodeSource"/>, one
-/// <see cref="BroadcastSession"/>, and one QUIC connection per student PC. Composition only; every
+/// <see cref="BroadcastSession"/>, and one QUIC connection per agent PC. Composition only; every
 /// decision lives in the parts, which are tested.
 /// </summary>
 /// <remarks>
@@ -183,7 +183,7 @@ public sealed class BroadcastController : IBroadcastController
 
     /// <summary>
     /// Stops the broadcast and waits, for at most <paramref name="timeout"/>, until every PC has been told and
-    /// the screen capture released. For closing the app: a process that exits first leaves the students
+    /// the screen capture released. For closing the app: a process that exits first leaves the viewers
     /// looking at the last picture until their connection times out.
     /// </summary>
     public void StopAndWait(TimeSpan timeout)

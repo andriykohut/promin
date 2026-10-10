@@ -187,7 +187,7 @@ public class QuicVideoStreamTests
 
     /// <summary>
     /// The master receives no video, so it grants an agent no inbound unidirectional credit at
-    /// all: a student-controlled machine cannot open a single stream at the teacher's laptop,
+    /// all: a viewer-controlled machine cannot open a single stream at the presenter's laptop,
     /// let alone 256 of them at 4 MB each. The agent's attempt simply never gets a stream. Fails
     /// the symmetric 256-stream credit, under which this frame is delivered.
     /// </summary>

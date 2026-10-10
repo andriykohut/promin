@@ -11,7 +11,7 @@ internal sealed class BroadcastDisplayFactory(bool windowed, Action<string> log)
 }
 
 /// <summary>
-/// One broadcast on the student's screen, owning its own thread.
+/// One broadcast on the agent PC's screen, owning its own thread.
 /// </summary>
 /// <remarks>
 /// <para>

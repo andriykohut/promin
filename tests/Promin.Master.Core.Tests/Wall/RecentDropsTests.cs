@@ -29,7 +29,7 @@ public class RecentDropsTests
     }
 
     [Fact]
-    public void OneEarlyDrop_DoesNotMarkThePcForTheWholeLesson()
+    public void OneEarlyDrop_DoesNotMarkThePcForTheWholeSession()
     {
         var drops = new RecentDrops(TimeSpan.FromSeconds(10));
         drops.Observe(1, T0);

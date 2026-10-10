@@ -132,7 +132,7 @@ internal sealed class PictureBlitter : IDisposable
     }
 
     // Colour handling: usage 0 is "playback"; YCbCr_Matrix 1 is BT.709; the picture side is limited range
-    // (16-235), the RGB side full range (0-255), so black stays black on the student's screen.
+    // (16-235), the RGB side full range (0-255), so black stays black on the agent PC's screen.
     private static VideoProcessorColorSpace ColorSpace(VideoProcessorNominalRange nominalRange, uint rgbRange)
     {
         var space = default(VideoProcessorColorSpace);
@@ -182,7 +182,7 @@ internal sealed class PictureBlitter : IDisposable
             _videoContext.VideoProcessorSetStreamColorSpace(_processor, 0, ColorSpace(VideoProcessorNominalRange.Range_16_235, rgbRange: 0));
             _videoContext.VideoProcessorSetOutputColorSpace(_processor, ColorSpace(VideoProcessorNominalRange.Range_0_255, rgbRange: 0));
 
-            // No driver "enhancement" of the picture: the student must see the teacher's screen as it is.
+            // No driver "enhancement" of the picture: the viewer must see the presenter's screen as it is.
             _videoContext.VideoProcessorSetStreamAutoProcessingMode(_processor, 0, false);
             _videoContext.VideoProcessorSetOutputTargetRect(_processor, true, new RawRect(0, 0, target.Width, target.Height));
 

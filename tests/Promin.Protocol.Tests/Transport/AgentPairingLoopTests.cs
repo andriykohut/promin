@@ -6,7 +6,7 @@ using Promin.Protocol.Transport;
 namespace Promin.Protocol.Tests.Transport;
 
 /// <summary>
-/// When a student PC opens its pairing window, to whom, and how long it waits after a failure. Every wait the loop
+/// When an agent PC opens its pairing window, to whom, and how long it waits after a failure. Every wait the loop
 /// makes is on a clock that moves only when a test says so, so no test waits out a backoff. The helpers do use real
 /// time, in milliseconds: to see that the loop has reached a wait or opened a window, and (for "nothing more
 /// happened") to give it 50 ms in which it could have.
@@ -258,7 +258,7 @@ public class AgentPairingLoopTests
         Assert.Equal(["482913", "111111"], rig.Calls.Take(2).Select(c => c.RoomCode));
     }
 
-    // ---- 2. No teacher PC pinned: windows follow each other at once -----------------------------
+    // ---- 2. No console PC pinned: windows follow each other at once -----------------------------
 
     [Fact]
     public async Task WhenNobodyDials_TheNextWindowOpensAtOnce_WithNoWait()
@@ -273,7 +273,7 @@ public class AgentPairingLoopTests
         Assert.Equal(0, rig.Clock.TimersCreated);
 
         // Five windows, one line: the state is said when it changes, not once a minute.
-        Assert.Contains("any teacher PC", Assert.Single(rig.Log));
+        Assert.Contains("any console PC", Assert.Single(rig.Log));
     }
 
     [Fact]
@@ -385,7 +385,7 @@ public class AgentPairingLoopTests
         Assert.Equal(1, rig.SaveCalls);
         Assert.Equal(PairingAdmission.Anyone, rig.Calls[0].Admission);
         Assert.Equal(PairingAdmission.PinnedPeersOnly, rig.Calls[1].Admission);
-        Assert.Contains(rig.Log, line => line.Contains("Paired with teacher PC master-1"));
+        Assert.Contains(rig.Log, line => line.Contains("Paired with console PC master-1"));
     }
 
     [Fact]

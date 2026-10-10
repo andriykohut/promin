@@ -149,7 +149,7 @@ public sealed partial class RoomPage : Page
         }
     }
 
-    // The tiles: each raises what the teacher asked for; the page answers through the view model.
+    // The tiles: each raises what the presenter asked for; the page answers through the view model.
 
     private void Wall_ElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)
     {

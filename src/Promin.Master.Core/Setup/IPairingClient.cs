@@ -10,7 +10,7 @@ public interface IPairingClient
     /// ASCII digits. Returns a result for every failure the PC or the network can cause; throws
     /// only for the caller's own cancellation and for programming errors.
     /// </summary>
-    Task<PairResult> PairAsync(StudentPc pc, string roomCode, CancellationToken ct);
+    Task<PairResult> PairAsync(AgentPc pc, string roomCode, CancellationToken ct);
 
     /// <summary>Forget a PC's certificate on this machine.</summary>
     void Unpair(string deviceId);

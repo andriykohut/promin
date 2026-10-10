@@ -573,7 +573,7 @@ public class ClientAgentSessionTests
     }
 
     /// <summary>
-    /// What happens when the student PC cannot keep up and the bound on waiting frames is hit: the oldest are
+    /// What happens when the agent PC cannot keep up and the bound on waiting frames is hit: the oldest are
     /// lost in the receive queue, so the next frame to arrive has a gap before it. The session sees only that:
     /// it keeps the picture on screen, discards until the next keyframe, and then is live again.
     /// </summary>

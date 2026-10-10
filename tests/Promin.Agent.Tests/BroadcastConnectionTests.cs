@@ -4,7 +4,7 @@ using Promin.Protocol.Messages;
 namespace Promin.Agent.Tests;
 
 /// <summary>
-/// What the agent does with one teacher PC's connection: a display exists exactly while a broadcast does, and
+/// What the agent does with one console PC's connection: a display exists exactly while a broadcast does, and
 /// its life is tied to the connection and to StopBroadcast, never to how long it has been since a frame came.
 /// </summary>
 public class BroadcastConnectionTests
@@ -205,11 +205,11 @@ public class BroadcastConnectionTests
     }
 
     /// <summary>
-    /// The teacher PC holds its first keyframe until the display can take it, so a display that is ready says so;
+    /// The console PC holds its first keyframe until the display can take it, so a display that is ready says so;
     /// one that could not be made says nothing, and a restarted one says so again.
     /// </summary>
     [Fact]
-    public async Task AReadyDisplay_IsAnnouncedToTheTeacherPc_AFailedOneIsNot()
+    public async Task AReadyDisplay_IsAnnouncedToTheConsolePc_AFailedOneIsNot()
     {
         var factory = new FakeFactory().Then(() => null);
         await using var rig = new Rig(factory);
@@ -332,7 +332,7 @@ public class BroadcastConnectionTests
     }
 
     /// <summary>
-    /// A still teacher screen sends no frames for as long as it stays still. That is not a reason to take the
+    /// A still presenter's screen sends no frames for as long as it stays still. That is not a reason to take the
     /// picture away: only StopBroadcast and the connection ending are.
     /// </summary>
     [Fact]
@@ -402,7 +402,7 @@ public class BroadcastConnectionTests
     }
 
     /// <summary>
-    /// The teacher PC can only tell a PC apart from a receiving one by its connection: a display that ended on its
+    /// The console PC can only tell a PC apart from a receiving one by its connection: a display that ended on its
     /// own ends the connection, with one log line, so the wall reads Reconnecting. A display removed by
     /// StopBroadcast is not "by itself" and the connection carries on (StopBroadcast_RemovesTheDisplay_...).
     /// </summary>
@@ -414,7 +414,7 @@ public class BroadcastConnectionTests
         await rig.StartedAsync();
         var first = Assert.Single(rig.Factory.Created);
 
-        first.IsOpen = false; // the student closed the window (--windowed), or the GPU failed
+        first.IsOpen = false; // the viewer closed the window (--windowed), or the GPU failed
         rig.Connection.SendFrame(1);
         await rig.Running.WaitAsync(TimeSpan.FromSeconds(5));
 

@@ -17,6 +17,6 @@ internal static class ExitCodes
     /// <summary>The listener could not start: the port could not be bound, or this PC's own certificate cannot complete a handshake.</summary>
     public const int ListenerFailed = 4;
 
-    /// <summary>A file the agent needs could not be read or written (identity, pinned teacher PCs, room code).</summary>
+    /// <summary>A file the agent needs could not be read or written (identity, pinned console PCs, room code).</summary>
     public const int FileUnusable = 5;
 }

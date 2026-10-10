@@ -10,7 +10,7 @@ namespace Promin.Protocol.Pairing;
 /// Pairing authenticates <b>both</b> directions. The agent proves it knows the pre-shared key,
 /// and the master proves it too — before the agent pins the master's certificate as permanently
 /// trusted. A one-directional handshake (the agent answering a challenge and trusting whatever
-/// answered it) hands every student PC a chosen-nonce HMAC oracle over a human-typed key, and
+/// answered it) hands every agent PC a chosen-nonce HMAC oracle over a human-typed key, and
 /// lets any machine on the LAN be pinned as a trusted master during a pairing window. For a
 /// product whose agent renders fullscreen whatever the master sends, that is the whole attack.
 ///

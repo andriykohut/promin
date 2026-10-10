@@ -78,7 +78,7 @@ public sealed class AppServices : IDisposable
     /// <summary>
     /// Proves, off the UI thread, that this PC can make the secure connections Promin uses and
     /// that its certificate can complete a TLS handshake, so that a broken console says so
-    /// instead of blaming every student PC it fails to reach. Loopback only: no port is opened
+    /// instead of blaming every agent PC it fails to reach. Loopback only: no port is opened
     /// to the network and no firewall prompt.
     /// </summary>
     /// <remarks>
@@ -128,7 +128,7 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
-        // Not just Stop: a process that exits before the students were told leaves their screens on the last picture.
+        // Not just Stop: a process that exits before the viewers were told leaves their screens on the last picture.
         _broadcast.StopAndWait(TimeSpan.FromSeconds(3));
         Discovery.Stop();
         Identity.Dispose();

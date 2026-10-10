@@ -1,9 +1,9 @@
 namespace Promin.Agent;
 
 /// <summary>
-/// One connection at a time. When the teacher PC connects again (it restarted, or its network came back) its
+/// One connection at a time. When the console PC connects again (it restarted, or its network came back) its
 /// old connection can still look alive for the 25 seconds of QUIC's idle timeout; the newer one replaces it at
-/// once, so the student's screen does not wait and two windows are never made.
+/// once, so the agent PC's screen does not wait and two windows are never made.
 /// </summary>
 internal sealed class NewestConnectionWins
 {

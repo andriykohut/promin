@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 namespace Promin.Master.Core.Setup;
 
 /// <summary>
-/// One student PC on the setup screen. The page binds to this and nothing else decides what a
+/// One agent PC on the setup screen. The page binds to this and nothing else decides what a
 /// row says: the status wording and which action a row offers are derived here from
 /// <see cref="Status"/>.
 /// </summary>

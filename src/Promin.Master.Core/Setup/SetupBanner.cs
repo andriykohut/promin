@@ -25,7 +25,7 @@ public sealed record SetupBanner(SetupBannerKind Kind, string Title, string Mess
         Strings.Banner_ReadErrorTitle,
         Strings.Banner_ReadErrorText);
 
-    /// <summary>The discovery port is taken, so no student PC can be found from this screen.</summary>
+    /// <summary>The discovery port is taken, so no agent PC can be found from this screen.</summary>
     public static SetupBanner DiscoveryUnavailable { get; } = new(
         SetupBannerKind.Error,
         Strings.Banner_DiscoveryTitle,

@@ -11,7 +11,7 @@ namespace Promin.Master.Core.Setup;
 /// the transport's verdict reads on the screen, and keeping the trust file on disk current.
 /// </summary>
 /// <remarks>
-/// The transport (<c>QuicMasterConnector.PairAsync</c>) pins a student PC's certificate in the
+/// The transport (<c>QuicMasterConnector.PairAsync</c>) pins an agent PC's certificate in the
 /// <see cref="PeerCertificateStore"/> on success but persists nothing; the store has
 /// <see cref="PeerCertificateStore.Save"/> and <see cref="PeerCertificateStore.Load"/> and
 /// leaves the when to its owner. That owner is this class: it saves after every successful
@@ -26,7 +26,7 @@ public sealed class PairingClient : IPairingClient
     /// Returns <see cref="PairingFailure.None"/> when paired. Throws only for cancellation and
     /// programming errors.
     /// </summary>
-    public delegate Task<PairingFailure> PairDelegate(StudentPc pc, byte[] presharedKey, CancellationToken ct);
+    public delegate Task<PairingFailure> PairDelegate(AgentPc pc, byte[] presharedKey, CancellationToken ct);
 
     private readonly PairDelegate _pair;
     private readonly PeerCertificateStore _trustedAgents;
@@ -72,7 +72,7 @@ public sealed class PairingClient : IPairingClient
         _ => PairResult.CannotPairNow,
     };
 
-    public async Task<PairResult> PairAsync(StudentPc pc, string roomCode, CancellationToken ct)
+    public async Task<PairResult> PairAsync(AgentPc pc, string roomCode, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(pc);
         if (!RoomCode.IsValid(roomCode))

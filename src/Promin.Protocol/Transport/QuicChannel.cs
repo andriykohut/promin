@@ -35,7 +35,7 @@ public sealed class QuicChannel : IAsyncDisposable
     /// <summary>
     /// How many inbound frames wait to be picked up unless the creator says otherwise. The queue is
     /// deliberately small and DropOldest: if the consumer falls behind, the freshest frames are the ones
-    /// worth keeping — a mirrored classroom screen wants to be current, not complete. A frame lost this
+    /// worth keeping — a mirrored room screen wants to be current, not complete. A frame lost this
     /// way leaves a gap in the frame ids, which the receiving session treats as a lost frame.
     /// </summary>
     public const int DefaultInboundFrameQueueCapacity = 8;

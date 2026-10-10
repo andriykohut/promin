@@ -15,7 +15,7 @@ namespace Promin.Protocol.Tests.Transport;
 
 /// <summary>
 /// The agent's accept loop under hostile and broken conditions. The loop is what keeps a
-/// student PC on the air. Three properties, each checked against the real QUIC runtime rather
+/// agent PC on the air. Three properties, each checked against the real QUIC runtime rather
 /// than against exceptions constructed to look like it:
 /// a broken local credential fails <c>StartAsync</c>; nothing a remote peer does stops the loop;
 /// and a flood of refused dials neither delays a legitimate master nor spins a core.

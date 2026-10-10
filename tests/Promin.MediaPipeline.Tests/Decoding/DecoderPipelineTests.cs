@@ -25,7 +25,7 @@ public class DecoderPipelineTests
         Assert.Null(pipeline.LastFailure);
     }
 
-    // The point of "low delay": a decoder that keeps a picture back would show the teacher's still screen
+    // The point of "low delay": a decoder that keeps a picture back would show the presenter's still screen
     // two seconds late. The pipeline does not hide it: the call returns false and the picture comes a call late.
     [Fact]
     public void ADecoderThatHoldsAPictureBack_ShowsAsNoPictureFromTheCall_AndThePictureComesALaterCall()

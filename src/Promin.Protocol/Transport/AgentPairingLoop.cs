@@ -11,11 +11,11 @@ namespace Promin.Protocol.Transport;
 public readonly record struct RoomCodeLookup(string? Code, string? Problem = null);
 
 /// <summary>
-/// When a student PC opens its pairing window, for whom, and how long it waits after a window that went wrong.
+/// When an agent PC opens its pairing window, for whom, and how long it waits after a window that went wrong.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A student PC is the only thing between a stranger on the LAN and a guess at the room code, so the rules are
+/// An agent PC is the only thing between a stranger on the LAN and a guess at the room code, so the rules are
 /// about guesses:
 /// </para>
 /// <list type="number">
@@ -24,12 +24,12 @@ public readonly record struct RoomCodeLookup(string? Code, string? Problem = nul
 /// said once too, in its own words.
 /// </item>
 /// <item>
-/// With no teacher PC pinned, windows are open to <see cref="PairingAdmission.Anyone"/>, one straight after
+/// With no console PC pinned, windows are open to <see cref="PairingAdmission.Anyone"/>, one straight after
 /// another: a window that ends with nobody dialling costs nothing and is followed by the next at once.
 /// </item>
 /// <item>
-/// With a teacher PC pinned, windows admit <see cref="PairingAdmission.PinnedPeersOnly"/>, so knowing the code
-/// is of no use against a PC that has already been paired, and the pinned teacher PC can pair again.
+/// With a console PC pinned, windows admit <see cref="PairingAdmission.PinnedPeersOnly"/>, so knowing the code
+/// is of no use against a PC that has already been paired, and the pinned console PC can pair again.
 /// </item>
 /// <item>
 /// Any window that let a peer in and ended without that peer pairing costs the next step of
@@ -60,7 +60,7 @@ public sealed class AgentPairingLoop
     private readonly PairingBackoff _backoff;
     private readonly TimeProvider _timeProvider;
 
-    /// <param name="trustedMasters">The pins the listener judges by; empty means no teacher PC is paired.</param>
+    /// <param name="trustedMasters">The pins the listener judges by; empty means no console PC is paired.</param>
     /// <param name="loadRoomCode">The six digits, or what was found instead.</param>
     /// <param name="openWindow">
     /// Opens one pairing window for the given code and admission and returns how it ended (in the agent,
@@ -127,8 +127,8 @@ public sealed class AgentPairingLoop
                 {
                     saidAdmission = admission;
                     _log(admission == PairingAdmission.Anyone
-                        ? "Pairing is open: no teacher PC is paired yet, so any teacher PC that knows the room code may pair."
-                        : "Pairing is open to the paired teacher PC only.");
+                        ? "Pairing is open: no console PC is paired yet, so any console PC that knows the room code may pair."
+                        : "Pairing is open to the paired console PC only.");
                 }
 
                 TimeSpan? wait = null;
@@ -162,7 +162,7 @@ public sealed class AgentPairingLoop
         if (outcome.Paired)
         {
             _backoff.RecordSuccess();
-            _log($"Paired with teacher PC {outcome.DeviceId}.");
+            _log($"Paired with console PC {outcome.DeviceId}.");
             try
             {
                 _saveTrustedMasters();
@@ -170,7 +170,7 @@ public sealed class AgentPairingLoop
             catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
             {
                 _log($"The pairing with {outcome.DeviceId} could not be saved ({failure.Message}). It holds until " +
-                     "this program stops, and then the teacher PC has to be paired again.");
+                     "this program stops, and then the console PC has to be paired again.");
             }
 
             return null;
@@ -182,7 +182,7 @@ public sealed class AgentPairingLoop
         }
 
         var wait = _backoff.RecordFailure();
-        _log($"A teacher PC was let in and did not pair ({outcome.Failure}): {outcome.FailureReason} " +
+        _log($"A console PC was let in and did not pair ({outcome.Failure}): {outcome.FailureReason} " +
              $"The next pairing window opens in {Seconds(wait)} s.");
         return wait;
     }

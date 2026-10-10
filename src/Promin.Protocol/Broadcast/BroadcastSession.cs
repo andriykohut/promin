@@ -5,7 +5,7 @@ using Promin.Protocol.Video;
 namespace Promin.Protocol.Broadcast;
 
 /// <summary>
-/// The teacher-side fan-out: pulls encoded frames from one <see cref="IEncodedFrameSource"/> on a steady beat
+/// The presenter-side fan-out: pulls encoded frames from one <see cref="IEncodedFrameSource"/> on a steady beat
 /// and offers each frame, framed exactly once, to every connected client over that client's own
 /// <see cref="IVideoSink"/>, so that one slow or dead PC never holds up the others.
 /// </summary>

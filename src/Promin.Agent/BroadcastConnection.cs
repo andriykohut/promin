@@ -3,11 +3,11 @@ using Promin.Protocol.Messages;
 namespace Promin.Agent;
 
 /// <summary>
-/// What the agent does with one teacher PC's connection. A display exists exactly while a broadcast does:
+/// What the agent does with one console PC's connection. A display exists exactly while a broadcast does:
 /// created when <see cref="StartBroadcast"/> arrives, removed on <see cref="StopBroadcast"/> and when the
-/// connection ends. <b>Never</b> because no frame has come for a while: a still teacher screen sends none for as
-/// long as it stays still, and a dead teacher PC shows up as the connection ending (QUIC's idle timeout).
-/// A display that ends by itself (it failed, or its window was closed) ends the connection, so the teacher PC
+/// connection ends. <b>Never</b> because no frame has come for a while: a still presenter's screen sends none for as
+/// long as it stays still, and a dead console PC shows up as the connection ending (QUIC's idle timeout).
+/// A display that ends by itself (it failed, or its window was closed) ends the connection, so the console PC
 /// sees the PC as lost rather than receiving.
 /// </summary>
 /// <remarks>
@@ -31,7 +31,7 @@ internal sealed class BroadcastConnection(
 
     /// <summary>
     /// Runs until the connection ends or <paramref name="ct"/> is cancelled, then removes the display. Throws
-    /// nothing for what the connection or the teacher PC does.
+    /// nothing for what the connection or the console PC does.
     /// </summary>
     public async Task RunAsync(IAgentConnection connection, CancellationToken ct)
     {
@@ -51,7 +51,7 @@ internal sealed class BroadcastConnection(
         }
         catch (Exception failure)
         {
-            log($"The connection to the teacher PC ended: {Describe(failure)}");
+            log($"The connection to the console PC ended: {Describe(failure)}");
         }
         finally
         {
@@ -72,7 +72,7 @@ internal sealed class BroadcastConnection(
             case StartBroadcast { Width: > 0, Height: > 0, TargetFps: > 0 } start:
                 if (await StartAsync(start, ct).ConfigureAwait(false))
                 {
-                    // The teacher PC holds its first keyframe until the display can take it.
+                    // The console PC holds its first keyframe until the display can take it.
                     await connection.SendControlAsync(new BroadcastReady(), ct).ConfigureAwait(false);
                 }
 
@@ -85,14 +85,14 @@ internal sealed class BroadcastConnection(
             case StopBroadcast:
                 if (_display is not null)
                 {
-                    log("The teacher PC stopped the broadcast.");
+                    log("The console PC stopped the broadcast.");
                 }
 
                 RemoveDisplay();
                 break;
 
             default:
-                // Nothing else is sent to a student PC once it is paired.
+                // Nothing else is sent to an agent PC once it is paired.
                 break;
         }
     }
@@ -102,7 +102,7 @@ internal sealed class BroadcastConnection(
     {
         if (_display is { IsOpen: true } open)
         {
-            log($"The teacher PC started a new stream ({start.Width}x{start.Height} at {start.TargetFps} fps).");
+            log($"The console PC started a new stream ({start.Width}x{start.Height} at {start.TargetFps} fps).");
             await open.RestartAsync(ct).ConfigureAwait(false);
             return true;
         }
@@ -139,7 +139,7 @@ internal sealed class BroadcastConnection(
 
         if (display is null)
         {
-            log("The broadcast is not shown on this PC. It will be tried again if the teacher PC starts it again.");
+            log("The broadcast is not shown on this PC. It will be tried again if the console PC starts it again.");
             return false;
         }
 
@@ -181,9 +181,9 @@ internal sealed class BroadcastConnection(
                 else
                 {
                     // Only a display that ended on its own is still here while closed: StopBroadcast, a newer
-                    // connection and a lost connection all remove it. Ending the connection is how the teacher
+                    // connection and a lost connection all remove it. Ending the connection is how the presenter
                     // PC gets to know; its wall then reads Reconnecting instead of Receiving.
-                    log("The broadcast's display on this PC ended by itself; this connection is closed so the teacher PC can see it.");
+                    log("The broadcast's display on this PC ended by itself; this connection is closed so the console PC can see it.");
                     break;
                 }
             }
@@ -193,7 +193,7 @@ internal sealed class BroadcastConnection(
         }
         catch (Exception failure)
         {
-            log($"The video stream from the teacher PC ended: {Describe(failure)}");
+            log($"The video stream from the console PC ended: {Describe(failure)}");
         }
         finally
         {

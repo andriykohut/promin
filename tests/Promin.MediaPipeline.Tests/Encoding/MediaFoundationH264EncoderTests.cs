@@ -210,6 +210,6 @@ public class MediaFoundationH264EncoderTests(ITestOutputHelper output)
         var summary = H264Stream.Inspect(frame.Data);
         Assert.True(summary.IsAnnexB, "not an Annex B byte stream");
         Assert.True(summary.HasIdr, "no IDR slice");
-        Assert.True(summary.HasParameterSets, "no SPS/PPS: a student joining at this keyframe could not decode it");
+        Assert.True(summary.HasParameterSets, "no SPS/PPS: a viewer joining at this keyframe could not decode it");
     }
 }

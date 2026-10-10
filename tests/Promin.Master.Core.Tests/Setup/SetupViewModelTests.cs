@@ -25,7 +25,7 @@ public sealed class SetupViewModelTests
 
     private static string Id(int n) => $"device-{n:00}";
 
-    private static StudentPc Pc(int n, string? address = null) =>
+    private static AgentPc Pc(int n, string? address = null) =>
         new(Id(n), $"PC-{n:00}", address ?? $"192.168.1.{20 + n}", 17843);
 
     private void Raise(params int[] numbers)
@@ -102,7 +102,7 @@ public sealed class SetupViewModelTests
 
         for (var n = 1; n <= 201; n++)
         {
-            _discovery.Raise(new StudentPc($"flood-{n:000}", $"Flood {n:000}", $"10.0.{n / 256}.{n % 256}", 17843));
+            _discovery.Raise(new AgentPc($"flood-{n:000}", $"Flood {n:000}", $"10.0.{n / 256}.{n % 256}", 17843));
         }
 
         Assert.Equal(200, vm.Rows.Count);

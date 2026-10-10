@@ -242,7 +242,7 @@ public class MediaFoundationH264DecoderTests(ITestOutputHelper output)
         Assert.False(decoder.NeedsKeyframe);
     }
 
-    // For a two-hour lesson: 3,000 frames through one decoder in each mode (a keyframe every 300), with the
+    // For a two-hour session: 3,000 frames through one decoder in each mode (a keyframe every 300), with the
     // process memory read before and after and REPORTED; the assertion is only a gross sanity bound.
     [Theory(Skip = NeedsGpu)]
     [InlineData(true)]

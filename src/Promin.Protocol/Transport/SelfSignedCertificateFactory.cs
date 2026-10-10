@@ -12,7 +12,7 @@ namespace Promin.Protocol.Transport;
 /// </summary>
 /// <remarks>
 /// ECDSA P-256 rather than RSA-2048: equivalent security at a fraction of the handshake
-/// cost, which matters on the dual-core classroom hardware this ships to. The certificate
+/// cost, which matters on the dual-core room hardware this ships to. The certificate
 /// carries a Subject Alternative Name and the serverAuth/clientAuth EKUs because a TLS
 /// stack is entitled to reject a certificate that has neither, and the same certificate is
 /// used in both roles (the agent is the TLS server, the master is the TLS client).

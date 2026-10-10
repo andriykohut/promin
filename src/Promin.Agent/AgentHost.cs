@@ -66,7 +66,7 @@ internal sealed record AgentServices(
 
 /// <summary>
 /// The agent when it runs: its identity, the listener, the beacon that announces it, and the two loops side by
-/// side over one listener (teacher PCs that are paired, and pairing windows). It returns the process's exit code
+/// side over one listener (console PCs that are paired, and pairing windows). It returns the process's exit code
 /// and says why in the log; nothing here ends the process itself. There is deliberately no <c>ProcessExit</c>
 /// handler: it runs after <c>Main</c> has returned and everything it could cancel is already disposed. The agent
 /// is ended by <c>Stop-Process</c> or, in a test, by the token.
@@ -138,12 +138,12 @@ internal static class AgentHost
             {
                 // Starting with no pins would open pairing to anyone, so an unreadable file stops the agent instead.
                 log.Write(
-                    $"The list of paired teacher PCs ({paths.MastersFile}) could not be read: {e.Message} " +
+                    $"The list of paired console PCs ({paths.MastersFile}) could not be read: {e.Message} " +
                     "The agent will not start with it. To forget it and start again, run \"Promin.Agent.exe --reset-pairing\".");
                 return ExitCodes.FileUnusable;
             }
 
-            log.Write($"Device {identity.DeviceId} ({Environment.MachineName}); paired teacher PCs: {masters.Count}.");
+            log.Write($"Device {identity.DeviceId} ({Environment.MachineName}); paired console PCs: {masters.Count}.");
 
             using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(stop);
 
@@ -155,7 +155,7 @@ internal static class AgentHost
             }
             catch (LocalCredentialException e)
             {
-                log.Write($"This PC's own certificate cannot complete a TLS handshake, so no teacher PC could connect: {e.Message} ({e.InnerException?.Message})");
+                log.Write($"This PC's own certificate cannot complete a TLS handshake, so no console PC could connect: {e.Message} ({e.InnerException?.Message})");
                 return ExitCodes.ListenerFailed;
             }
             catch (Exception e) when (e is not OperationCanceledException)
@@ -182,7 +182,7 @@ internal static class AgentHost
             var displays = new BroadcastDisplayFactory(command.Windowed, log.Write);
 
             var pairingLoop = pairing.RunAsync(shutdown.Token);
-            var acceptLoop = AcceptTeacherPcsAsync(listener, connections, displays, log, shutdown.Token);
+            var acceptLoop = AcceptConsolePcsAsync(listener, connections, displays, log, shutdown.Token);
 
             // Neither loop ends by itself; one that does has failed.
             var ended = await Task.WhenAny(pairingLoop, acceptLoop).ConfigureAwait(false);
@@ -199,7 +199,7 @@ internal static class AgentHost
         }
     }
 
-    private static async Task AcceptTeacherPcsAsync(
+    private static async Task AcceptConsolePcsAsync(
         IAgentListener listener,
         NewestConnectionWins connections,
         IBroadcastDisplayFactory displays,
@@ -218,8 +218,8 @@ internal static class AgentHost
                 return;
             }
 
-            var teacherPc = channel.PinnedDeviceId;
-            log.Write($"Teacher PC {teacherPc} connected from {channel.RemoteEndPoint.Address}.");
+            var consolePc = channel.PinnedDeviceId;
+            log.Write($"Console PC {consolePc} connected from {channel.RemoteEndPoint.Address}.");
 
             await connections.StartAsync(
                 async token =>
@@ -232,7 +232,7 @@ internal static class AgentHost
                     finally
                     {
                         await connection.DisposeAsync().ConfigureAwait(false);
-                        log.Write($"The connection from teacher PC {teacherPc} is closed.");
+                        log.Write($"The connection from console PC {consolePc} is closed.");
                     }
                 },
                 ct).ConfigureAwait(false);

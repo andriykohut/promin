@@ -8,7 +8,7 @@ internal enum AgentMode
     /// <summary>Store the room code and exit.</summary>
     SetRoomCode,
 
-    /// <summary>Forget the paired teacher PC and exit.</summary>
+    /// <summary>Forget the paired console PC and exit.</summary>
     ResetPairing,
 
     /// <summary>The arguments mean nothing; say so and exit.</summary>

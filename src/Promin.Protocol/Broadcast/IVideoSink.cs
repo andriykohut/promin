@@ -1,7 +1,7 @@
 namespace Promin.Protocol.Broadcast;
 
 /// <summary>
-/// One connected student PC, as far as <see cref="BroadcastSession"/> is concerned.
+/// One connected agent PC, as far as <see cref="BroadcastSession"/> is concerned.
 /// </summary>
 public interface IVideoSink
 {

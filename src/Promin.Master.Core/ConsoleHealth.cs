@@ -18,9 +18,9 @@ public sealed record LocalFault(string Title, string Message)
 }
 
 /// <summary>
-/// What is wrong with this PC itself, as opposed to a student PC. Set by the adapters at start,
+/// What is wrong with this PC itself, as opposed to an agent PC. Set by the adapters at start,
 /// read by both pages: while a fault is set, one error bar shows at the top of the window and
-/// every Pair action is disabled, so a broken console never blames a student PC.
+/// every Pair action is disabled, so a broken console never blames an agent PC.
 /// </summary>
 public sealed class ConsoleHealth : INotifyPropertyChanged
 {

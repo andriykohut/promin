@@ -1,7 +1,7 @@
 namespace Promin.Protocol.Pairing;
 
 /// <summary>
-/// How long a student PC waits before opening its next pairing window after a peer
+/// How long an agent PC waits before opening its next pairing window after a peer
 /// failed to prove the room code. With one guess per window this holds a stranger to
 /// a few hundred guesses a day against a million possible codes.
 /// </summary>

@@ -4,7 +4,7 @@ using Promin.Protocol.Video;
 namespace Promin.Protocol.Broadcast;
 
 /// <summary>
-/// The student PC's display, as the session sees it: something that decodes one encoded frame and then shows the
+/// The agent PC's display, as the session sees it: something that decodes one encoded frame and then shows the
 /// picture. Implemented in <c>Promin.Agent</c> over the H.264 decoder and the render window; it owns no
 /// decisions, so the session stays testable with no GPU.
 /// </summary>
@@ -25,7 +25,7 @@ public interface IFramePresenter
 }
 
 /// <summary>
-/// The student side of a broadcast, as logic: which of the frames that arrive reach the decoder, which picture is
+/// The agent side of a broadcast, as logic: which of the frames that arrive reach the decoder, which picture is
 /// shown, and when to wait for a keyframe. Everything else (decoding, drawing, the window) is behind
 /// <see cref="IFramePresenter"/>.
 /// </summary>
@@ -51,7 +51,7 @@ public interface IFramePresenter
 /// it loses a frame for that client, so after a loss its own side causes, the next frame this session sees is a
 /// keyframe, and the rule costs nothing. A gap followed by a delta therefore means a frame was lost after the
 /// master considered it sent: dropped from this PC's receive queue because the display was behind (see
-/// <see cref="QuicChannel"/>'s receive queue, which is where an overloaded student PC loses frames, on purpose),
+/// <see cref="QuicChannel"/>'s receive queue, which is where an overloaded agent PC loses frames, on purpose),
 /// aborted by the sender's own deadline part-way through, refused here for its size or shape, or (rarely)
 /// finished behind its successor, in which case the gate refuses it when it does arrive. A gap cannot mean that
 /// the source had nothing new (no id is spent on that), or a restarted master (its ids begin again at 0, which
@@ -60,7 +60,7 @@ public interface IFramePresenter
 /// <para>
 /// <b>Staying live.</b> When the caller says more frames are already waiting (<c>moreWaiting</c>), a frame is
 /// still decoded, in order, because a delta needs the one before it, but its picture is not shown: only the last
-/// picture of the batch is. A student PC that never catches up would then show almost nothing, so no more than
+/// picture of the batch is. An agent PC that never catches up would then show almost nothing, so no more than
 /// two decoded pictures in a row go unshown: the picture after two such skips is shown even though more frames
 /// are waiting (under permanent backlog, every third decoded picture). A decoded picture that was replaced or
 /// lost before it could be shown is counted in <see cref="SkippedPictureCount"/>.

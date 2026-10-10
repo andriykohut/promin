@@ -28,7 +28,7 @@ public sealed class RoomWallRejoinTests
     {
         foreach (var n in numbers)
         {
-            _discovery.Raise(new StudentPc(Id(n), $"PC-{n:00}", $"192.168.1.{20 + n}", 17843));
+            _discovery.Raise(new AgentPc(Id(n), $"PC-{n:00}", $"192.168.1.{20 + n}", 17843));
         }
     }
 
@@ -181,7 +181,7 @@ public sealed class RoomWallRejoinTests
     }
 
     [Fact]
-    public async Task APcTheTeacherStopped_IsNotRejoined()
+    public async Task APcThePresenterStopped_IsNotRejoined()
     {
         var vm = await OnAir(AllTen);
 
@@ -282,7 +282,7 @@ public sealed class RoomWallRejoinTests
     }
 
     [Fact]
-    public async Task StoppedByTheTeacherWhileARejoinIsInFlight_IsNotShownReceiving()
+    public async Task StoppedByThePresenterWhileARejoinIsInFlight_IsNotShownReceiving()
     {
         _broadcast.PendingAdd = new TaskCompletionSource<bool>();
         var vm = await SevenLostAndBack();
@@ -387,7 +387,7 @@ public sealed class RoomWallRejoinTests
     }
 
     [Fact]
-    public async Task BackMessage_Ends_WhenTheTeacherStopsSendingToThePc()
+    public async Task BackMessage_Ends_WhenThePresenterStopsSendingToThePc()
     {
         var vm = await SevenIsBack();
 
@@ -430,7 +430,7 @@ public sealed class RoomWallRejoinTests
     {
         var vm = await OnAir(AllTen);
         _broadcast.RaiseLost(Id(7));
-        _discovery.Raise(new StudentPc(Id(7), "PC-07", "192.168.1.99", 17900));
+        _discovery.Raise(new AgentPc(Id(7), "PC-07", "192.168.1.99", 17900));
         Assert.Equal(0, _store.Saves);
 
         vm.Tick();
@@ -453,7 +453,7 @@ public sealed class RoomWallRejoinTests
         // Set up devices keeps its own copy of the room; the wall has not read the file again.
         _store.Members.RemoveAll(m => m.DeviceId == Id(4));
         _store.Members.Add(new RoomMember(Id(11), "PC-11", "192.168.1.31", 17843, PairedOn, Selected: true));
-        _discovery.Raise(new StudentPc(Id(7), "PC-07", "192.168.1.99", 17900));
+        _discovery.Raise(new AgentPc(Id(7), "PC-07", "192.168.1.99", 17900));
 
         vm.Tick();
 
@@ -471,7 +471,7 @@ public sealed class RoomWallRejoinTests
         _broadcast.PendingAdd = new TaskCompletionSource<bool>();
         var vm = await OnAir(AllTen);
         _broadcast.RaiseLost(Id(7));
-        _discovery.Raise(new StudentPc(Id(7), "PC-07", "192.168.1.99", 17900));
+        _discovery.Raise(new AgentPc(Id(7), "PC-07", "192.168.1.99", 17900));
         vm.Tick();
 
         // Set up devices removes the PC, which always takes its pin away; the wall has not read the room again.
@@ -493,7 +493,7 @@ public sealed class RoomWallRejoinTests
 
         // The file is gone, or was set aside as corrupt: the store then reads as an empty room.
         _store.Members.Clear();
-        _discovery.Raise(new StudentPc(Id(7), "PC-07", "192.168.1.99", 17900));
+        _discovery.Raise(new AgentPc(Id(7), "PC-07", "192.168.1.99", 17900));
 
         vm.Tick();
 

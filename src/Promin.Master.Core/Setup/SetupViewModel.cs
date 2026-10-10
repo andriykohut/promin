@@ -17,7 +17,7 @@ namespace Promin.Master.Core.Setup;
 /// anything that persists. It is cleared as soon as every PC is in the room.
 ///
 /// <b>Nothing escapes.</b> Every public member is called from a click handler or a navigation
-/// event, so none of them throws for anything a disk, the network or a student PC can do: a
+/// event, so none of them throws for anything a disk, the network or an agent PC can do: a
 /// pairing that fails in an unexpected way reads <see cref="SetupRowStatus.CannotPairNow"/>, a
 /// save that fails leaves the screen as it was and shows <see cref="StoreError"/>, a discovery
 /// port that is taken shows <see cref="DiscoveryError"/>, and a batch never leaves a row
@@ -46,8 +46,8 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     private readonly Action<Action> _runOnUiThread;
 
     private readonly List<RoomMember> _members = [];
-    private readonly Dictionary<string, StudentPc> _seen = new(StringComparer.Ordinal);
-    private readonly Action<StudentPc> _onSeen;
+    private readonly Dictionary<string, AgentPc> _seen = new(StringComparer.Ordinal);
+    private readonly Action<AgentPc> _onSeen;
     private readonly PropertyChangedEventHandler _onHealthChanged;
 
     private string _codeText = string.Empty;
@@ -574,7 +574,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
 
         var pc = _seen.TryGetValue(row.DeviceId, out var seen)
             ? seen
-            : new StudentPc(row.DeviceId, row.Name, row.Address, row.Port);
+            : new AgentPc(row.DeviceId, row.Name, row.Address, row.Port);
 
         PairResult result;
         try
@@ -617,7 +617,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     /// The transport has pinned the PC's certificate; the room must say so too, at once. If the
     /// room cannot be saved, the pin is undone so the PC is never trusted-but-not-in-the-room.
     /// </summary>
-    private void RecordPaired(SetupRow row, StudentPc pc)
+    private void RecordPaired(SetupRow row, AgentPc pc)
     {
         var member = new RoomMember(row.DeviceId, pc.AnnouncedName, pc.Address, pc.Port, _today(), Selected: true);
         var index = _members.FindIndex(m => m.DeviceId == row.DeviceId);
@@ -681,7 +681,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         }
     }
 
-    private void OnSeen(StudentPc pc)
+    private void OnSeen(AgentPc pc)
     {
         if (!_active)
         {
@@ -710,7 +710,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
         existing.Address = pc.Address;
         existing.Port = pc.Port;
 
-        // A member keeps the name the teacher gave it; a PC not in the room is called what it calls itself.
+        // A member keeps the name the presenter gave it; a PC not in the room is called what it calls itself.
         if (!_members.Any(m => m.DeviceId == pc.DeviceId) && existing.Name != pc.AnnouncedName)
         {
             existing.Name = pc.AnnouncedName;
@@ -721,7 +721,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
     /// <summary>
     /// Whether any pairing action may be taken: no pairing running, this PC healthy, and the room
     /// readable — a pairing the room cannot record would only be undone (see <see cref="RecordPaired"/>),
-    /// after the student PC had already accepted it.
+    /// after the agent PC had already accepted it.
     /// </summary>
     private bool ActionsAllowed => !_isPairing && !_busy && !_health.HasLocalFault && !_roomUnreadable;
 

@@ -16,7 +16,7 @@ namespace Promin.Master.Core.Setup;
 /// </list>
 /// </summary>
 /// <remarks>
-/// A student PC announces itself every two seconds, so nothing real is dropped, and a flood of
+/// An agent PC announces itself every two seconds, so nothing real is dropped, and a flood of
 /// forged devices can hide an unpaired PC only for as long as it lasts, and a paired one never.
 /// The time is a running millisecond count, not the clock, so a clock change cannot silence a PC.
 /// </remarks>
@@ -39,7 +39,7 @@ public sealed class AnnouncementFilter(Func<string, bool> isPinned)
     public int UnpinnedTracked => _others.Count;
 
     /// <summary>Whether to pass this announcement on. One caller at a time.</summary>
-    public bool ShouldPost(StudentPc pc, long nowMilliseconds)
+    public bool ShouldPost(AgentPc pc, long nowMilliseconds)
     {
         ArgumentNullException.ThrowIfNull(pc);
         var paired = isPinned(pc.DeviceId);

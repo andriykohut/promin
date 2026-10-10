@@ -13,7 +13,7 @@ namespace Promin.MediaPipeline.Decoding;
 /// texture is as large as the transform's surface (the coded size, a multiple of 16 on most decoders); the
 /// picture is its top-left corner. Not thread-safe.
 /// <para>
-/// <b>Bind flags.</b> The texture is meant to be drawn from by the Direct3D 11 video processor (the student's
+/// <b>Bind flags.</b> The texture is meant to be drawn from by the Direct3D 11 video processor (the viewer's
 /// display scales it to the screen with that), and the documentation of
 /// <c>ID3D11VideoDevice::CreateVideoProcessorInputView</c> allows an input texture only if its bind flags are 0 or
 /// include one of decoder, video encoder, render target or unordered access. A texture bound for shader

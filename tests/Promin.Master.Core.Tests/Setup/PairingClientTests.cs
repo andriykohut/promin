@@ -11,7 +11,7 @@ namespace Promin.Master.Core.Tests.Setup;
 /// </summary>
 public sealed class PairingClientTests : IDisposable
 {
-    private static readonly StudentPc Pc = new("device-01", "PC-01", "192.168.1.21", 17843);
+    private static readonly AgentPc Pc = new("device-01", "PC-01", "192.168.1.21", 17843);
 
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "promin-tests", Guid.NewGuid().ToString("N"));
     private readonly string _trustPath;

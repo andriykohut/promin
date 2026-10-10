@@ -4,7 +4,7 @@ using System.Globalization;
 namespace Promin.Master.Core;
 
 /// <summary>
-/// The teacher PC's log: every <see cref="Trace"/> line, each with its time, in <c>console.log</c>;
+/// The console PC's log: every <see cref="Trace"/> line, each with its time, in <c>console.log</c>;
 /// the run before it is kept as <c>console.previous.log</c>. Readable while the console runs.
 /// </summary>
 public sealed class ConsoleLog : TextWriterTraceListener
@@ -41,7 +41,7 @@ public sealed class ConsoleLog : TextWriterTraceListener
     }
 
     // Logging never throws: the broadcast writes here from its capture loop and its teardown, and a full disk
-    // or a folder that has gone must not end a lesson. There is nowhere to say that a line was lost.
+    // or a folder that has gone must not end a session. There is nowhere to say that a line was lost.
 
     public override void WriteLine(string? message)
     {

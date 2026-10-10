@@ -13,7 +13,7 @@ public sealed class StaleFrameGate
     /// <summary>
     /// Frames discarded for being stale, duplicate, or malformed, for the
     /// lifetime of this gate instance. This is a cumulative, session-wide
-    /// counter: it is for the student PC's own log (nothing carries it to the
+    /// counter: it is for the agent PC's own log (nothing carries it to the
     /// console, whose "dropped frames" come from the broadcast session), and it
     /// is intentionally NOT cleared by <see cref="Reset"/> — a log of a client
     /// that keeps needing resets (e.g. because the master keeps restarting

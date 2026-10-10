@@ -1,7 +1,7 @@
 namespace Promin.Master.Core.Wall;
 
 /// <summary>
-/// Which student PCs are on the network right now: a PC is online while it was seen less than
+/// Which agent PCs are on the network right now: a PC is online while it was seen less than
 /// <paramref name="timeout"/> ago (at exactly the timeout it is offline).
 /// </summary>
 public sealed class PresenceTracker(TimeSpan timeout)

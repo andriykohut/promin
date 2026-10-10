@@ -22,7 +22,7 @@ public sealed class LanDiscovery(Func<string, bool> isPinned) : IDiscovery
     private readonly AnnouncementFilter _filter = new(isPinned);
     private LanDiscoveryScanner? _scanner;
 
-    public event Action<StudentPc>? Seen;
+    public event Action<AgentPc>? Seen;
 
     public bool Start()
     {
@@ -62,7 +62,7 @@ public sealed class LanDiscovery(Func<string, bool> isPinned) : IDiscovery
 
     private void OnDiscovered(DiscoveryAnnouncement announcement, IPAddress address)
     {
-        var pc = new StudentPc(announcement.DeviceId, announcement.DisplayName, address.ToString(), announcement.QuicPort);
+        var pc = new AgentPc(announcement.DeviceId, announcement.DisplayName, address.ToString(), announcement.QuicPort);
 
         // Every announcement passed on is work for the UI thread; the filter decides which are worth it.
         bool post;

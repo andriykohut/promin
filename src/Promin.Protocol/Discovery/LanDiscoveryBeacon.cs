@@ -4,8 +4,8 @@ using System.Net.Sockets;
 namespace Promin.Protocol.Discovery;
 
 /// <summary>
-/// The student PC's side of discovery: announces this device on the LAN, over and over, so a
-/// teacher's console that starts listening at any time finds it within one interval.
+/// The agent PC's side of discovery: announces this device on the LAN, over and over, so a
+/// console that starts listening at any time finds it within one interval.
 /// </summary>
 /// <remarks>
 /// <b>Once per network.</b> A single send to the limited broadcast address (255.255.255.255)

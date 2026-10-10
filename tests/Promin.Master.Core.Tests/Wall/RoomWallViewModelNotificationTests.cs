@@ -15,7 +15,7 @@ public sealed class RoomWallViewModelNotificationTests
         var now = new DateTimeOffset(2026, 10, 3, 10, 0, 0, TimeSpan.Zero);
         var vm = new RoomWallViewModel(store, discovery, new FakeBroadcastController(), new FakePairingClient(), new InMemoryWallSettings(), () => now, a => a());
         vm.Activate();
-        discovery.Raise(new StudentPc("device-01", "PC-01", "192.168.1.21", 17843));
+        discovery.Raise(new AgentPc("device-01", "PC-01", "192.168.1.21", 17843));
         var raised = 0;
         vm.PropertyChanged += (_, e) => raised += e.PropertyName == nameof(RoomWallViewModel.IsOnAir) ? 1 : 0;
 

@@ -4,7 +4,7 @@ using System.Net.Sockets;
 namespace Promin.Protocol.Discovery;
 
 /// <summary>
-/// The console's side of discovery: listens for the announcements student PCs broadcast and
+/// The console's side of discovery: listens for the announcements agent PCs broadcast and
 /// raises <see cref="DeviceDiscovered"/> for each well-formed one.
 /// </summary>
 /// <remarks>

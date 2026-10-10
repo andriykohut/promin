@@ -1,6 +1,6 @@
 namespace Promin.Protocol.Video;
 
-/// <summary>How much of a picture's detail the teacher wants to keep: more detail costs more bandwidth.</summary>
+/// <summary>How much of a picture's detail the presenter wants to keep: more detail costs more bandwidth.</summary>
 public enum Sharpness
 {
     Light,

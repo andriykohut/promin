@@ -5,7 +5,7 @@ namespace Promin.Master.Core.Wall;
 
 public readonly record struct BroadcastStats(int FramesDropped, int FramesOffered);
 
-/// <summary>The broadcast, as the wall drives it: the pipeline and one connection per student PC.</summary>
+/// <summary>The broadcast, as the wall drives it: the pipeline and one connection per agent PC.</summary>
 public interface IBroadcastController
 {
     /// <summary>From the probe until an encoder has been built; from then on what the encoder reports.</summary>

@@ -40,7 +40,7 @@ public sealed class FakePairingClient : IPairingClient
     /// <summary>Completes when the held pairing has been asked for.</summary>
     public Task Reached => _reached.Task;
 
-    public async Task<PairResult> PairAsync(StudentPc pc, string roomCode, CancellationToken ct)
+    public async Task<PairResult> PairAsync(AgentPc pc, string roomCode, CancellationToken ct)
     {
         Calls.Add((pc.DeviceId, roomCode));
         Tokens.Add(ct);

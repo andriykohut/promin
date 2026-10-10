@@ -5,8 +5,8 @@ using Promin.Protocol.Transport;
 namespace Promin.Agent;
 
 /// <summary>
-/// The room code on a student PC: <c>{"roomCode":"482913"}</c> in a file every user of the PC can read. That is
-/// accepted: knowing the code is of no use against a PC that already has a teacher PC pinned.
+/// The room code on an agent PC: <c>{"roomCode":"482913"}</c> in a file every user of the PC can read. That is
+/// accepted: knowing the code is of no use against a PC that already has a console PC pinned.
 /// </summary>
 internal sealed class AgentSettings(string path)
 {

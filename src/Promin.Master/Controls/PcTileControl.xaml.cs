@@ -11,7 +11,7 @@ namespace Promin.Master.Controls;
 
 /// <summary>
 /// One tile of the room wall, bound to a <see cref="PcTile"/>. Everything it shows comes from the
-/// tile; it raises an event for each thing the teacher asks for and decides nothing itself.
+/// tile; it raises an event for each thing the presenter asks for and decides nothing itself.
 /// </summary>
 public sealed partial class PcTileControl : UserControl
 {
@@ -31,7 +31,7 @@ public sealed partial class PcTileControl : UserControl
         set => SetValue(TileProperty, value);
     }
 
-    /// <summary>The teacher clicked the tile or its checkbox.</summary>
+    /// <summary>The presenter clicked the tile or its checkbox.</summary>
     public event Action<PcTile>? Toggled;
 
     public event Action<PcTile>? StopSendingRequested;

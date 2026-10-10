@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace Promin.Protocol.Discovery;
 
 /// <summary>
-/// The datagram a student PC broadcasts so the teacher's console can find it: who it is, what to
+/// The datagram an agent PC broadcasts so the console can find it: who it is, what to
 /// call it, and where and with what certificate to dial it.
 /// </summary>
 /// <remarks>

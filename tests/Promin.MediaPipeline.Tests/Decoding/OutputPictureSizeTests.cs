@@ -3,7 +3,7 @@ using Promin.MediaPipeline.Decoding;
 namespace Promin.MediaPipeline.Tests.Decoding;
 
 // The size a decoded picture is reported with: the display aperture when the output type has one, otherwise
-// the frame size. Reporting the coded size puts a band of garbage along the bottom of every student's screen.
+// the frame size. Reporting the coded size puts a band of garbage along the bottom of every agent PC's screen.
 public class OutputPictureSizeTests
 {
     private static ulong Pack(int width, int height) => ((ulong)(uint)width << 32) | (uint)height;

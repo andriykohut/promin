@@ -43,8 +43,8 @@ public class QuicControlStreamTests
 
     /// <summary>
     /// The master opens the control stream itself and never accepts one, so it grants an agent
-    /// no bidirectional streams: whatever a student's PC opened would only pile up unread on the
-    /// teacher's laptop. The agent's attempt never gets a stream. Fails the credit of four the
+    /// no bidirectional streams: whatever an agent PC opened would only pile up unread on the
+    /// presenter's laptop. The agent's attempt never gets a stream. Fails the credit of four the
     /// master used to grant, under which the stream opens at once.
     /// </summary>
     [Fact(Timeout = 30000)]

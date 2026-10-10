@@ -8,8 +8,8 @@ using Promin.Protocol.Transport;
 namespace Promin.Protocol.Tests.Transport;
 
 /// <summary>
-/// Who an agent's pairing window lets in. A student PC that has no teacher PC pinned yet admits anyone; one
-/// that has admits only that teacher PC, so that knowing the room code is of no use against a PC that has
+/// Who an agent's pairing window lets in. An agent PC that has no console PC pinned yet admits anyone; one
+/// that has admits only that console PC, so that knowing the room code is of no use against a PC that has
 /// already been paired.
 /// </summary>
 public class QuicPairingAdmissionTests
@@ -17,9 +17,9 @@ public class QuicPairingAdmissionTests
     private static readonly byte[] RoomCodeBytes = [7, 7, 7, 7];
 
     /// <summary>
-    /// The agent has a teacher PC pinned and its window is open to pinned peers only. A stranger dials to pair:
+    /// The agent has a console PC pinned and its window is open to pinned peers only. A stranger dials to pair:
     /// it is turned away during the TLS handshake, the window is not used up by it, and it never reaches a
-    /// handshake, so it has had no guess at the code. The pinned teacher PC then pairs in that same window.
+    /// handshake, so it has had no guess at the code. The pinned console PC then pairs in that same window.
     /// </summary>
     [Fact(Timeout = 30000)]
     public async Task PinnedPeersOnly_RefusesAStranger_WithoutSpendingAGuess()
@@ -40,7 +40,7 @@ public class QuicPairingAdmissionTests
             $"expected the agent to refuse a stranger's pairing dial during TLS, got {refusal}");
         await WaitForRejectionAsync(harness, rejectedBefore, deadline.Token);
 
-        // The refusal spent nothing: the operation is still waiting for a teacher PC.
+        // The refusal spent nothing: the operation is still waiting for a console PC.
         Assert.False(agentPairing.IsCompleted, "a stranger's dial used up the pairing window");
 
         var masterOutcome = await new QuicMasterConnector(harness.MasterCertificate, harness.MasterTrust)

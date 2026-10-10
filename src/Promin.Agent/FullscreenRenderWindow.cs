@@ -7,9 +7,9 @@ using static Promin.Agent.NativeMethods;
 namespace Promin.Agent;
 
 /// <summary>
-/// The student's render window: a minimal Win32 window and a DXGI swap chain, no UI framework. Fullscreen it is
+/// The viewer's render window: a minimal Win32 window and a DXGI swap chain, no UI framework. Fullscreen it is
 /// borderless and topmost over the primary display in real pixels (the process is per-monitor DPI aware), black
-/// where the picture does not reach, with no text and no controls, and the student's own pointer hidden over it.
+/// where the picture does not reach, with no text and no controls, and the viewer's own pointer hidden over it.
 /// With <c>windowed</c> it is an ordinary resizable window, for running console and agent side by side.
 /// </summary>
 /// <remarks>
@@ -21,7 +21,7 @@ namespace Promin.Agent;
 /// </para>
 /// <para>
 /// <b>Close.</b> Fullscreen, a request to close the window (Alt+F4, the system menu) is ignored: a broadcast ends
-/// when the teacher stops it or the connection is lost, not when the student presses a key. Windowed, it closes the
+/// when the presenter stops it or the connection is lost, not when the viewer presses a key. Windowed, it closes the
 /// window and so ends that broadcast's display; the agent carries on. The window never ends the process.
 /// </para>
 /// <para>
@@ -86,7 +86,7 @@ internal sealed class FullscreenRenderWindow : IDisposable
 
     /// <summary>
     /// Pumps this thread's messages until the window has been destroyed. For that long Windows is asked to keep
-    /// the screen and the PC awake: students watch a lesson without touching the PC.
+    /// the screen and the PC awake: viewers watch a session without touching the PC.
     /// </summary>
     public void RunMessageLoop(Action<string> log)
     {
@@ -116,7 +116,7 @@ internal sealed class FullscreenRenderWindow : IDisposable
             : "Windows refused to keep the screen awake. It may go dark while the broadcast is on screen.");
 
         // The request keeps a screen on but does not turn on one that is already dark. A mouse move of no
-        // distance does: Windows takes it as the student touching the PC.
+        // distance does: Windows takes it as the viewer touching the PC.
         var nudge = new Input { Type = INPUT_MOUSE, Mouse = new MouseInput { Flags = MOUSEEVENTF_MOVE } };
         if (SendInput(1, ref nudge, Marshal.SizeOf<Input>()) == 0)
         {
@@ -134,7 +134,7 @@ internal sealed class FullscreenRenderWindow : IDisposable
         return Post(WM_APP + number);
     }
 
-    /// <summary>Closes the window, from any thread. Windowed or not, this closes it (the student's own request to does not, fullscreen).</summary>
+    /// <summary>Closes the window, from any thread. Windowed or not, this closes it (the viewer's own request to does not, fullscreen).</summary>
     public bool PostClose() => Post(WM_APP);
 
     // A window handle of 0 would post to the calling thread's own queue, so a window that is gone is not posted to.
@@ -352,7 +352,7 @@ internal sealed class FullscreenRenderWindow : IDisposable
                 return 0;
 
             case WM_SETCURSOR when (lParam & 0xFFFF) == HTCLIENT:
-                SetCursor(0); // the student's pointer is not shown over the picture
+                SetCursor(0); // the viewer's pointer is not shown over the picture
                 return 1;
 
             case WM_ERASEBKGND:
@@ -368,7 +368,7 @@ internal sealed class FullscreenRenderWindow : IDisposable
                     DestroyWindow(hwnd);
                 }
 
-                // Fullscreen: the student's Alt+F4 does nothing. The teacher ends the broadcast.
+                // Fullscreen: the viewer's Alt+F4 does nothing. The presenter ends the broadcast.
                 return 0;
 
             case WM_SIZE when _windowed && (int)wParam != SIZE_MINIMIZED:
@@ -377,7 +377,7 @@ internal sealed class FullscreenRenderWindow : IDisposable
                 return 0;
 
             case WM_DISPLAYCHANGE when !_windowed:
-                // The student PC's resolution changed: cover the display as it is now.
+                // The agent PC's resolution changed: cover the display as it is now.
                 var (screenWidth, screenHeight) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
                 SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, screenWidth, screenHeight, SWP_NOACTIVATE);
                 ResizeTo(screenWidth, screenHeight);

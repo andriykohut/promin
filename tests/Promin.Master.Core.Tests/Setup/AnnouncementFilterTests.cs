@@ -13,7 +13,7 @@ public sealed class AnnouncementFilterTests
         _filter = new AnnouncementFilter(_pinned.Contains);
     }
 
-    private static StudentPc Pc(int n, string address = "192.168.1.21", int port = 17843, string name = "PC") =>
+    private static AgentPc Pc(int n, string address = "192.168.1.21", int port = 17843, string name = "PC") =>
         new($"device-{n:0000}", name, address, port);
 
     /// <summary>Two hundred devices nobody paired, each announcing once at <paramref name="at"/>.</summary>

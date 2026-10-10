@@ -42,7 +42,7 @@ internal static class AgentCommands
     {
         if (!File.Exists(paths.MastersFile))
         {
-            output.WriteLine($"No teacher PC is paired under this Windows account ({paths.MastersFile} does not exist).");
+            output.WriteLine($"No console PC is paired under this Windows account ({paths.MastersFile} does not exist).");
             return ExitCodes.Success;
         }
 
@@ -52,12 +52,12 @@ internal static class AgentCommands
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            output.WriteLine($"The paired teacher PC could not be forgotten ({paths.MastersFile}): {e.Message}");
+            output.WriteLine($"The paired console PC could not be forgotten ({paths.MastersFile}): {e.Message}");
             return ExitCodes.FileUnusable;
         }
 
         output.WriteLine(
-            $"Forgot the paired teacher PC (deleted {paths.MastersFile}). An agent that is already running " +
+            $"Forgot the paired console PC (deleted {paths.MastersFile}). An agent that is already running " +
             "keeps it until it is restarted.");
         return ExitCodes.Success;
     }

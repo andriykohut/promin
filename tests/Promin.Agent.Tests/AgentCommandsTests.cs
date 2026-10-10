@@ -133,7 +133,7 @@ public class AgentCommandsTests
         var (exitCode, output) = Run(temp.Paths, "--reset-pairing");
 
         Assert.Equal(0, exitCode);
-        Assert.Contains("No teacher PC is paired", output);
+        Assert.Contains("No console PC is paired", output);
     }
 
     [Fact]

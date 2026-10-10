@@ -19,7 +19,7 @@ namespace Promin.Master.Pages;
 /// </summary>
 /// <remarks>
 /// No <c>async void</c> handler here lets an exception escape: the view model never throws for
-/// anything a disk, the network or a student PC does, and whatever is left (a programming error,
+/// anything a disk, the network or an agent PC does, and whatever is left (a programming error,
 /// a second dialog opened over the first) is written to the debug output rather than ending the
 /// process from inside the dispatcher.
 /// </remarks>

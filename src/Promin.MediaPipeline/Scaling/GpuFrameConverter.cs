@@ -7,7 +7,7 @@ namespace Promin.MediaPipeline.Scaling;
 /// <summary>
 /// Scales a BGRA texture and converts it to NV12 in one GPU step, with the Direct3D 11 video
 /// processor. The input is read as full-range RGB and the output is limited-range BT.709, so black
-/// stays black on the student's screen. Not thread-safe: one call at a time.
+/// stays black on the agent PC's screen. Not thread-safe: one call at a time.
 /// </summary>
 public sealed class GpuFrameConverter : IDisposable
 {
@@ -188,7 +188,7 @@ public sealed class GpuFrameConverter : IDisposable
         _videoContext.VideoProcessorSetStreamColorSpace(processor, 0, ColorSpace(VideoProcessorNominalRange.Range_0_255));
         _videoContext.VideoProcessorSetOutputColorSpace(processor, ColorSpace(VideoProcessorNominalRange.Range_16_235));
 
-        // No driver "enhancement" of the picture: the student must see the teacher's screen as it is.
+        // No driver "enhancement" of the picture: the viewer must see the presenter's screen as it is.
         _videoContext.VideoProcessorSetStreamAutoProcessingMode(processor, 0, false);
 
         _videoContext.VideoProcessorSetStreamSourceRect(processor, 0, true, new RawRect(0, 0, sourceWidth, sourceHeight));

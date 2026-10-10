@@ -14,7 +14,7 @@ namespace Promin.Master.Core.Wall;
 /// </summary>
 /// <remarks>
 /// <b>Nothing escapes.</b> Every public member is called from a click handler, a timer or a
-/// navigation event, so none of them throws for anything a disk, the network or a student PC can
+/// navigation event, so none of them throws for anything a disk, the network or an agent PC can
 /// do: a start that fails reads <see cref="WallMessage.BroadcastStopped"/>, a save that fails
 /// leaves the room as it was and reads <see cref="WallMessage.RoomNotSaved"/>.
 ///
@@ -52,7 +52,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private readonly PresenceTracker _presence = new(PresenceTimeout);
     private readonly List<RoomMember> _members = [];
     private readonly HashSet<string> _sendingTo = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _stoppedByTeacher = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _stoppedByPresenter = new(StringComparer.Ordinal);
     private readonly HashSet<string> _rejoining = new(StringComparer.Ordinal);
 
     // PCs reported lost while a start was still connecting: not receiving when it returns, whatever it says.
@@ -275,7 +275,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _onAir = true;
         _startedAt = _now();
         _sendingTo.Clear();
-        _stoppedByTeacher.Clear();
+        _stoppedByPresenter.Clear();
         foreach (var target in targets)
         {
             if (unreachable.Contains(target.DeviceId) || _lostWhileStarting.Contains(target.DeviceId))
@@ -342,7 +342,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     public void StopSendingTo(PcTile tile)
     {
         ArgumentNullException.ThrowIfNull(tile);
-        if (!_onAir || !_stoppedByTeacher.Add(tile.DeviceId))
+        if (!_onAir || !_stoppedByPresenter.Add(tile.DeviceId))
         {
             return;
         }
@@ -411,7 +411,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             _broadcast.StopSendingTo(tile.DeviceId);
         }
 
-        _stoppedByTeacher.Remove(tile.DeviceId);
+        _stoppedByPresenter.Remove(tile.DeviceId);
 
         try
         {
@@ -522,7 +522,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
                 _broadcast.StopSendingTo(gone);
             }
 
-            _stoppedByTeacher.Remove(gone);
+            _stoppedByPresenter.Remove(gone);
         }
 
         Tiles.Clear();
@@ -544,13 +544,13 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         Raise(nameof(IsEmptyRoom));
     }
 
-    private void OnSeenAnyThread(StudentPc pc) => _runOnUiThread(() => OnSeen(pc));
+    private void OnSeenAnyThread(AgentPc pc) => _runOnUiThread(() => OnSeen(pc));
 
     private void OnClientLostAnyThread(string deviceId) => _runOnUiThread(() => OnClientLost(deviceId));
 
     private void OnBroadcastFailedAnyThread() => _runOnUiThread(OnBroadcastFailed);
 
-    private void OnSeen(StudentPc pc)
+    private void OnSeen(AgentPc pc)
     {
         // Nothing is kept for a PC that is not in this room, and nothing is saved here: see _announcedAt.
         if (MemberOf(pc.DeviceId) is null)
@@ -664,7 +664,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     {
         _onAir = false;
         _sendingTo.Clear();
-        _stoppedByTeacher.Clear();
+        _stoppedByPresenter.Clear();
         _backId = null;
 
         // The next broadcast's source first; the callbacks of the ended one run on the pool, and nothing they throw comes back here.
@@ -735,9 +735,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     private PcTile TileOf(string deviceId) => Tiles.First(t => t.DeviceId == deviceId);
 
-    /// <summary>Whether the running broadcast should be sending to this PC: selected, and not stopped by the teacher.</summary>
+    /// <summary>Whether the running broadcast should be sending to this PC: selected, and not stopped by the presenter.</summary>
     private bool IsWanted(RoomMember? member) =>
-        _onAir && member is { Selected: true } && !_stoppedByTeacher.Contains(member.DeviceId);
+        _onAir && member is { Selected: true } && !_stoppedByPresenter.Contains(member.DeviceId);
 
     private PcTileState StateOf(RoomMember member, PcTile tile, bool online, DateTimeOffset now)
     {

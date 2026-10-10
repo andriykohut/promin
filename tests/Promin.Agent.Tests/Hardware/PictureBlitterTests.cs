@@ -8,7 +8,7 @@ namespace Promin.Agent.Tests.Hardware;
 // These need the GPU and its video processor. They use synthetic pictures, open no window and capture nothing.
 // They cannot run on a headless CI agent: run them by hand on the target machine (remove the Skip text, run,
 // put it back). The pictures are made NV12 by the capture side's own converter, so this also checks that what
-// the teacher PC's pipeline writes is what the student PC draws.
+// the console PC's pipeline writes is what the agent PC draws.
 public class PictureBlitterTests(ITestOutputHelper output)
 {
     private const string NeedsGpu =

@@ -8,7 +8,7 @@ using Promin.Protocol.Messages;
 namespace Promin.Protocol.Transport;
 
 /// <summary>
-/// The master (teacher machine) side of the transport: dials one agent and returns the
+/// The master (console PC) side of the transport: dials one agent and returns the
 /// <see cref="QuicChannel"/> for it, or pairs with it.
 /// </summary>
 /// <remarks>
@@ -276,8 +276,8 @@ public sealed class QuicMasterConnector
             HandshakeTimeout = QuicTransportSettings.HandshakeTimeout,
 
             // The master opens the control stream itself and receives no video, so it grants the
-            // agent no stream credit of either kind: agent machines are student-controlled, and every
-            // stream of credit is memory a student's PC can make the teacher's laptop allocate.
+            // agent no stream credit of either kind: agent machines are viewer-controlled, and every
+            // stream of credit is memory an agent PC can make the presenter's laptop allocate.
             MaxInboundBidirectionalStreams = QuicTransportSettings.MasterMaxInboundBidirectionalStreams,
             MaxInboundUnidirectionalStreams = QuicTransportSettings.MasterMaxInboundUnidirectionalStreams,
 

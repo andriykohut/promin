@@ -6,15 +6,15 @@ using Vortice.MediaFoundation;
 namespace Promin.MediaPipeline.Decoding;
 
 /// <summary>
-/// H.264 decoder on Media Foundation, for the student side of the broadcast: Windows' built-in decoder, which
+/// H.264 decoder on Media Foundation, for the agent side of the broadcast: Windows' built-in decoder, which
 /// decodes on the GPU when it is given a Direct3D device it can use and falls back to software by itself when
 /// it cannot. Each picture comes out as an NV12 texture on the device the decoder was given
 /// (<see cref="DecodedFrame"/>, which also says how long it stays valid and that the picture can be smaller
 /// than its texture).
 /// <para>
 /// Set up for low delay with no frame reordering, so a picture comes back from the call that fed it. The
-/// teacher's screen is often still and a new picture arrives only every few seconds; a decoder that waited for
-/// the next one would show students a picture seconds late. If this machine's decoder will not do that, the
+/// presenter's screen is often still and a new picture arrives only every few seconds; a decoder that waited for
+/// the next one would show viewers a picture seconds late. If this machine's decoder will not do that, the
 /// calls return false until the next picture arrives (<see cref="PicturesHeldBack"/> counts it and
 /// <see cref="Configuration"/> says what the decoder was asked and what it answered).
 /// </para>
@@ -48,7 +48,7 @@ public sealed class MediaFoundationH264Decoder : IVideoDecoder
 
     /// <summary>
     /// How many times the decoder took an input and gave nothing back from that call, with no failure. That is
-    /// either a decoder that holds pictures back (a still teacher's screen would then show students a picture
+    /// either a decoder that holds pictures back (a still presenter's screen would then show viewers a picture
     /// late) or input the decoder swallowed without complaint (junk under well-formed headers). On a clean stream
     /// non-zero means the former; zero is what one-in one-out looks like. This, not the low-latency request
     /// recorded in <see cref="Configuration"/>, is the evidence.
@@ -80,7 +80,7 @@ public sealed class MediaFoundationH264Decoder : IVideoDecoder
     /// </summary>
     public string? LastFailure => _presentFailure ?? _pipeline!.LastFailure;
 
-    /// <param name="device">The device to decode on; the pictures come out on it. On a student PC it is the device the display window uses.</param>
+    /// <param name="device">The device to decode on; the pictures come out on it. On an agent PC it is the device the display window uses.</param>
     public MediaFoundationH264Decoder(ID3D11Device device)
         : this(device, allowHardware: true)
     {

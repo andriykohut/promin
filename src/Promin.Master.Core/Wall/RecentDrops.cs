@@ -2,7 +2,7 @@ namespace Promin.Master.Core.Wall;
 
 /// <summary>
 /// Answers "is this PC dropping frames right now?" from a running total. A PC that
-/// dropped one frame early in the lesson must not look unhealthy for the rest of it.
+/// dropped one frame early in the session must not look unhealthy for the rest of it.
 /// </summary>
 public sealed class RecentDrops(TimeSpan window)
 {

@@ -2,7 +2,7 @@ namespace Promin.MediaPipeline.Encoding;
 
 /// <summary>
 /// Remembers the sequence and picture parameter sets of the stream and gives them to a keyframe that
-/// arrives without. A student who joins at a keyframe can only decode it if it carries them.
+/// arrives without. A viewer who joins at a keyframe can only decode it if it carries them.
 /// </summary>
 internal sealed class H264ParameterSets
 {
@@ -47,7 +47,7 @@ internal sealed class H264ParameterSets
     /// For a keyframe (an Annex B picture with an IDR slice) that lacks a sequence or picture parameter set:
     /// the remembered SPS and PPS are put in front of it. Returns <paramref name="frame"/> itself, with
     /// <paramref name="added"/> false, for any other picture and for a keyframe that has both.
-    /// Throws when a keyframe needs them and none are known: sending it would give students a picture they
+    /// Throws when a keyframe needs them and none are known: sending it would give viewers a picture they
     /// cannot decode, and say nothing.
     /// </summary>
     public byte[] Complete(byte[] frame, out bool added)
@@ -61,7 +61,7 @@ internal sealed class H264ParameterSets
         {
             throw new InvalidOperationException(
                 "The encoder produced a keyframe without parameter sets (SPS/PPS), and none were seen earlier in the stream " +
-                "or in its output type, so a student could not decode it.");
+                "or in its output type, so a viewer could not decode it.");
         }
 
         added = true;

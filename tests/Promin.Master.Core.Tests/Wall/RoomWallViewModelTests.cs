@@ -49,7 +49,7 @@ public sealed class RoomWallViewModelTests
     {
         foreach (var n in numbers)
         {
-            _discovery.Raise(new StudentPc(Id(n), $"PC-{n:00}", $"192.168.1.{20 + n}", 17843));
+            _discovery.Raise(new AgentPc(Id(n), $"PC-{n:00}", $"192.168.1.{20 + n}", 17843));
         }
     }
 
@@ -177,7 +177,7 @@ public sealed class RoomWallViewModelTests
     {
         var vm = TenWithSevenOffline();
 
-        _discovery.Raise(new StudentPc(Id(1), "PC-01", "192.168.1.99", 17900));
+        _discovery.Raise(new AgentPc(Id(1), "PC-01", "192.168.1.99", 17900));
         vm.Tick();
 
         // An announcement is a claim anyone on the network can make: nothing is written for it.
@@ -202,7 +202,7 @@ public sealed class RoomWallViewModelTests
     {
         var vm = TenWithSevenOffline();
         _broadcast.Unreachable.Add(Id(1));
-        _discovery.Raise(new StudentPc(Id(1), "PC-01", "192.168.1.99", 17900));
+        _discovery.Raise(new AgentPc(Id(1), "PC-01", "192.168.1.99", 17900));
 
         await vm.StartAsync();
         vm.Tick();
@@ -231,7 +231,7 @@ public sealed class RoomWallViewModelTests
         // Set up devices keeps its own copy of the room; it removes one PC and pairs another.
         _store.Members.RemoveAll(m => m.DeviceId == Id(4));
         _store.Members.Add(Member(11));
-        _discovery.Raise(new StudentPc(Id(1), "PC-01", "192.168.1.99", 17900));
+        _discovery.Raise(new AgentPc(Id(1), "PC-01", "192.168.1.99", 17900));
         vm.Tick();
 
         Assert.Equal(0, _store.Saves);
@@ -715,7 +715,7 @@ public sealed class RoomWallViewModelTests
 
         // Removed on Set up devices, which takes its pin away; the wall has not read the room again.
         _pairing.Trusted = id => id != Id(4);
-        _discovery.Raise(new StudentPc(Id(4), "PC-04", "192.168.1.99", 17900));
+        _discovery.Raise(new AgentPc(Id(4), "PC-04", "192.168.1.99", 17900));
         _broadcast.PendingStart.SetResult([]);
         await starting;
 

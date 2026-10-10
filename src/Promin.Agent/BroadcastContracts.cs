@@ -3,13 +3,13 @@ using Promin.Protocol.Messages;
 namespace Promin.Agent;
 
 /// <summary>
-/// One teacher PC's connection as the agent handles it: its control messages and its video frames. In the agent
+/// One console PC's connection as the agent handles it: its control messages and its video frames. In the agent
 /// this is a <c>QuicChannel</c>; the seam keeps the handling testable with no network.
 /// </summary>
 internal interface IAgentConnection
 {
     /// <summary>
-    /// The next control message. The first call waits for the teacher PC to open its control stream, which it does
+    /// The next control message. The first call waits for the console PC to open its control stream, which it does
     /// by sending its first message. Throws when the connection is lost or its control stream is corrupt.
     /// </summary>
     Task<ControlMessage> ReceiveControlAsync(CancellationToken ct);
@@ -17,14 +17,14 @@ internal interface IAgentConnection
     /// <summary>The next whole video frame (envelope and encoded bytes). Throws when the connection has ended.</summary>
     ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct);
 
-    /// <summary>Sends one control message back to the teacher PC, on the stream it opened. Throws when the connection has ended.</summary>
+    /// <summary>Sends one control message back to the console PC, on the stream it opened. Throws when the connection has ended.</summary>
     Task SendControlAsync(ControlMessage message, CancellationToken ct);
 }
 
-/// <summary>What shows one broadcast on the student's screen: a window, a decoder, and the session that decides what reaches them.</summary>
+/// <summary>What shows one broadcast on the agent PC's screen: a window, a decoder, and the session that decides what reaches them.</summary>
 internal interface IBroadcastDisplay : IDisposable
 {
-    /// <summary>False once the display has ended by itself (the student closed the window, the GPU failed) or been disposed.</summary>
+    /// <summary>False once the display has ended by itself (the viewer closed the window, the GPU failed) or been disposed.</summary>
     bool IsOpen { get; }
 
     /// <summary>
@@ -33,7 +33,7 @@ internal interface IBroadcastDisplay : IDisposable
     /// </summary>
     ValueTask SubmitFrameAsync(byte[] streamPayload, CancellationToken ct);
 
-    /// <summary>A new stream begins on the same display (the teacher PC restarted its broadcast): frames submitted before this are shown first.</summary>
+    /// <summary>A new stream begins on the same display (the console PC restarted its broadcast): frames submitted before this are shown first.</summary>
     ValueTask RestartAsync(CancellationToken ct);
 }
 

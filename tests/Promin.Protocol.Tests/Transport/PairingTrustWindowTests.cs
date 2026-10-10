@@ -252,8 +252,8 @@ public class PairingTrustWindowTests
     [Fact]
     public void ReadDeviceId_IsTheSubjectCommonName()
     {
-        using var certificate = SelfSignedCertificateFactory.Create("classroom-pc-07");
+        using var certificate = SelfSignedCertificateFactory.Create("room-pc-07");
 
-        Assert.Equal("classroom-pc-07", CertificateIdentity.ReadDeviceId(certificate));
+        Assert.Equal("room-pc-07", CertificateIdentity.ReadDeviceId(certificate));
     }
 }

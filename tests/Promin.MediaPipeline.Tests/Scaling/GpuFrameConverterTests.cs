@@ -13,7 +13,7 @@ public class GpuFrameConverterTests(ITestOutputHelper output)
     public void Constructor_RefusesANullDevice() =>
         Assert.Throws<ArgumentNullException>(() => new GpuFrameConverter(null!));
 
-    // Black must stay black on the student's screen: full-range RGB in, limited-range (16..235) BT.709 out.
+    // Black must stay black on the agent PC's screen: full-range RGB in, limited-range (16..235) BT.709 out.
     // Red tells BT.709 from BT.601 apart: Y is about 63 under 709 and 81 under 601.
     [Theory(Skip = NeedsGpu)]
     [InlineData(0, 0, 0, 16, 128, 128)]

@@ -39,7 +39,7 @@ public class DxgiScreenCaptureTests(ITestOutputHelper output)
         Assert.True(capture.TryGetNextFrame(TimeSpan.FromSeconds(2), out _));
     }
 
-    // Requirement 2 at its hardest: a teacher pointing at a still slide, with the capture just started.
+    // Requirement 2 at its hardest: a presenter pointing at a still slide, with the capture just started.
     // PointerOnlyUpdate_StillYieldsAFrame cannot show this, because on a screen that keeps changing a
     // frame arrives for reasons that have nothing to do with the pointer. So this test first insists
     // that the screen really is still (and fails, saying so, if it never becomes still within 15 s:

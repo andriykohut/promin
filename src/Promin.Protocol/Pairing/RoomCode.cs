@@ -1,6 +1,6 @@
 namespace Promin.Protocol.Pairing;
 
-/// <summary>The room code an admin sets at install and types once on the teacher PC.</summary>
+/// <summary>The room code an admin sets at install and types once on the console PC.</summary>
 public static class RoomCode
 {
     public const int Length = 6;

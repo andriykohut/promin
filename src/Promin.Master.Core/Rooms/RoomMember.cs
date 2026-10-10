@@ -2,7 +2,7 @@ using Promin.Protocol.Discovery;
 
 namespace Promin.Master.Core.Rooms;
 
-/// <summary>A student PC that has been paired into this room.</summary>
+/// <summary>An agent PC that has been paired into this room.</summary>
 public sealed record RoomMember(
     string DeviceId, string DisplayName, string LastAddress, int Port, DateOnly PairedOn, bool Selected)
 {

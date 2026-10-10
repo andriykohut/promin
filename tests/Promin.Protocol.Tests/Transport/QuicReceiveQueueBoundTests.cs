@@ -5,7 +5,7 @@ using Promin.Protocol.Video;
 namespace Promin.Protocol.Tests.Transport;
 
 /// <summary>
-/// How many whole frames a student PC keeps waiting for its display, and what the session makes of the frames it
+/// How many whole frames an agent PC keeps waiting for its display, and what the session makes of the frames it
 /// loses when that bound is hit. The depth is something the agent passes when it creates its listener; every other
 /// caller keeps the default.
 /// </summary>
@@ -76,7 +76,7 @@ public class QuicReceiveQueueBoundTests
         var presenter = new RecordingPresenter();
         var session = new ClientAgentSession(presenter);
 
-        // The student PC is keeping up: frame 0 is read and decoded.
+        // The agent PC is keeping up: frame 0 is read and decoded.
         await master.SendVideoFrameAsync(Frame(0, isKeyframe: true), deadline.Token);
         session.OnVideoFrameReceived(await agent.ReceiveVideoFrameAsync(deadline.Token));
 
