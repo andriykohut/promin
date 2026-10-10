@@ -58,7 +58,7 @@
     <value>Перезапустити Promin, щоб змінити мову?</value>
   </data>
   <data name="Language_RestartText" xml:space="preserve">
-    <value>Трансляція, якщо вона триває, зупиниться. Якщо вибрати «Пізніше», мова зміниться після наступного запуску Promin.</value>
+    <value>Якщо триває трансляція, вона зупиниться. Натисніть «Пізніше», щоб змінити мову під час наступного запуску Promin.</value>
   </data>
   <data name="Language_RestartNow" xml:space="preserve">
     <value>Перезапустити зараз</value>
@@ -73,7 +73,7 @@
     <value>У цій кімнаті ще немає ПК</value>
   </data>
   <data name="Room_EmptyText" xml:space="preserve">
-    <value>Додайте кожен ПК учня один раз. Після цього вони з’являтимуться тут щоразу, коли ви відкриваєте Promin.</value>
+    <value>Додайте кожен ПК один раз. Після цього вони з’являтимуться тут щоразу, коли ви відкриваєте Promin.</value>
   </data>
   <data name="Room_SelectAll" xml:space="preserve">
     <value>Вибрати всі</value>
@@ -124,7 +124,7 @@
     <value>Перейти до кімнати</value>
   </data>
   <data name="Setup_CodeHelp" xml:space="preserve">
-    <value>6-значний код, який ви вибрали, коли встановлювали Promin на ПК учнів.</value>
+    <value>6-значний код, який ви вибрали, коли встановлювали Promin на інші ПК.</value>
   </data>
   <data name="Setup_CodePlaceholder" xml:space="preserve">
     <value>6 цифр</value>
@@ -132,14 +132,14 @@
   <data name="Setup_CodeHint" xml:space="preserve">
     <value>Код складається з 6 цифр</value>
   </data>
-  <data name="Setup_StudentPcs" xml:space="preserve">
-    <value>ПК учнів</value>
+  <data name="Setup_OtherPcs" xml:space="preserve">
+    <value>Інші ПК</value>
   </data>
   <data name="Setup_StillLooking" xml:space="preserve">
     <value>Пошук триває</value>
   </data>
   <data name="Setup_Looking" xml:space="preserve">
-    <value>Шукаємо ПК учнів</value>
+    <value>Шукаємо інші ПК</value>
   </data>
   <data name="Setup_LookingText" xml:space="preserve">
     <value>Вони з’являються тут за кілька секунд після запуску.</value>
@@ -181,7 +181,7 @@
     <value>{count, plural, =1 {1 ПК у цій кімнаті.} other {Усі {count} ПК у цій кімнаті.}}</value>
   </data>
   <data name="Setup_OnlyOnce" xml:space="preserve">
-    <value>Це робиться лише один раз. Надалі вони під’єднуватимуться самі.</value>
+    <value>Це робиться лише один раз. Надалі вони підключатимуться автоматично.</value>
   </data>
   <data name="Row_NotPaired" xml:space="preserve">
     <value>Не додано</value>
@@ -244,7 +244,7 @@
     <value>Закрийте інші копії Promin і запустіть його знову.</value>
   </data>
   <data name="Banner_DiscoveryTitle" xml:space="preserve">
-    <value>Promin не може шукати ПК учнів.</value>
+    <value>Promin не може шукати інші ПК.</value>
   </data>
   <data name="Banner_DiscoveryText" xml:space="preserve">
     <value>Інша програма на цьому ПК використовує мережевий порт {port}. Закрийте інші копії Promin і відкрийте цей екран знову.</value>
@@ -280,7 +280,7 @@
     <value>Його з’єднання повільне. На інші ПК це не впливає.</value>
   </data>
   <data name="Detail_Reconnecting" xml:space="preserve">
-    <value>Він зник із мережі. Приєднається сам, коли повернеться.</value>
+    <value>Він зник із мережі. Підключиться автоматично, щойно з’явиться знову.</value>
   </data>
   <data name="Detail_Offline" xml:space="preserve">
     <value>Він вимкнений або не в цій мережі.</value>
@@ -313,10 +313,10 @@
     <value>Вибрано {selected} з {all} ПК</value>
   </data>
   <data name="Wall_OfflineOne" xml:space="preserve">
-    <value>{name} не в мережі. Приєднається сам, коли повернеться.</value>
+    <value>{name} не в мережі. Підключиться автоматично, щойно з’явиться.</value>
   </data>
   <data name="Wall_OfflineMany" xml:space="preserve">
-    <value>{count} ПК не в мережі. Приєднаються самі, коли повернуться.</value>
+    <value>{count} ПК не в мережі. Підключаться автоматично, щойно з’являться.</value>
   </data>
   <data name="Wall_ReceivingNone" xml:space="preserve">
     <value>Жоден ПК не отримує.</value>
@@ -340,7 +340,7 @@
     <value>{count} ПК відновлюють зв’язок.</value>
   </data>
   <data name="Sharpness_Light" xml:space="preserve">
-    <value>Легка</value>
+    <value>Низька</value>
   </data>
   <data name="Sharpness_Standard" xml:space="preserve">
     <value>Стандартна</value>
@@ -370,7 +370,7 @@
     <value>Цей ПК не зміг захопити або закодувати свій екран. Почніть трансляцію знову.</value>
   </data>
   <data name="Message_NoPcTitle" xml:space="preserve">
-    <value>Не вдається зв’язатися з жодним ПК учнів.</value>
+    <value>Не вдається зв’язатися з жодним ПК.</value>
   </data>
   <data name="Message_NoPcText" xml:space="preserve">
     <value>Перевірте, чи вони ввімкнені та чи в тій самій мережі, що й цей ПК.</value>
@@ -385,6 +385,6 @@
     <value>{name} повернувся.</value>
   </data>
   <data name="Message_BackText" xml:space="preserve">
-    <value>Він сам приєднався до трансляції.</value>
+    <value>Він автоматично приєднався до трансляції.</value>
   </data>
 </root>

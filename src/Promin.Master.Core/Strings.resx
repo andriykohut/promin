@@ -58,7 +58,7 @@
     <value>Restart Promin to change the language?</value>
   </data>
   <data name="Language_RestartText" xml:space="preserve">
-    <value>A broadcast that is running will stop. If you choose Later, the language changes the next time Promin starts.</value>
+    <value>If a broadcast is running, it will stop. Choose Later to change the language the next time Promin starts.</value>
   </data>
   <data name="Language_RestartNow" xml:space="preserve">
     <value>Restart now</value>
@@ -73,7 +73,7 @@
     <value>No PCs in this room yet</value>
   </data>
   <data name="Room_EmptyText" xml:space="preserve">
-    <value>Pair each student PC once. After that they appear here every time you open Promin.</value>
+    <value>Pair each PC once. After that they appear here every time you open Promin.</value>
   </data>
   <data name="Room_SelectAll" xml:space="preserve">
     <value>Select all</value>
@@ -126,7 +126,7 @@
     <value>Go to This room</value>
   </data>
   <data name="Setup_CodeHelp" xml:space="preserve">
-    <value>The 6-digit code you chose when installing Promin on the student PCs.</value>
+    <value>The 6-digit code you chose when installing Promin on the other PCs.</value>
   </data>
   <data name="Setup_CodePlaceholder" xml:space="preserve">
     <value>6 digits</value>
@@ -134,14 +134,14 @@
   <data name="Setup_CodeHint" xml:space="preserve">
     <value>The code is 6 digits</value>
   </data>
-  <data name="Setup_StudentPcs" xml:space="preserve">
-    <value>Student PCs</value>
+  <data name="Setup_OtherPcs" xml:space="preserve">
+    <value>Other PCs</value>
   </data>
   <data name="Setup_StillLooking" xml:space="preserve">
     <value>Still looking</value>
   </data>
   <data name="Setup_Looking" xml:space="preserve">
-    <value>Looking for student PCs</value>
+    <value>Looking for other PCs</value>
   </data>
   <data name="Setup_LookingText" xml:space="preserve">
     <value>They appear here a few seconds after they start.</value>
@@ -248,7 +248,7 @@
     <value>Close any other copy of Promin, then start it again.</value>
   </data>
   <data name="Banner_DiscoveryTitle" xml:space="preserve">
-    <value>Promin cannot look for student PCs.</value>
+    <value>Promin cannot look for other PCs.</value>
   </data>
   <data name="Banner_DiscoveryText" xml:space="preserve">
     <value>Another program on this PC is using network port {port}. Close any other copy of Promin, then open this screen again.</value>
@@ -385,7 +385,7 @@
     <value>This PC could not capture or encode its screen. Start the broadcast again.</value>
   </data>
   <data name="Message_NoPcTitle" xml:space="preserve">
-    <value>No student PCs can be reached.</value>
+    <value>No PCs can be reached.</value>
   </data>
   <data name="Message_NoPcText" xml:space="preserve">
     <value>Check that they are switched on and on the same network as this PC.</value>

@@ -262,7 +262,7 @@ public sealed class SetupViewModel : INotifyPropertyChanged
 
     public bool HasRows => Rows.Count > 0;
 
-    /// <summary>The "Looking for student PCs" card: nothing found yet, and discovery is running.</summary>
+    /// <summary>The "Looking for other PCs" card: nothing found yet, and discovery is running.</summary>
     public bool ShowsLookingCard => NothingFound && _discoveryRunning;
 
     /// <summary>The "Still looking" indicator beside the count: rows exist, and discovery is running.</summary>

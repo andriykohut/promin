@@ -340,7 +340,7 @@
                 </Grid>
             </Border>
 
-            <!-- 4. Student PCs: the count, and Still looking at the right. -->
+            <!-- 4. Other PCs: the count, and Still looking at the right. -->
             <Grid Margin="0,4,0,-6" ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -350,7 +350,7 @@
                 <TextBlock
                     VerticalAlignment="Bottom"
                     Style="{StaticResource SectionHeadingStyle}"
-                    Text="{x:Bind core:Strings.Setup_StudentPcs}" />
+                    Text="{x:Bind core:Strings.Setup_OtherPcs}" />
                 <TextBlock
                     Grid.Column="1"
                     Margin="0,0,0,1"

@@ -783,7 +783,7 @@ public sealed class SetupViewModelTests
         vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 
         Assert.True(vm.HasDiscoveryError);
-        Assert.Equal("Promin cannot look for student PCs.", vm.DiscoveryErrorTitle);
+        Assert.Equal("Promin cannot look for other PCs.", vm.DiscoveryErrorTitle);
         Assert.Equal(
             "Another program on this PC is using network port 17844. Close any other copy of Promin, then open this screen again.",
             vm.DiscoveryErrorMessage);
@@ -816,7 +816,7 @@ public sealed class SetupViewModelTests
         Assert.Equal(
             new SetupBanner(
                 SetupBannerKind.Error,
-                "Promin cannot look for student PCs.",
+                "Promin cannot look for other PCs.",
                 "Another program on this PC is using network port 17844. Close any other copy of Promin, then open this screen again."),
             vm.DiscoveryError);
         Assert.True(vm.NothingFound);

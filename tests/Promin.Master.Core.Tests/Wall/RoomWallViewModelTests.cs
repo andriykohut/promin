@@ -439,7 +439,7 @@ public sealed class RoomWallViewModelTests
         var vm = Activated();
 
         Assert.Equal(WallMessageKind.Error, vm.Message?.Kind);
-        Assert.Equal("No student PCs can be reached.", vm.Message?.Title);
+        Assert.Equal("No PCs can be reached.", vm.Message?.Title);
         Assert.Equal("Check that they are switched on and on the same network as this PC.", vm.Message?.Text);
         Assert.Equal("Set up devices", vm.Message?.ActionLabel);
         Assert.False(vm.CanStart);
@@ -454,7 +454,7 @@ public sealed class RoomWallViewModelTests
         vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 
         Assert.True(vm.IsMessageOpen);
-        Assert.Equal("No student PCs can be reached.", vm.MessageTitle);
+        Assert.Equal("No PCs can be reached.", vm.MessageTitle);
         Assert.Equal("Check that they are switched on and on the same network as this PC.", vm.MessageText);
         Assert.Equal("Set up devices", vm.MessageActionLabel);
         Assert.True(vm.HasMessageAction);
@@ -477,7 +477,7 @@ public sealed class RoomWallViewModelTests
         vm.Tick();
 
         Assert.True(vm.IsMessageOpen);
-        Assert.Equal("No student PCs can be reached.", vm.MessageTitle);
+        Assert.Equal("No PCs can be reached.", vm.MessageTitle);
         Assert.Contains(nameof(RoomWallViewModel.IsMessageOpen), raised);
     }
 
