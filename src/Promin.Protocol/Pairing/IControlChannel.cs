@@ -1,0 +1,9 @@
+using Promin.Protocol.Messages;
+
+namespace Promin.Protocol.Pairing;
+
+public interface IControlChannel
+{
+    Task SendAsync(ControlMessage message, CancellationToken ct);
+    Task<ControlMessage> ReceiveAsync(CancellationToken ct);
+}

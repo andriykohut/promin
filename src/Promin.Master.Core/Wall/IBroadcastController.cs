@@ -1,0 +1,45 @@
+using Promin.Master.Core.Rooms;
+using Promin.Protocol.Video;
+
+namespace Promin.Master.Core.Wall;
+
+public readonly record struct BroadcastStats(int FramesDropped, int FramesOffered);
+
+/// <summary>The broadcast, as the wall drives it: the pipeline and one connection per student PC.</summary>
+public interface IBroadcastController
+{
+    /// <summary>From the probe until an encoder has been built; from then on what the encoder reports.</summary>
+    bool HardwareEncoderAvailable { get; }
+
+    /// <summary>The primary display's pixel size, from which the rate the picker shows is computed.</summary>
+    PixelSize DisplaySize { get; }
+
+    /// <summary>Raised on any thread when a PC that was receiving stops.</summary>
+    event Action<string>? ClientLost;
+
+    /// <summary>
+    /// Raised on any thread when the picture source failed on air. The broadcast has been stopped
+    /// (as by <see cref="Stop"/>) when this is raised.
+    /// </summary>
+    event Action? BroadcastFailed;
+
+    /// <summary>
+    /// Connects to each PC and starts sending. The picture starts once every PC has answered, or
+    /// after one second for those that have; the others join as they answer. Returns, once the
+    /// last has answered or given up, the ids that are not receiving: those that could not be
+    /// reached, and any that answered and were lost again before this returned. Throws when the
+    /// screen cannot be captured or the encoder cannot be built, or when the broadcast ended
+    /// while it was starting.
+    /// </summary>
+    Task<IReadOnlyCollection<string>> StartAsync(
+        IReadOnlyCollection<RoomMember> pcs, QualityPreset preset, Sharpness sharpness, CancellationToken ct);
+
+    /// <summary>Adds one PC to the running broadcast. False when it could not be reached.</summary>
+    Task<bool> AddAsync(RoomMember pc, CancellationToken ct);
+
+    void StopSendingTo(string deviceId);
+
+    void Stop();
+
+    BroadcastStats StatsFor(string deviceId);
+}

@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Promin.Agent/Promin.Agent.csproj" />
+    <Project Path="src/Promin.Master.Core/Promin.Master.Core.csproj" />
+    <Project Path="src/Promin.Master/Promin.Master.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Promin.MediaPipeline/Promin.MediaPipeline.csproj" />
+    <Project Path="src/Promin.Protocol/Promin.Protocol.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Promin.Agent.Tests/Promin.Agent.Tests.csproj" />
+    <Project Path="tests/Promin.Master.Core.Tests/Promin.Master.Core.Tests.csproj" />
+    <Project Path="tests/Promin.MediaPipeline.Tests/Promin.MediaPipeline.Tests.csproj" />
+    <Project Path="tests/Promin.Protocol.Tests/Promin.Protocol.Tests.csproj" />
+  </Folder>
+</Solution>
