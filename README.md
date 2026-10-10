@@ -1,4 +1,9 @@
-# Promin
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/promin-lockup-dark.svg">
+    <img src="assets/brand/promin-lockup-light.svg" alt="Promin" height="72">
+  </picture>
+</h1>
 
 Promin shows one PC's screen on every other PC in the room, over the local network. It runs on Windows 11 and needs no server and no internet connection.
 

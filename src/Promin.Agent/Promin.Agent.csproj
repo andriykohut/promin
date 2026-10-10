@@ -22,6 +22,8 @@
     <Nullable>enable</Nullable>
     <!-- Per-monitor DPI awareness has to be declared before the first window exists, so it is in the manifest. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The console's icon, so the exe is recognisable in Explorer and Task Manager. -->
+    <ApplicationIcon>..\Promin.Master\Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>
