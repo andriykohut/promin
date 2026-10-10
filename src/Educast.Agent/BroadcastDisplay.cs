@@ -156,7 +156,7 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
             }
 
             _ready.TrySetResult(true);
-            window.RunMessageLoop();
+            window.RunMessageLoop(_log);
         }
         finally
         {

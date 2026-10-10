@@ -45,6 +45,32 @@ internal static class NativeMethods
         public int Bottom;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MouseInput
+    {
+        public int Dx;
+        public int Dy;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public nint ExtraInfo;
+    }
+
+    /// <summary>INPUT for a mouse event. The mouse member is the largest of the native union, so the size is right.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Input
+    {
+        public uint Type;
+        public MouseInput Mouse;
+    }
+
+    public const uint ES_SYSTEM_REQUIRED = 0x00000001;
+    public const uint ES_DISPLAY_REQUIRED = 0x00000002;
+    public const uint ES_CONTINUOUS = 0x80000000;
+
+    public const uint INPUT_MOUSE = 0;
+    public const uint MOUSEEVENTF_MOVE = 0x0001;
+
     public const uint WS_POPUP = 0x80000000;
     public const uint WS_OVERLAPPEDWINDOW = 0x00CF0000;
     public const uint WS_EX_TOPMOST = 0x00000008;
@@ -143,8 +169,15 @@ internal static class NativeMethods
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     public static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint count, ref Input input, int size);
+
     [DllImport("gdi32.dll")]
     public static extern nint GetStockObject(int index);
+
+    /// <summary>Sets the calling thread's request and returns its previous one; 0 when it failed.</summary>
+    [DllImport("kernel32.dll")]
+    public static extern uint SetThreadExecutionState(uint flags);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     public static extern nint GetModuleHandleW(string? moduleName);

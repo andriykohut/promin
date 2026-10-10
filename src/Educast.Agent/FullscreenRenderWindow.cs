@@ -84,13 +84,43 @@ internal sealed class FullscreenRenderWindow : IDisposable
         SetForegroundWindow(_hwnd); // allowed or not as Windows sees fit; the window is topmost either way
     }
 
-    /// <summary>Pumps this thread's messages until the window has been destroyed.</summary>
-    public void RunMessageLoop()
+    /// <summary>
+    /// Pumps this thread's messages until the window has been destroyed. For that long Windows is asked to keep
+    /// the screen and the PC awake: students watch a lesson without touching the PC.
+    /// </summary>
+    public void RunMessageLoop(Action<string> log)
     {
-        while (GetMessageW(out var message, 0, 0, 0) > 0)
+        ArgumentNullException.ThrowIfNull(log);
+        KeepAwake(log);
+        try
         {
-            TranslateMessage(ref message);
-            DispatchMessageW(ref message);
+            while (GetMessageW(out var message, 0, 0, 0) > 0)
+            {
+                TranslateMessage(ref message);
+                DispatchMessageW(ref message);
+            }
+        }
+        finally
+        {
+            // The request is this thread's own, so only this thread can withdraw it. Should this fail, Windows
+            // drops the request by itself when the thread ends.
+            SetThreadExecutionState(ES_CONTINUOUS);
+        }
+    }
+
+    // A failure here is logged and nothing more: a broadcast is never lost because of the PC's power settings.
+    private static void KeepAwake(Action<string> log)
+    {
+        log(SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED) != 0
+            ? "Windows keeps the screen and this PC awake while the broadcast is on screen."
+            : "Windows refused to keep the screen awake. It may go dark while the broadcast is on screen.");
+
+        // The request keeps a screen on but does not turn on one that is already dark. A mouse move of no
+        // distance does: Windows takes it as the student touching the PC.
+        var nudge = new Input { Type = INPUT_MOUSE, Mouse = new MouseInput { Flags = MOUSEEVENTF_MOVE } };
+        if (SendInput(1, ref nudge, Marshal.SizeOf<Input>()) == 0)
+        {
+            log($"A screen that was already dark could not be woken (Win32 error {Marshal.GetLastWin32Error()}).");
         }
     }
 
