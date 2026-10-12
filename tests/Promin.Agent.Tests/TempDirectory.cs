@@ -16,7 +16,7 @@ internal sealed class TempDirectory : IDisposable
 
     /// <summary>Paths laid out as on an agent PC, under this folder.</summary>
     public AgentPaths Paths => new(
-        System.IO.Path.Combine(Path, "LocalAppData", "Promin", "Agent"),
+        System.IO.Path.Combine(Path, "ProgramData", "Promin", "Agent"),
         System.IO.Path.Combine(Path, "ProgramData", "Promin", "agent.json"));
 
     public string File(string name) => System.IO.Path.Combine(Path, name);
