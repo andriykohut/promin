@@ -133,8 +133,13 @@ public class ServiceInstallTests
         Assert.Equal("icacls.exe", lockFolder.FileName);
         Assert.Contains("/inheritance:r", lockFolder.Arguments);
         Assert.Contains("/grant:r", lockFolder.Arguments);
-        Assert.Contains("/setowner", lockFolder.Arguments);
         Assert.Contains("*S-1-5-18", lockFolder.Arguments);
         Assert.Contains("*S-1-5-32-544", lockFolder.Arguments);
+        Assert.DoesNotContain("/setowner", lockFolder.Arguments); // must be a separate call — icacls rejects the combination (error 87)
+
+        var setOwner = ServiceInstall.Commands.SetOwner("C:\\ProgramData\\Promin\\Agent");
+        Assert.Equal("icacls.exe", setOwner.FileName);
+        Assert.Contains("/setowner", setOwner.Arguments);
+        Assert.Contains("*S-1-5-32-544", setOwner.Arguments);
     }
 }

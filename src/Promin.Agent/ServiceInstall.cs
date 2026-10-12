@@ -39,9 +39,12 @@ internal static class ServiceInstall
             $"advfirewall firewall add rule name=\"{FirewallRule}\" dir=in action=allow protocol=UDP localport=17843 program=\"{exePath}\"");
         public static ExternalCommand RemoveFirewall() => new("netsh.exe",
             $"advfirewall firewall delete rule name=\"{FirewallRule}\"");
-        // /setowner gives the folder to Administrators so a standard user who pre-created it keeps no ownership (and no WRITE_DAC).
         public static ExternalCommand LockFolder(string agentDir) => new("icacls.exe",
-            $"\"{agentDir}\" /setowner \"*S-1-5-32-544\" /inheritance:r /grant:r \"*S-1-5-18:(OI)(CI)F\" \"*S-1-5-32-544:(OI)(CI)F\"");
+            $"\"{agentDir}\" /inheritance:r /grant:r \"*S-1-5-18:(OI)(CI)F\" \"*S-1-5-32-544:(OI)(CI)F\"");
+        // A separate call: icacls rejects /setowner combined with /grant or /inheritance (error 87). Giving the folder to
+        // Administrators means a standard user who pre-created it keeps no ownership (and no WRITE_DAC).
+        public static ExternalCommand SetOwner(string agentDir) => new("icacls.exe",
+            $"\"{agentDir}\" /setowner \"*S-1-5-32-544\"");
     }
 
     /// <summary>The real environment: elevation from the current Windows identity, commands run as hidden child processes.</summary>
@@ -71,6 +74,14 @@ internal static class ServiceInstall
     {
         System.IO.Directory.CreateDirectory(paths.AgentDirectory);
         if (Fails(env, Commands.LockFolder(paths.AgentDirectory), output, "lock the data folder")) return ExitCodes.ServiceControlFailed;
+
+        // Best effort: the lock already keeps standard users out of a folder the installer created; re-owning it also
+        // covers a folder a standard user pre-created. A failure here never blocks the install.
+        var owned = env.RunCommand(Commands.SetOwner(paths.AgentDirectory));
+        if (owned != 0)
+        {
+            output.WriteLine($"Note: the data folder's owner could not be set (icacls returned {owned}); it is still locked to SYSTEM and administrators.");
+        }
 
         var create = env.RunCommand(Commands.Register(exePath));
         if (create == 1073) // service already exists → update its binPath/start/account in case the exe moved
