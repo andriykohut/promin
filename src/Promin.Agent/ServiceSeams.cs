@@ -23,6 +23,14 @@ internal interface IConsoleSessions
     /// <summary>The session on the console now, or null when nobody is signed in.</summary>
     uint? ActiveSession { get; }
 
-    /// <summary>Completes the next time <see cref="ActiveSession"/> changes (sign-in, sign-out, or a user switch).</summary>
+    /// <summary>
+    /// Completes on the next change to <see cref="ActiveSession"/> (sign-in, sign-out, or a user switch).
+    /// <para>
+    /// Contract: callers arm this wait <b>before</b> reading <see cref="ActiveSession"/>, and any change that
+    /// happens after that read must still complete this armed wait — no change may be lost in the gap between the
+    /// read and the wait. An implementation satisfies this by swapping in a fresh completion source only when it
+    /// records a change, so a wait armed before the read observes the swap of the one it is holding.
+    /// </para>
+    /// </summary>
     Task WaitForChangeAsync(CancellationToken ct);
 }

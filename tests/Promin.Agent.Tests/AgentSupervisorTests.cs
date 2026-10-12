@@ -151,6 +151,28 @@ public class AgentSupervisorTests
     }
 
     [Fact]
+    public async Task AFlipAwayAndBackToTheSameSession_EndsTheFirstAgent_AndLaunchesExactlyOneReplacement()
+    {
+        var launcher = new FakeLauncher();
+        var sessions = new FakeSessions();
+        sessions.Set(1);
+        using var stop = new CancellationTokenSource();
+        var run = new AgentSupervisor(launcher, sessions, new RestartBackoff(), new ManualTimeProvider(), _ => { }).RunAsync(stop.Token);
+        await PumpAsync();
+
+        // The console leaves session 1 and returns to it while the first agent is still alive (1 -> 2 -> 1).
+        sessions.Set(2);
+        sessions.Set(1);
+        await PumpAsync();
+
+        Assert.True(launcher.Processes[0].Killed);     // the first agent was ended, not leaked
+        Assert.Equal([1u, 1u], launcher.Launched);     // exactly one replacement, in session 1
+        Assert.False(launcher.Processes[1].Killed);    // the replacement is still running
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
     public async Task StopsTheRunningAgentWhenToldToStop()
     {
         var launcher = new FakeLauncher();
