@@ -11,6 +11,15 @@ internal enum AgentMode
     /// <summary>Forget the paired console PC and exit.</summary>
     ResetPairing,
 
+    /// <summary>Register the Windows service and exit.</summary>
+    Install,
+
+    /// <summary>Remove the Windows service and exit.</summary>
+    Uninstall,
+
+    /// <summary>Run under the service manager: supervise the agent in the signed-in user's session.</summary>
+    Service,
+
     /// <summary>The arguments mean nothing; say so and exit.</summary>
     Invalid,
 }
@@ -22,7 +31,7 @@ internal enum AgentMode
 internal sealed record AgentCommandLine(AgentMode Mode, bool Windowed = false, string? RoomCode = null, string? Problem = null)
 {
     public const string Usage =
-        "Promin.Agent.exe [--windowed] | --set-room-code <6 digits> | --reset-pairing";
+        "Promin.Agent.exe [--windowed] | --set-room-code <6 digits> | --reset-pairing | --install | --uninstall";
 
     public static AgentCommandLine Parse(IReadOnlyList<string> args)
     {
@@ -39,6 +48,21 @@ internal sealed record AgentCommandLine(AgentMode Mode, bool Windowed = false, s
         if (args.Count == 1 && Is(args[0], "--reset-pairing"))
         {
             return new AgentCommandLine(AgentMode.ResetPairing);
+        }
+
+        if (args.Count == 1 && Is(args[0], "--install"))
+        {
+            return new AgentCommandLine(AgentMode.Install);
+        }
+
+        if (args.Count == 1 && Is(args[0], "--uninstall"))
+        {
+            return new AgentCommandLine(AgentMode.Uninstall);
+        }
+
+        if (args.Count == 1 && Is(args[0], "--service"))
+        {
+            return new AgentCommandLine(AgentMode.Service);
         }
 
         if (Is(args[0], "--set-room-code"))

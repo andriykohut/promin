@@ -17,8 +17,8 @@ internal sealed record AgentPaths(string AgentDirectory, string RoomCodeFile)
 
     public string LogFile => Path.Combine(AgentDirectory, "agent.log");
 
-    /// <summary><c>%LocalAppData%\Promin\Agent</c> and <c>%ProgramData%\Promin\agent.json</c>.</summary>
+    /// <summary><c>%ProgramData%\Promin\Agent</c> (identity, pins, log) and <c>%ProgramData%\Promin\agent.json</c> (room code).</summary>
     public static AgentPaths ForThisMachine() => new(
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Promin", "Agent"),
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Promin", "Agent"),
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Promin", "agent.json"));
 }

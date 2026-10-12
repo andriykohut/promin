@@ -19,4 +19,10 @@ internal static class ExitCodes
 
     /// <summary>A file the agent needs could not be read or written (identity, pinned console PCs, room code).</summary>
     public const int FileUnusable = 5;
+
+    /// <summary>An --install or --uninstall was run without administrator rights.</summary>
+    public const int NotElevated = 6;
+
+    /// <summary>Registering, starting or removing the service or its firewall rule failed; the log or console has the detail.</summary>
+    public const int ServiceControlFailed = 7;
 }

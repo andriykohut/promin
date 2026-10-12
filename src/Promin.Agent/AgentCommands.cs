@@ -8,13 +8,17 @@ namespace Promin.Agent;
 /// </summary>
 internal static class AgentCommands
 {
-    public static int Execute(AgentCommandLine command, AgentPaths paths, TextWriter output) => command.Mode switch
+    public static int Execute(AgentCommandLine command, AgentPaths paths, TextWriter output, ServiceInstall.Environment? serviceEnvironment = null) => command.Mode switch
     {
         AgentMode.SetRoomCode => SetRoomCode(command.RoomCode, paths, output),
         AgentMode.ResetPairing => ResetPairing(paths, output),
+        AgentMode.Install => ServiceInstall.Run(install: true, serviceEnvironment ?? ServiceInstall.ForThisMachine(), paths, ExePath(), output),
+        AgentMode.Uninstall => ServiceInstall.Run(install: false, serviceEnvironment ?? ServiceInstall.ForThisMachine(), paths, ExePath(), output),
         AgentMode.Invalid => Refuse(command.Problem, output),
         _ => throw new ArgumentException($"{command.Mode} is not a command that exits.", nameof(command)),
     };
+
+    private static string ExePath() => Environment.ProcessPath!;
 
     private static int SetRoomCode(string? argument, AgentPaths paths, TextWriter output)
     {

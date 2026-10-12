@@ -43,6 +43,29 @@ public class AgentCommandLineTests
     }
 
     [Theory]
+    [InlineData("--install", AgentMode.Install)]
+    [InlineData("--uninstall", AgentMode.Uninstall)]
+    [InlineData("--service", AgentMode.Service)]
+    public void TheServiceCommands_AreRecognised(string arg, object expected) // object: AgentMode is internal, a public test can't take it
+    {
+        Assert.Equal(expected, (object)AgentCommandLine.Parse([arg]).Mode);
+    }
+
+    [Fact]
+    public void TheServiceCommands_DoNotCareAboutCase()
+    {
+        Assert.Equal(AgentMode.Install, AgentCommandLine.Parse(["--INSTALL"]).Mode);
+    }
+
+    [Theory]
+    [InlineData("--install", "extra")]
+    [InlineData("--service", "--windowed")]
+    public void TheServiceCommands_TakeNoExtraArgument(params string[] args)
+    {
+        Assert.Equal(AgentMode.Invalid, AgentCommandLine.Parse(args).Mode);
+    }
+
+    [Theory]
     [InlineData("--set-room-code")]
     [InlineData("--set-room-code", "123456", "extra")]
     [InlineData("--reset-pairing", "--windowed")]

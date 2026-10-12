@@ -188,4 +188,110 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool AttachConsole(int processId);
+
+    // ---- starting the agent in a signed-in session (the service runs as SYSTEM) ------------------
+
+    /// <summary>WTSGetActiveConsoleSessionId returns this when no session is attached to the console.</summary>
+    public const uint NoActiveConsoleSession = 0xFFFFFFFF;
+
+    public const int WTSUserName = 5; // WTS_INFO_CLASS
+
+    public const int SecurityImpersonation = 2; // SECURITY_IMPERSONATION_LEVEL
+    public const int TokenPrimary = 1; // TOKEN_TYPE
+
+    public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+
+    // The access a primary token needs to launch a process with CreateProcessAsUser, and to be retargeted to another
+    // session: TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID.
+    public const uint TOKEN_FOR_PRIMARY = 0x0001 | 0x0002 | 0x0008 | 0x0080 | 0x0100;
+
+    // Opening the service's own (SYSTEM) token so it can be duplicated: TOKEN_DUPLICATE | TOKEN_QUERY.
+    public const uint TOKEN_FOR_SOURCE = 0x0002 | 0x0008;
+
+    // TOKEN_INFORMATION_CLASS.TokenSessionId: retargets a duplicated token to another session.
+    public const int TokenSessionId = 12;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct StartupInfo
+    {
+        public int Size;
+        public string? Reserved;
+        public string? Desktop;
+        public string? Title;
+        public int X;
+        public int Y;
+        public int XSize;
+        public int YSize;
+        public int XCountChars;
+        public int YCountChars;
+        public int FillAttribute;
+        public int Flags;
+        public short ShowWindow;
+        public short Reserved2;
+        public nint Reserved3;
+        public nint StdInput;
+        public nint StdOutput;
+        public nint StdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ProcessInformation
+    {
+        public nint Process;
+        public nint Thread;
+        public int ProcessId;
+        public int ThreadId;
+    }
+
+    [DllImport("kernel32.dll")]
+    public static extern uint WTSGetActiveConsoleSessionId();
+
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool WTSQueryUserToken(uint sessionId, out nint token);
+
+    [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool WTSQuerySessionInformationW(nint server, uint sessionId, int infoClass, out nint buffer, out uint bytesReturned);
+
+    [DllImport("wtsapi32.dll")]
+    public static extern void WTSFreeMemory(nint memory);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DuplicateTokenEx(nint existingToken, uint desiredAccess, nint attributes, int impersonationLevel, int tokenType, out nint newToken);
+
+    [DllImport("kernel32.dll")]
+    public static extern nint GetCurrentProcess();
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool OpenProcessToken(nint process, uint desiredAccess, out nint token);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetTokenInformation(nint token, int tokenInformationClass, ref uint information, uint length);
+
+    [DllImport("userenv.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CreateEnvironmentBlock(out nint environment, nint token, [MarshalAs(UnmanagedType.Bool)] bool inherit);
+
+    [DllImport("userenv.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DestroyEnvironmentBlock(nint environment);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CreateProcessAsUserW(
+        nint token, string? applicationName, string? commandLine, nint processAttributes, nint threadAttributes,
+        [MarshalAs(UnmanagedType.Bool)] bool inheritHandles, uint creationFlags, nint environment, string? currentDirectory,
+        ref StartupInfo startupInfo, out ProcessInformation processInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CloseHandle(nint handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool TerminateProcess(nint process, uint exitCode);
 }
