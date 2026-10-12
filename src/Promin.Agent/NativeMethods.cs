@@ -201,9 +201,15 @@ internal static class NativeMethods
 
     public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
 
-    // The access a primary token needs to launch a process with CreateProcessAsUser:
-    // TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID.
+    // The access a primary token needs to launch a process with CreateProcessAsUser, and to be retargeted to another
+    // session: TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID.
     public const uint TOKEN_FOR_PRIMARY = 0x0001 | 0x0002 | 0x0008 | 0x0080 | 0x0100;
+
+    // Opening the service's own (SYSTEM) token so it can be duplicated: TOKEN_DUPLICATE | TOKEN_QUERY.
+    public const uint TOKEN_FOR_SOURCE = 0x0002 | 0x0008;
+
+    // TOKEN_INFORMATION_CLASS.TokenSessionId: retargets a duplicated token to another session.
+    public const int TokenSessionId = 12;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct StartupInfo
@@ -254,6 +260,17 @@ internal static class NativeMethods
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool DuplicateTokenEx(nint existingToken, uint desiredAccess, nint attributes, int impersonationLevel, int tokenType, out nint newToken);
+
+    [DllImport("kernel32.dll")]
+    public static extern nint GetCurrentProcess();
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool OpenProcessToken(nint process, uint desiredAccess, out nint token);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetTokenInformation(nint token, int tokenInformationClass, ref uint information, uint length);
 
     [DllImport("userenv.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -6,31 +6,41 @@ using static Promin.Agent.NativeMethods;
 namespace Promin.Agent;
 
 /// <summary>
-/// Starts the agent in a signed-in Windows session from the service (which runs as SYSTEM): it takes that session's
-/// own user token and creates the process with it, on the session's interactive desktop, so the agent runs exactly
-/// as a hand-started agent would. It needs a real multi-session OS, so it is proven by the hand-tests, not a unit test.
+/// Starts the agent in a signed-in Windows session from the service (which runs as SYSTEM): it duplicates the
+/// service's own SYSTEM token, retargets it to that session, and creates the process on the session's interactive
+/// desktop. So the agent runs as SYSTEM but on the user's screen — the identity the spec wants (it reads and writes
+/// the data folder that install locks to SYSTEM and administrators), the way PsExec's "-s -i" runs a process.
+/// Launching with the signed-in user's token instead (WTSQueryUserToken) would run the agent as that user, who is
+/// locked out of the data folder. It needs a real multi-session OS, so it is proven by the hand-tests, not a unit test.
 /// </summary>
 internal sealed class WindowsSessionLauncher(string executablePath, Action<string> log) : ISessionLauncher
 {
     public IAgentProcess LaunchInSession(uint sessionId)
     {
-        if (!WTSQueryUserToken(sessionId, out var userToken))
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_FOR_SOURCE, out var serviceToken))
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), $"No signed-in user token for session {sessionId}.");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not open the service's own token.");
         }
 
         var primaryToken = nint.Zero;
         var environment = nint.Zero;
         try
         {
-            if (!DuplicateTokenEx(userToken, TOKEN_FOR_PRIMARY, nint.Zero, SecurityImpersonation, TokenPrimary, out primaryToken))
+            if (!DuplicateTokenEx(serviceToken, TOKEN_FOR_PRIMARY, nint.Zero, SecurityImpersonation, TokenPrimary, out primaryToken))
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not duplicate the session's user token.");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not duplicate the service's token.");
+            }
+
+            // Move the SYSTEM token into the interactive session so the agent appears on that session's desktop.
+            var target = sessionId;
+            if (!SetTokenInformation(primaryToken, TokenSessionId, ref target, sizeof(uint)))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), $"Could not set the token's session to {sessionId}.");
             }
 
             if (!CreateEnvironmentBlock(out environment, primaryToken, false))
             {
-                environment = nint.Zero; // the agent can still start, just without the user's environment
+                environment = nint.Zero; // the agent can still start, just without a loaded environment block
             }
 
             var startupInfo = new StartupInfo
@@ -73,7 +83,7 @@ internal sealed class WindowsSessionLauncher(string executablePath, Action<strin
                 CloseHandle(primaryToken);
             }
 
-            CloseHandle(userToken);
+            CloseHandle(serviceToken);
         }
     }
 
@@ -86,7 +96,8 @@ internal sealed class WindowsSessionLauncher(string executablePath, Action<strin
             return null;
         }
 
-        // A session with nobody signed in (the logon or lock screen) reports an empty user name.
+        // The logon screen (nobody signed in) reports an empty user name; a signed-in session reports the user even
+        // when it is locked, so the agent is still launched there and kept running behind the lock screen.
         if (!WTSQuerySessionInformationW(nint.Zero, sessionId, WTSUserName, out var buffer, out _))
         {
             return null;
