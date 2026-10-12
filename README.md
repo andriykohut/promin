@@ -61,14 +61,12 @@ Then, on that PC:
 
 1. Copy the `win-x64` folder anywhere, for example `C:\Promin`.
 2. In a terminal in that folder, set the room code: `.\Promin.Agent.exe --set-room-code 482913 | Out-Host` (pick your own six digits; `| Out-Host` makes its one line of reply show up).
-3. Start `Promin.Agent.exe`. It shows no window. Allow it through Windows Firewall on both private and public networks.
+3. In an **administrator** terminal in that folder, run `.\Promin.Agent.exe --install`. It registers the agent as a Windows service that starts with Windows, opens UDP 17843 through the firewall, and locks the data folder to SYSTEM and administrators. From then on the PC shows the broadcast by itself after each sign-in.
 4. On the console, open **Set up devices**, enter the same code and choose **Pair**.
 
-If the firewall prompt was dismissed, add the rules by hand in an administrator PowerShell:
+`--install` adds the agent's own firewall rule. The console is still started with `dotnet run`, so if its firewall prompt was dismissed, add its rule by hand in an administrator PowerShell:
 
 ```
-# on the PCs running the agent
-New-NetFirewallRule -DisplayName "Promin agent" -Direction Inbound -Protocol UDP -LocalPort 17843 -Action Allow
 # on the PC running the console
 New-NetFirewallRule -DisplayName "Promin console" -Direction Inbound -Protocol UDP -LocalPort 17844 -Action Allow
 ```
@@ -77,10 +75,12 @@ Other agent commands:
 
 | Command | What it does |
 |---|---|
+| `Promin.Agent.exe --install` | Registers the agent as a service that starts with Windows, adds its firewall rule, and locks the data folder (administrator terminal) |
+| `Promin.Agent.exe --uninstall` | Removes the service and its firewall rule, leaving the pairing and identity files |
 | `Promin.Agent.exe --windowed` | Shows the broadcast in an ordinary window instead of covering the display |
 | `Promin.Agent.exe --reset-pairing` | Forgets the paired console, so the PC can be paired again |
 
-Nothing starts the agent with Windows or restarts it if it exits; for now that is up to you.
+The service runs the agent under the SYSTEM account, so every PC pairs once more the first time it is installed (the agent's identity moves to that account).
 
 ## Security notes
 
@@ -100,7 +100,7 @@ Every text the console shows is in `src/Promin.Master.Core/Strings.resx` (Englis
 | What | Where |
 |---|---|
 | Console data and log | `%LocalAppData%\Promin` |
-| Agent data and log | `%LocalAppData%\Promin\Agent` |
+| Agent data and log | `%ProgramData%\Promin\Agent` |
 | Room code on an agent PC | `%ProgramData%\Promin\agent.json` |
 
 ## Project layout
