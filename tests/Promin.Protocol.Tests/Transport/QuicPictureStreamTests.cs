@@ -48,6 +48,13 @@ public class QuicPictureStreamTests
             // The console aborted reading it: expected.
         }
 
+        // The oversize picture must never surface. Without this check the small picture below would overwrite
+        // an accepted oversize one in the console's queue of one, and the test would pass with no cap at all.
+        using var brief = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        brief.CancelAfter(TimeSpan.FromMilliseconds(500));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await master.ReceiveVideoFrameAsync(brief.Token));
+
         var small = QuicLoopbackHarness.RandomBytes(1024);
         await agent.SendVideoFrameAsync(small, deadline.Token);
 
@@ -82,6 +89,43 @@ public class QuicPictureStreamTests
         Assert.Equal(third, await master.ReceiveVideoFrameAsync(deadline.Token));
     }
 
+    /// <summary>
+    /// Only an ordinary connection grants the agent picture credit. A real master pairs with a stand-in agent, which
+    /// then tries to open a stream towards it: with no credit the open never completes. Fails a master that grants
+    /// the ordinary credit while pairing.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    public async Task APairingConnection_GrantsTheAgentNoStreams()
+    {
+        using var deadline = QuicLoopbackHarness.Deadline();
+        using var masterCertificate = SelfSignedCertificateFactory.Create(QuicLoopbackHarness.MasterDeviceId);
+        using var agentCertificate = SelfSignedCertificateFactory.Create(QuicLoopbackHarness.AgentDeviceId);
+        Exception? opening = null;
+
+        // The master speaks first, so the agent's accept of the control stream completes; the script then probes.
+        await using var agent = await ScriptedAgent.StartAsync(
+            agentCertificate,
+            async (connection, _, ct) =>
+            {
+                using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                attempt.CancelAfter(TimeSpan.FromSeconds(2));
+                opening = await Record.ExceptionAsync(async () =>
+                {
+                    await using var stream = await connection.OpenOutboundStreamAsync(
+                        System.Net.Quic.QuicStreamType.Unidirectional, attempt.Token);
+                });
+            },
+            deadline.Token);
+
+        var connector = new QuicMasterConnector(masterCertificate, new PeerCertificateStore());
+        var outcome = await connector.PairAsync(
+            agent.Endpoint, QuicLoopbackHarness.AgentDeviceId, [7, 7, 7, 7], deadline.Token, TimeSpan.FromSeconds(8));
+        await agent.Finished;
+
+        Assert.False(outcome.Paired);
+        Assert.IsAssignableFrom<OperationCanceledException>(opening);
+    }
+
     [Fact(Timeout = 30000)]
     public async Task TheConsolesReceive_EndsWhenTheAgentCloses()
     {
@@ -91,6 +135,8 @@ public class QuicPictureStreamTests
 
         await agent.DisposeAsync();
 
-        await Assert.ThrowsAnyAsync<Exception>(async () => await master.ReceiveVideoFrameAsync(deadline.Token));
+        // The end of the channel itself, not the test's own deadline.
+        await Assert.ThrowsAsync<System.Threading.Channels.ChannelClosedException>(async () =>
+            await master.ReceiveVideoFrameAsync(deadline.Token));
     }
 }
