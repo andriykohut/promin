@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Promin.MediaPipeline.Pictures;
 using Promin.Protocol;
 using Promin.Protocol.Discovery;
 using Promin.Protocol.Pairing;
@@ -37,12 +38,14 @@ internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAg
 /// <summary>
 /// The parts of start-up that touch this machine (QUIC, the Windows key store, the network), as functions, so
 /// that every way the agent can fail to start, and the exit code and log line for it, can be reached from a test.
+/// <c>OpenScreenPictures</c> is null in tests, which then take no pictures.
 /// </summary>
 internal sealed record AgentServices(
     Action EnsureQuicSupported,
     Func<string, DeviceIdentity> LoadIdentity,
     Func<DeviceIdentity, PeerCertificateStore, Action<Exception>, IAgentListener> CreateListener,
-    Func<DeviceIdentity, IDisposable> StartBeacon)
+    Func<DeviceIdentity, IDisposable> StartBeacon,
+    Func<IScreenPictures>? OpenScreenPictures = null)
 {
     public static AgentServices ForThisMachine() => new(
         QuicTransportSettings.EnsureSupported,
@@ -61,7 +64,8 @@ internal sealed record AgentServices(
                 ProminPorts.Discovery);
             beacon.Start();
             return beacon;
-        });
+        },
+        () => new ScreenPictures());
 }
 
 /// <summary>
@@ -168,6 +172,13 @@ internal static class AgentHost
 
             using var beacon = services.StartBeacon(identity);
             log.Write($"Announcing this PC on the network (UDP port {ProminPorts.Discovery}).");
+
+            if (services.OpenScreenPictures is { } openPictures)
+            {
+                // Off the start-up path: a capture can take seconds to deliver its first picture. It is let go within five
+                // seconds; a console PC that connects meanwhile has its first capture refused once and retried a second later.
+                _ = Task.Run(() => log.Write(ScreenPictureProbe.Describe(openPictures)), CancellationToken.None);
+            }
 
             var pairing = new AgentPairingLoop(
                 masters,
