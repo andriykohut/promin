@@ -20,13 +20,24 @@ public class QuicTransportSettingsTests
         Assert.Equal(TimeSpan.FromSeconds(2), QuicTransportSettings.KeepAliveInterval);
     }
 
-    /// <summary>The master receives no video and grants no credit for any; the agent grants 256.</summary>
+    /// <summary>
+    /// The agent grants 256 streams for broadcast video. The master grants 4 for screen pictures on an ordinary
+    /// connection (one is in use at a time) and none on a pairing connection.
+    /// </summary>
     [Fact]
-    public void VideoCredit_IsGrantedByTheAgentOnly()
+    public void UnidirectionalCredit_IsVideoForTheAgent_AndFourPicturesForTheMaster_NoneWhilePairing()
     {
-        Assert.Equal(0, QuicTransportSettings.MasterMaxInboundUnidirectionalStreams);
         Assert.Equal(256, QuicTransportSettings.AgentMaxInboundUnidirectionalStreams);
+        Assert.Equal(4, QuicTransportSettings.MasterMaxInboundUnidirectionalStreams);
+        Assert.Equal(0, QuicTransportSettings.MasterPairingMaxInboundUnidirectionalStreams);
     }
+
+    /// <summary>Pictures are small: the most an agent PC can make the console buffer is 4 pictures of 1 MB.</summary>
+    [Fact]
+    public void InboundPictures_BufferAtMostFourMegabytesPerConnection() =>
+        Assert.Equal(
+            4 * 1024 * 1024,
+            QuicTransportSettings.MasterMaxInboundUnidirectionalStreams * QuicChannel.MaxPictureBytes);
 
     /// <summary>The master opens the control stream; an agent is granted none of its own.</summary>
     [Fact]

@@ -33,6 +33,12 @@ public sealed class QuicChannel : IAsyncDisposable
     public const int MaxVideoFrameBytes = 4 * 1024 * 1024;
 
     /// <summary>
+    /// Ceiling on one screen picture from an agent PC (the console's side). A 480×300 JPEG is tens of KB; anything
+    /// past this is refused like an oversized frame.
+    /// </summary>
+    public const int MaxPictureBytes = 1024 * 1024;
+
+    /// <summary>
     /// How many inbound frames wait to be picked up unless the creator says otherwise. The queue is
     /// deliberately small and DropOldest: if the consumer falls behind, the freshest frames are the ones
     /// worth keeping — a mirrored room screen wants to be current, not complete. A frame lost this
@@ -46,6 +52,7 @@ public sealed class QuicChannel : IAsyncDisposable
     private readonly SemaphoreSlim _drainSlots = new(
         QuicTransportSettings.MaxConcurrentInboundVideoStreams,
         QuicTransportSettings.MaxConcurrentInboundVideoStreams);
+    private readonly int _maxInboundFrameBytes;
     private readonly CancellationTokenSource _acceptCts = new();
     private readonly Task _acceptLoop;
     private int _disposed;
@@ -63,20 +70,27 @@ public sealed class QuicChannel : IAsyncDisposable
     /// certificate up in their pins; it is not something a caller gets to assert.
     /// </summary>
     /// <param name="acceptsStreams">
-    /// False for a connection that grants its peer no streams of either kind, which is every one
-    /// the master dials: there is nothing to accept, and .NET refuses to wait for a stream on
+    /// False for a pairing connection the master dials, which grants its peer no streams of
+    /// either kind: there is nothing to accept, and .NET refuses to wait for a stream on
     /// such a connection. No stream the peer opens then arrives on this channel. What the peer
     /// writes on a stream this side opened still does: the replies on the control stream.
+    /// </param>
+    /// <param name="maxInboundFrameBytes">
+    /// How large one inbound stream may be: <see cref="MaxVideoFrameBytes"/> for broadcast video,
+    /// <see cref="MaxPictureBytes"/> for screen pictures.
     /// </param>
     internal QuicChannel(
         QuicConnection connection,
         string? pinnedDeviceId,
         int inboundFrameQueueCapacity = DefaultInboundFrameQueueCapacity,
-        bool acceptsStreams = true)
+        bool acceptsStreams = true,
+        int maxInboundFrameBytes = MaxVideoFrameBytes)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentOutOfRangeException.ThrowIfLessThan(inboundFrameQueueCapacity, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxInboundFrameBytes, 1);
         _connection = connection;
+        _maxInboundFrameBytes = maxInboundFrameBytes;
         _inboundVideoFrames = Channel.CreateBounded<byte[]>(
             new BoundedChannelOptions(inboundFrameQueueCapacity) { FullMode = BoundedChannelFullMode.DropOldest });
         PinnedDeviceId = pinnedDeviceId;
@@ -256,7 +270,7 @@ public sealed class QuicChannel : IAsyncDisposable
                 Interlocked.Increment(ref _activeVideoDrains);
                 try
                 {
-                    var frame = await ReadWholeFrameAsync(stream, _acceptCts.Token).ConfigureAwait(false);
+                    var frame = await ReadWholeFrameAsync(stream, _maxInboundFrameBytes, _acceptCts.Token).ConfigureAwait(false);
                     if (frame is not null)
                     {
                         _inboundVideoFrames.Writer.TryWrite(frame);
@@ -287,9 +301,9 @@ public sealed class QuicChannel : IAsyncDisposable
 
     /// <summary>
     /// Reads one stream to its end, or aborts it and returns null if the peer exceeds
-    /// <see cref="MaxVideoFrameBytes"/>.
+    /// <paramref name="maxBytes"/>.
     /// </summary>
-    private static async Task<byte[]?> ReadWholeFrameAsync(QuicStream stream, CancellationToken ct)
+    private static async Task<byte[]?> ReadWholeFrameAsync(QuicStream stream, int maxBytes, CancellationToken ct)
     {
         var buffer = new ArrayBufferWriter<byte>(16 * 1024);
 
@@ -304,7 +318,7 @@ public sealed class QuicChannel : IAsyncDisposable
 
             buffer.Advance(read);
 
-            if (buffer.WrittenCount > MaxVideoFrameBytes)
+            if (buffer.WrittenCount > maxBytes)
             {
                 stream.Abort(QuicAbortDirection.Read, VideoStreamAbortErrorCode);
                 return null;

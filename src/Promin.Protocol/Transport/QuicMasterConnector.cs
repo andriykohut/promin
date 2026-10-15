@@ -39,7 +39,8 @@ public sealed class QuicMasterConnector
 
     /// <summary>
     /// Connects to an agent that is already paired. Fails during the handshake if the agent's
-    /// certificate does not match the pin for <paramref name="deviceId"/>.
+    /// certificate does not match the pin for <paramref name="deviceId"/>. Returns a channel on which
+    /// the agent's screen pictures arrive (<see cref="QuicChannel.ReceiveVideoFrameAsync"/>).
     /// </summary>
     /// <remarks>
     /// <b>A returned channel is a completed connection, not proof the agent accepted this
@@ -261,6 +262,7 @@ public sealed class QuicMasterConnector
         ArgumentNullException.ThrowIfNull(endpoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceId);
         QuicTransportSettings.EnsureSupported();
+        var ordinary = pairingWindow is null;
 
         var options = new QuicClientConnectionOptions
         {
@@ -275,11 +277,12 @@ public sealed class QuicMasterConnector
             KeepAliveInterval = QuicTransportSettings.KeepAliveInterval,
             HandshakeTimeout = QuicTransportSettings.HandshakeTimeout,
 
-            // The master opens the control stream itself and receives no video, so it grants the
-            // agent no stream credit of either kind: agent machines are viewer-controlled, and every
-            // stream of credit is memory an agent PC can make the presenter's laptop allocate.
+            // The master opens the control stream itself, so it grants the agent no bidirectional credit. It grants
+            // unidirectional credit for screen pictures on an ordinary connection only; a pairing connection carries none.
             MaxInboundBidirectionalStreams = QuicTransportSettings.MasterMaxInboundBidirectionalStreams,
-            MaxInboundUnidirectionalStreams = QuicTransportSettings.MasterMaxInboundUnidirectionalStreams,
+            MaxInboundUnidirectionalStreams = ordinary
+                ? QuicTransportSettings.MasterMaxInboundUnidirectionalStreams
+                : QuicTransportSettings.MasterPairingMaxInboundUnidirectionalStreams,
 
             ClientAuthenticationOptions = new SslClientAuthenticationOptions
             {
@@ -308,7 +311,11 @@ public sealed class QuicMasterConnector
         var pinnedDeviceId = connection.RemoteCertificate is { } presented && IsPinnedAs(deviceId, presented)
             ? deviceId
             : null;
-        return new QuicChannel(connection, pinnedDeviceId, acceptsStreams: false);
+
+        // An ordinary connection reads the agent's screen pictures, keeping only the newest one unread.
+        return ordinary
+            ? new QuicChannel(connection, pinnedDeviceId, inboundFrameQueueCapacity: 1, acceptsStreams: true, maxInboundFrameBytes: QuicChannel.MaxPictureBytes)
+            : new QuicChannel(connection, pinnedDeviceId, acceptsStreams: false);
     }
 
     private bool IsPinnedAs(string deviceId, X509Certificate certificate) =>
