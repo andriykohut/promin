@@ -70,7 +70,7 @@ internal sealed record AgentServices(
 
 /// <summary>
 /// The agent when it runs: its identity, the listener, the beacon that announces it, and the two loops side by
-/// side over one listener (console PCs that are paired, and pairing windows). It returns the process's exit code
+/// side over one listener (console PCs that are paired, each with its broadcast and its screen pictures, and pairing windows). It returns the process's exit code
 /// and says why in the log; nothing here ends the process itself. There is deliberately no <c>ProcessExit</c>
 /// handler: it runs after <c>Main</c> has returned and everything it could cancel is already disposed. The agent
 /// is ended by <c>Stop-Process</c> or, in a test, by the token.
@@ -193,7 +193,7 @@ internal static class AgentHost
             var displays = new BroadcastDisplayFactory(command.Windowed, log.Write);
 
             var pairingLoop = pairing.RunAsync(shutdown.Token);
-            var acceptLoop = AcceptConsolePcsAsync(listener, connections, displays, log, shutdown.Token);
+            var acceptLoop = AcceptConsolePcsAsync(listener, connections, displays, services.OpenScreenPictures, log, shutdown.Token);
 
             // Neither loop ends by itself; one that does has failed.
             var ended = await Task.WhenAny(pairingLoop, acceptLoop).ConfigureAwait(false);
@@ -214,6 +214,7 @@ internal static class AgentHost
         IAgentListener listener,
         NewestConnectionWins connections,
         IBroadcastDisplayFactory displays,
+        Func<IScreenPictures>? openScreenPictures,
         AgentLog log,
         CancellationToken ct)
     {
@@ -236,12 +237,25 @@ internal static class AgentHost
                 async token =>
                 {
                     var connection = new QuicAgentConnection(channel);
+                    using var stopPictures = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    var pictures = openScreenPictures is null
+                        ? Task.CompletedTask
+                        : Task.Run(
+                            () => new PictureSender(
+                                openScreenPictures,
+                                (jpeg, sendCt) => channel.SendVideoFrameAsync(jpeg, sendCt),
+                                log.Write,
+                                TimeProvider.System).RunAsync(stopPictures.Token),
+                            CancellationToken.None);
                     try
                     {
                         await new BroadcastConnection(displays, log.Write).RunAsync(connection, token).ConfigureAwait(false);
                     }
                     finally
                     {
+                        // The capture is let go before the next connection's sender makes its own: two at once are refused.
+                        await stopPictures.CancelAsync().ConfigureAwait(false);
+                        await pictures.ConfigureAwait(false);
                         await connection.DisposeAsync().ConfigureAwait(false);
                         log.Write($"The connection from console PC {consolePc} is closed.");
                     }
