@@ -152,6 +152,37 @@ internal sealed class TestGpu : IDisposable
         }
     }
 
+    public byte[] ReadBgra(ID3D11Texture2D bgra, int width, int height)
+    {
+        using var staging = Device.CreateTexture2D(new Texture2DDescription
+        {
+            Width = (uint)width,
+            Height = (uint)height,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = Format.B8G8R8A8_UNorm,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Staging,
+            BindFlags = BindFlags.None,
+            CPUAccessFlags = CpuAccessFlags.Read,
+            MiscFlags = ResourceOptionFlags.None,
+        });
+        Context.CopyResource(staging, bgra);
+
+        var mapped = Context.Map(staging, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.None);
+        try
+        {
+            var packed = new byte[width * 4 * height];
+            for (var row = 0; row < height; row++)
+                Marshal.Copy(mapped.DataPointer + row * (int)mapped.RowPitch, packed, row * width * 4, width * 4);
+            return packed;
+        }
+        finally
+        {
+            Context.Unmap(staging, 0);
+        }
+    }
+
     private static IDXGIAdapter1? FindAdapterOfPrimaryOutput(IDXGIFactory1 factory)
     {
         for (uint a = 0; factory.EnumAdapters1(a, out var adapter).Success; a++)

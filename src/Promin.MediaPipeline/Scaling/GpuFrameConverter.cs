@@ -5,9 +5,10 @@ using Vortice.DXGI;
 namespace Promin.MediaPipeline.Scaling;
 
 /// <summary>
-/// Scales a BGRA texture and converts it to NV12 in one GPU step, with the Direct3D 11 video
-/// processor. The input is read as full-range RGB and the output is limited-range BT.709, so black
-/// stays black on the agent PC's screen. Not thread-safe: one call at a time.
+/// Scales a BGRA texture and converts it to NV12 (for the encoder) or keeps it BGRA (for screen pictures),
+/// in one GPU step, with the Direct3D 11 video processor. The input is read as full-range RGB and the
+/// output is limited-range BT.709, so black stays black on the agent PC's screen. BGRA output is
+/// full-range RGB, as the screen is. Not thread-safe: one call at a time.
 /// </summary>
 public sealed class GpuFrameConverter : IDisposable
 {
@@ -16,6 +17,7 @@ public sealed class GpuFrameConverter : IDisposable
     private const int RingSize = 3;
 
     private readonly ID3D11Device _device;
+    private readonly Format _outputFormat;
     private readonly ID3D11VideoDevice _videoDevice;
     private readonly ID3D11VideoContext _videoContext;
 
@@ -35,10 +37,14 @@ public sealed class GpuFrameConverter : IDisposable
     private bool _disposed;
 
     /// <param name="device">The capture's device: it must have been created with video support.</param>
-    public GpuFrameConverter(ID3D11Device device)
+    /// <param name="outputFormat"><see cref="Format.NV12"/> for the encoder, <see cref="Format.B8G8R8A8_UNorm"/> for a screen picture.</param>
+    public GpuFrameConverter(ID3D11Device device, Format outputFormat = Format.NV12)
     {
+        if (outputFormat is not (Format.NV12 or Format.B8G8R8A8_UNorm))
+            throw new ArgumentOutOfRangeException(nameof(outputFormat), $"The converter writes NV12 or B8G8R8A8_UNorm; {outputFormat} was asked for.");
         ArgumentNullException.ThrowIfNull(device);
         _device = device;
+        _outputFormat = outputFormat;
 
         _videoDevice = device.QueryInterfaceOrNull<ID3D11VideoDevice>()
             ?? throw new NotSupportedException("The Direct3D 11 device does not offer the video processor (it was not created with video support, or the driver has none).");
@@ -57,9 +63,9 @@ public sealed class GpuFrameConverter : IDisposable
 
     /// <summary>
     /// Converts <paramref name="bgraSource"/> (its top-left <paramref name="sourceWidth"/> by
-    /// <paramref name="sourceHeight"/> pixels) to NV12 at <paramref name="targetWidth"/> by
-    /// <paramref name="targetHeight"/>, scaling as needed. The same-size case still converts: the encoder
-    /// needs NV12 either way. The returned texture is owned by the converter and stays valid for at least
+    /// <paramref name="sourceHeight"/> pixels) to the output format given to the constructor (NV12 or BGRA)
+    /// at <paramref name="targetWidth"/> by <paramref name="targetHeight"/>, scaling as needed. The same-size
+    /// case still converts. The returned texture is owned by the converter and stays valid for at least
     /// the next two calls; the caller must not dispose it.
     /// </summary>
     public ID3D11Texture2D Convert(ID3D11Texture2D bgraSource, int sourceWidth, int sourceHeight, int targetWidth, int targetHeight)
@@ -68,8 +74,9 @@ public sealed class GpuFrameConverter : IDisposable
         ArgumentNullException.ThrowIfNull(bgraSource);
         if (sourceWidth <= 0 || sourceHeight <= 0)
             throw new ArgumentOutOfRangeException(nameof(sourceWidth), $"The source size must be positive; got {sourceWidth}x{sourceHeight}.");
-        if (targetWidth <= 0 || targetHeight <= 0 || targetWidth % 2 != 0 || targetHeight % 2 != 0)
-            throw new ArgumentOutOfRangeException(nameof(targetWidth), $"The target size must be positive and even (NV12); got {targetWidth}x{targetHeight}.");
+        var even = _outputFormat != Format.NV12 || (targetWidth % 2 == 0 && targetHeight % 2 == 0);
+        if (targetWidth <= 0 || targetHeight <= 0 || !even)
+            throw new ArgumentOutOfRangeException(nameof(targetWidth), $"The target size must be positive{(_outputFormat == Format.NV12 ? " and even (NV12)" : "")}; got {targetWidth}x{targetHeight}.");
 
         var description = bgraSource.Description;
         if (description.Format != Format.B8G8R8A8_UNorm)
@@ -154,8 +161,8 @@ public sealed class GpuFrameConverter : IDisposable
 
             if ((_enumerator.CheckVideoProcessorFormat(Format.B8G8R8A8_UNorm) & VideoProcessorFormatSupport.Input) == 0)
                 throw new NotSupportedException("The GPU's video processor cannot read B8G8R8A8 pictures.");
-            if ((_enumerator.CheckVideoProcessorFormat(Format.NV12) & VideoProcessorFormatSupport.Output) == 0)
-                throw new NotSupportedException("The GPU's video processor cannot write NV12 pictures.");
+            if ((_enumerator.CheckVideoProcessorFormat(_outputFormat) & VideoProcessorFormatSupport.Output) == 0)
+                throw new NotSupportedException($"The GPU's video processor cannot write {_outputFormat} pictures.");
 
             _processor = _videoDevice.CreateVideoProcessor(_enumerator, 0);
             ConfigureProcessor(_processor, sourceWidth, sourceHeight);
@@ -186,7 +193,9 @@ public sealed class GpuFrameConverter : IDisposable
     {
         _videoContext.VideoProcessorSetStreamFrameFormat(processor, 0, VideoFrameFormat.Progressive);
         _videoContext.VideoProcessorSetStreamColorSpace(processor, 0, ColorSpace(VideoProcessorNominalRange.Range_0_255));
-        _videoContext.VideoProcessorSetOutputColorSpace(processor, ColorSpace(VideoProcessorNominalRange.Range_16_235));
+        // NV12 for the encoder is limited range (16..235); a BGRA screen picture stays full range like the screen.
+        _videoContext.VideoProcessorSetOutputColorSpace(processor, ColorSpace(
+            _outputFormat == Format.NV12 ? VideoProcessorNominalRange.Range_16_235 : VideoProcessorNominalRange.Range_0_255));
 
         // No driver "enhancement" of the picture: the viewer must see the presenter's screen as it is.
         _videoContext.VideoProcessorSetStreamAutoProcessingMode(processor, 0, false);
@@ -208,7 +217,7 @@ public sealed class GpuFrameConverter : IDisposable
         // Shader-resource binding is only added where the driver supports it; the video processor
         // needs just the render-target binding.
         var bind = BindFlags.RenderTarget;
-        if ((_device.CheckFormatSupport(Format.NV12) & FormatSupport.ShaderLoad) != 0)
+        if ((_device.CheckFormatSupport(_outputFormat) & FormatSupport.ShaderLoad) != 0)
             bind |= BindFlags.ShaderResource;
 
         for (var i = 0; i < RingSize; i++)
@@ -219,7 +228,7 @@ public sealed class GpuFrameConverter : IDisposable
                 Height = (uint)height,
                 MipLevels = 1,
                 ArraySize = 1,
-                Format = Format.NV12,
+                Format = _outputFormat,
                 SampleDescription = new SampleDescription(1, 0),
                 Usage = ResourceUsage.Default,
                 BindFlags = bind,
