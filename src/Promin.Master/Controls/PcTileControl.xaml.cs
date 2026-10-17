@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Promin.Master.Core;
 using Promin.Master.Core.Wall;
+using Promin.MediaPipeline.Pictures;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -28,6 +29,9 @@ public sealed partial class PcTileControl : UserControl
     // A newer picture supersedes one still decoding.
     private int _pictureVersion;
     private SoftwareBitmapSource? _pictureSource;
+
+    // Whether the failure of the last picture is already traced; a good picture re-arms it.
+    private bool _decodeFailureTraced;
 
     public PcTileControl()
     {
@@ -137,8 +141,9 @@ public sealed partial class PcTileControl : UserControl
     }
 
     /// <summary>
-    /// Decodes the JPEG and shows it; null clears the picture. One that will not decode is dropped and the
-    /// last good one stays. Fire-and-forget on purpose: it is a UI update, and it catches what decoding throws.
+    /// Decodes the JPEG and shows it; null clears the picture. One that will not decode, or that is larger than
+    /// the agent ever sends, is dropped and the last good one stays; the first such failure is traced, the
+    /// following ones not until a picture has been shown. Fire-and-forget on purpose: it is a UI update, and it catches what decoding throws.
     /// </summary>
     private async void ShowPicture(byte[]? jpeg)
     {
@@ -157,6 +162,14 @@ public sealed partial class PcTileControl : UserControl
             await stream.WriteAsync(jpeg.AsBuffer());
             stream.Seek(0);
             var decoder = await BitmapDecoder.CreateAsync(stream);
+
+            // The transport caps the bytes, not the dimensions: decoding allocates width x height x 4.
+            var bounds = PictureSizing.Bounds;
+            if (decoder.PixelWidth > bounds.Width || decoder.PixelHeight > bounds.Height)
+            {
+                throw new InvalidDataException($"The picture is {decoder.PixelWidth}x{decoder.PixelHeight}, larger than {bounds.Width}x{bounds.Height}.");
+            }
+
             using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
             var source = new SoftwareBitmapSource();
             await source.SetBitmapAsync(bitmap);
@@ -169,9 +182,16 @@ public sealed partial class PcTileControl : UserControl
             var old = _pictureSource;
             PictureImage.Source = _pictureSource = source;
             old?.Dispose();
+            _decodeFailureTraced = false;
         }
         catch (Exception failure)
         {
+            if (_decodeFailureTraced)
+            {
+                return;
+            }
+
+            _decodeFailureTraced = true;
             Trace.TraceInformation("A screen picture from {0} could not be shown: {1}", Tile?.Name, failure.Message);
         }
     }
