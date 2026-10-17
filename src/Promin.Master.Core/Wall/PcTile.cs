@@ -25,6 +25,8 @@ public sealed class PcTile : INotifyPropertyChanged
     private string _selectBoxName = string.Empty;
     private string _detailsButtonName = string.Empty;
     private string _tileName = string.Empty;
+    private TileScreen _screen;
+    private byte[]? _picture;
 
     public PcTile(RoomMember member, TimeSpan dropWindow)
     {
@@ -52,10 +54,37 @@ public sealed class PcTile : INotifyPropertyChanged
         internal set => Set(ref _state, value);
     }
 
+    /// <summary>What the screen area shows over the state's background.</summary>
+    public TileScreen Screen
+    {
+        get => _screen;
+        private set => Set(ref _screen, value);
+    }
+
+    /// <summary>The newest picture of the PC's screen, a JPEG, while <see cref="Screen"/> is <see cref="TileScreen.Picture"/>; otherwise null.</summary>
+    public byte[]? Picture
+    {
+        get => _picture;
+        private set => Set(ref _picture, value);
+    }
+
     public string StatusText
     {
         get => _statusText;
         internal set => Set(ref _statusText, value);
+    }
+
+    /// <summary>A picture from the PC; an empty one says its screen is not available.</summary>
+    internal void ShowPicture(byte[] jpeg)
+    {
+        Picture = jpeg.Length == 0 ? null : jpeg;
+        Screen = jpeg.Length == 0 ? TileScreen.NotAvailable : TileScreen.Picture;
+    }
+
+    internal void ClearPicture()
+    {
+        Picture = null;
+        Screen = TileScreen.Glyph;
     }
 
     /// <summary>One sentence on the state when it is not healthy; empty otherwise.</summary>

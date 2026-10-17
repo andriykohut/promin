@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Promin.MediaPipeline.Pictures;
 using Promin.Protocol;
 using Promin.Protocol.Discovery;
 using Promin.Protocol.Pairing;
@@ -37,12 +38,14 @@ internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAg
 /// <summary>
 /// The parts of start-up that touch this machine (QUIC, the Windows key store, the network), as functions, so
 /// that every way the agent can fail to start, and the exit code and log line for it, can be reached from a test.
+/// <c>OpenScreenPictures</c> is null in tests, which then take no pictures.
 /// </summary>
 internal sealed record AgentServices(
     Action EnsureQuicSupported,
     Func<string, DeviceIdentity> LoadIdentity,
     Func<DeviceIdentity, PeerCertificateStore, Action<Exception>, IAgentListener> CreateListener,
-    Func<DeviceIdentity, IDisposable> StartBeacon)
+    Func<DeviceIdentity, IDisposable> StartBeacon,
+    Func<IScreenPictures>? OpenScreenPictures = null)
 {
     public static AgentServices ForThisMachine() => new(
         QuicTransportSettings.EnsureSupported,
@@ -61,12 +64,13 @@ internal sealed record AgentServices(
                 ProminPorts.Discovery);
             beacon.Start();
             return beacon;
-        });
+        },
+        () => new ScreenPictures());
 }
 
 /// <summary>
 /// The agent when it runs: its identity, the listener, the beacon that announces it, and the two loops side by
-/// side over one listener (console PCs that are paired, and pairing windows). It returns the process's exit code
+/// side over one listener (console PCs that are paired, each with its broadcast and its screen pictures, and pairing windows). It returns the process's exit code
 /// and says why in the log; nothing here ends the process itself. There is deliberately no <c>ProcessExit</c>
 /// handler: it runs after <c>Main</c> has returned and everything it could cancel is already disposed. The agent
 /// is ended by <c>Stop-Process</c> or, in a test, by the token.
@@ -169,6 +173,13 @@ internal static class AgentHost
             using var beacon = services.StartBeacon(identity);
             log.Write($"Announcing this PC on the network (UDP port {ProminPorts.Discovery}).");
 
+            if (services.OpenScreenPictures is { } openPictures)
+            {
+                // Off the start-up path: a capture can take seconds to deliver its first picture. It is let go within five
+                // seconds; a console PC that connects meanwhile has its first capture refused once and retried a second later.
+                _ = Task.Run(() => log.Write(ScreenPictureProbe.Describe(openPictures)), CancellationToken.None);
+            }
+
             var pairing = new AgentPairingLoop(
                 masters,
                 new AgentSettings(paths.RoomCodeFile).Lookup,
@@ -182,7 +193,7 @@ internal static class AgentHost
             var displays = new BroadcastDisplayFactory(command.Windowed, log.Write);
 
             var pairingLoop = pairing.RunAsync(shutdown.Token);
-            var acceptLoop = AcceptConsolePcsAsync(listener, connections, displays, log, shutdown.Token);
+            var acceptLoop = AcceptConsolePcsAsync(listener, connections, displays, services.OpenScreenPictures, log, shutdown.Token);
 
             // Neither loop ends by itself; one that does has failed.
             var ended = await Task.WhenAny(pairingLoop, acceptLoop).ConfigureAwait(false);
@@ -203,6 +214,7 @@ internal static class AgentHost
         IAgentListener listener,
         NewestConnectionWins connections,
         IBroadcastDisplayFactory displays,
+        Func<IScreenPictures>? openScreenPictures,
         AgentLog log,
         CancellationToken ct)
     {
@@ -225,12 +237,25 @@ internal static class AgentHost
                 async token =>
                 {
                     var connection = new QuicAgentConnection(channel);
+                    using var stopPictures = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    var pictures = openScreenPictures is null
+                        ? Task.CompletedTask
+                        : Task.Run(
+                            () => new PictureSender(
+                                openScreenPictures,
+                                (jpeg, sendCt) => channel.SendVideoFrameAsync(jpeg, sendCt),
+                                log.Write,
+                                TimeProvider.System).RunAsync(stopPictures.Token),
+                            CancellationToken.None);
                     try
                     {
                         await new BroadcastConnection(displays, log.Write).RunAsync(connection, token).ConfigureAwait(false);
                     }
                     finally
                     {
+                        // The capture is let go before the next connection's sender makes its own: two at once are refused.
+                        await stopPictures.CancelAsync().ConfigureAwait(false);
+                        await pictures.ConfigureAwait(false);
                         await connection.DisposeAsync().ConfigureAwait(false);
                         log.Write($"The connection from console PC {consolePc} is closed.");
                     }

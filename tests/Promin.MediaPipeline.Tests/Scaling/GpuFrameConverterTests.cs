@@ -13,6 +13,13 @@ public class GpuFrameConverterTests(ITestOutputHelper output)
     public void Constructor_RefusesANullDevice() =>
         Assert.Throws<ArgumentNullException>(() => new GpuFrameConverter(null!));
 
+    [Fact]
+    public void Constructor_RefusesAnOutputFormatOtherThanNv12OrBgra()
+    {
+        // Checked before the device is touched, so no GPU is needed.
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GpuFrameConverter(null!, Vortice.DXGI.Format.R8G8B8A8_UNorm));
+    }
+
     // Black must stay black on the agent PC's screen: full-range RGB in, limited-range (16..235) BT.709 out.
     // Red tells BT.709 from BT.601 apart: Y is about 63 under 709 and 81 under 601.
     [Theory(Skip = NeedsGpu)]
@@ -39,6 +46,31 @@ public class GpuFrameConverterTests(ITestOutputHelper output)
         Assert.InRange(luma, y - 3, y + 3);
         Assert.InRange(cbValue, cb - 4, cb + 4);
         Assert.InRange(crValue, cr - 4, cr + 4);
+    }
+
+    // Screen previews: the picture is shrunk on the GPU and stays RGB, full range, so the JPEG matches the screen.
+    [Theory(Skip = NeedsGpu)]
+    [InlineData(0, 0, 0)]
+    [InlineData(255, 255, 255)]
+    [InlineData(255, 0, 0)]
+    [InlineData(0, 0, 255)]
+    public void Bgra_SolidColours_StayTheSameColour_AtAnOddTargetSize(byte red, byte green, byte blue)
+    {
+        using var gpu = new TestGpu();
+        using var converter = new GpuFrameConverter(gpu.Device, Vortice.DXGI.Format.B8G8R8A8_UNorm);
+        using var source = gpu.SolidTexture(200, 120, blue, green, red);
+
+        var small = converter.Convert(source, 200, 120, 75, 45);
+
+        Assert.Equal(75u, small.Description.Width);
+        Assert.Equal(45u, small.Description.Height);
+        Assert.Equal(Vortice.DXGI.Format.B8G8R8A8_UNorm, small.Description.Format);
+        var bytes = gpu.ReadBgra(small, 75, 45);
+        var middle = (22 * 75 + 37) * 4;
+        output.WriteLine($"rgb({red},{green},{blue}) -> bgr({bytes[middle]},{bytes[middle + 1]},{bytes[middle + 2]})");
+        Assert.InRange(bytes[middle], blue - 3, blue + 3);
+        Assert.InRange(bytes[middle + 1], green - 3, green + 3);
+        Assert.InRange(bytes[middle + 2], red - 3, red + 3);
     }
 
     [Fact(Skip = NeedsGpu)]

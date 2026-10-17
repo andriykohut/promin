@@ -104,8 +104,9 @@
         </Grid.RowDefinitions>
 
         <!--
-            The screen area, 16:10 (the height follows the width in code-behind). Its one child
-            holds the state glyph; a later sub-project puts a live preview there.
+            The screen area, 16:10 (the height follows the width in code-behind). One of its three
+            children shows, as Tile.Screen says: the state glyph, the PC's screen picture, or the
+            note that the screen is not available.
         -->
         <Grid
             x:Name="Screen"
@@ -116,7 +117,10 @@
             <Grid.RenderTransform>
                 <ScaleTransform x:Name="ScreenScale" />
             </Grid.RenderTransform>
-            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid
+                x:Name="Glyphs"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
                 <FontIcon
                     x:Name="MonitorGlyph"
                     FontSize="24"
@@ -140,22 +144,62 @@
                     </Canvas>
                 </Viewbox>
             </Grid>
+            <!--
+                The PC's screen, fitted whole; bars where its shape is not 16:10. The bars repeat the
+                Ready look (the Mica base, the card, the subtle fill) from an opaque bottom, so a state's
+                tint behind this layer does not show through them in either theme. The outer Border
+                clips the picture to the screen area's corners.
+            -->
+            <Border
+                x:Name="PictureLayer"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                CornerRadius="5"
+                Visibility="Collapsed">
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <Grid Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                        <Image x:Name="PictureImage" Stretch="Uniform" />
+                    </Grid>
+                </Border>
+            </Border>
+            <StackPanel
+                x:Name="NotAvailableNote"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="5"
+                Visibility="Collapsed">
+                <FontIcon
+                    HorizontalAlignment="Center"
+                    FontSize="24"
+                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                    Glyph="&#xE72E;" />
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind core:Strings.Tile_ScreenNotAvailable}" />
+            </StackPanel>
         </Grid>
 
-        <!-- The checkbox, top left of the screen area; off air only. -->
-        <CheckBox
-            x:Name="SelectBox"
-            MinWidth="0"
-            MinHeight="0"
-            Margin="6,6,0,0"
-            Padding="0"
+        <!-- The checkbox, top left of the screen area, off air only; its halo keeps it readable over a dark picture. -->
+        <Border
+            x:Name="SelectHalo"
+            Margin="4,4,0,0"
+            Padding="2"
             HorizontalAlignment="Left"
             VerticalAlignment="Top"
-            AutomationProperties.Name="{x:Bind Tile.SelectBoxName, Mode=OneWay}"
-            Click="SelectBox_Click"
-            IsChecked="{x:Bind Tile.IsSelected, Mode=OneWay}"
-            IsEnabled="{x:Bind Tile.CanSelect, Mode=OneWay}"
-            Visibility="{x:Bind Not(Tile.IsOnAir), Mode=OneWay}" />
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            CornerRadius="6"
+            Visibility="{x:Bind Not(Tile.IsOnAir), Mode=OneWay}">
+            <CheckBox
+                x:Name="SelectBox"
+                MinWidth="0"
+                MinHeight="0"
+                Padding="0"
+                AutomationProperties.Name="{x:Bind Tile.SelectBoxName, Mode=OneWay}"
+                Click="SelectBox_Click"
+                IsChecked="{x:Bind Tile.IsSelected, Mode=OneWay}"
+                IsEnabled="{x:Bind Tile.CanSelect, Mode=OneWay}" />
+        </Border>
 
         <!-- Name, and the details button at its right. -->
         <Grid

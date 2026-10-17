@@ -13,6 +13,7 @@ public sealed class RoomWallRejoinTests
     private readonly InMemoryRoomStore _store = new();
     private readonly FakeDiscovery _discovery = new();
     private readonly FakeBroadcastController _broadcast = new();
+    private readonly FakeRoomConnections _connections = new();
     private readonly FakePairingClient _pairing = new();
     private readonly InMemoryWallSettings _settings = new();
     private DateTimeOffset _now = new(2026, 10, 3, 10, 0, 0, TimeSpan.Zero);
@@ -44,7 +45,7 @@ public sealed class RoomWallRejoinTests
             _store.Members.Add(new RoomMember(Id(n), $"PC-{n:00}", $"192.168.1.{20 + n}", 17843, PairedOn, Selected: true));
         }
 
-        var vm = new RoomWallViewModel(_store, _discovery, _broadcast, _pairing, _settings, () => _now, a => a());
+        var vm = new RoomWallViewModel(_store, _discovery, _broadcast, _connections, _pairing, _settings, () => _now, a => a());
         vm.Activate();
         See(online);
         vm.Tick();
@@ -214,7 +215,7 @@ public sealed class RoomWallRejoinTests
             _store.Members.Add(new RoomMember(Id(n), $"PC-{n:00}", $"192.168.1.{20 + n}", 17843, PairedOn, Selected: true));
         }
 
-        var vm = new RoomWallViewModel(_store, _discovery, _broadcast, _pairing, _settings, () => _now, a => a());
+        var vm = new RoomWallViewModel(_store, _discovery, _broadcast, _connections, _pairing, _settings, () => _now, a => a());
         vm.Activate();
 
         See(7);

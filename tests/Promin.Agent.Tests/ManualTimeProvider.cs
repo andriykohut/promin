@@ -31,6 +31,18 @@ internal sealed class ManualTimeProvider : TimeProvider
         return timer;
     }
 
+    /// <summary>How many timers are waiting to fire: lets a test wait until the code under test has started its delay, then advance.</summary>
+    public int PendingTimers
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _timers.Count(t => t.DueTicks is not null);
+            }
+        }
+    }
+
     public void Advance(TimeSpan delta)
     {
         long target;

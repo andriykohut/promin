@@ -110,13 +110,15 @@ public static class QuicTransportSettings
     public const int AgentMaxInboundUnidirectionalStreams = 256;
 
     /// <summary>
-    /// Inbound video credit the <b>master</b> grants an agent: none. Agents send no video, and
-    /// agent machines are viewer-controlled — every stream of credit is up to
-    /// <see cref="QuicChannel.MaxVideoFrameBytes"/> that an agent PC can make the presenter's
-    /// laptop allocate, per connection, times the number of agent PCs. If a later sub-project ever
-    /// needs agent-to-master streams, this is the one constant to change.
+    /// Inbound credit the <b>master</b> grants an agent on an ordinary connection: four streams, for screen
+    /// pictures. The agent sends one picture at a time and waits for it to arrive, so one is in use; the rest is
+    /// slack for a stream whose close is still being acknowledged. Each is at most <see cref="QuicChannel.MaxPictureBytes"/>,
+    /// so an agent PC can make the presenter's PC buffer at most 4 MB.
     /// </summary>
-    public const int MasterMaxInboundUnidirectionalStreams = 0;
+    public const int MasterMaxInboundUnidirectionalStreams = 4;
+
+    /// <summary>Inbound unidirectional credit the master grants on a <b>pairing</b> connection: none. Nothing travels agent to master while pairing.</summary>
+    public const int MasterPairingMaxInboundUnidirectionalStreams = 0;
 
     /// <summary>
     /// How many inbound video streams one connection reads into memory at once. Streams beyond

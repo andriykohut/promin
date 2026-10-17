@@ -13,8 +13,8 @@ namespace Promin.Master.Services;
 /// <summary>
 /// Everything the console owns for its whole life, built once in <c>App.OnLaunched</c>: the
 /// paths under <c>%LocalAppData%\Promin\</c>, this PC's identity, the one QUIC connector, the
-/// trust store, the room store, the two adapters the setup screen talks to, and the broadcast
-/// controller and wall settings the room wall talks to.
+/// trust store, the room store, the two adapters the setup screen talks to, and the room
+/// connections, broadcast controller and wall settings the room wall talks to.
 /// </summary>
 /// <remarks>
 /// The paths are per Windows account because the identity is: its private key lives in the key
@@ -23,6 +23,7 @@ namespace Promin.Master.Services;
 public sealed class AppServices : IDisposable
 {
     private readonly BroadcastController _broadcast;
+    private readonly RoomConnections<QuicPcConnection> _connections;
 
     private AppServices(string rootDirectory)
     {
@@ -38,8 +39,11 @@ public sealed class AppServices : IDisposable
         RoomStore = new JsonRoomStore(RoomPath);
         Pairing = new QuicPairingClient(Connector, TrustedAgents, TrustPath);
         Discovery = new LanDiscovery(deviceId => TrustedAgents.TryGetPinnedThumbprint(deviceId, out _));
+        _connections = new RoomConnections<QuicPcConnection>(DialAsync, () => DateTimeOffset.Now, (deviceId, failure) =>
+            Trace.TraceInformation("Could not connect to {0}: {1} (tried again every few seconds while it is online; not logged again until it connects).", deviceId, failure.Message));
+        Connections = _connections;
         WallSettings = new JsonWallSettings(SettingsPath);
-        Broadcast = _broadcast = new BroadcastController(Connector);
+        Broadcast = _broadcast = new BroadcastController(_connections);
     }
 
     /// <summary>Where this Windows account's Promin state lives.</summary>
@@ -72,6 +76,9 @@ public sealed class AppServices : IDisposable
     public IWallSettings WallSettings { get; }
 
     public IBroadcastController Broadcast { get; }
+
+    /// <summary>Every online agent PC's standing connection: its screen pictures, and the broadcast.</summary>
+    public IRoomConnections Connections { get; }
 
     public static AppServices Create() => new(RootDirectory);
 
@@ -130,7 +137,30 @@ public sealed class AppServices : IDisposable
     {
         // Not just Stop: a process that exits before the viewers were told leaves their screens on the last picture.
         _broadcast.StopAndWait(TimeSpan.FromSeconds(3));
+        // Bounded (a second at most): closing tells each PC its connection is over.
+        _connections.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2));
         Discovery.Stop();
         Identity.Dispose();
+    }
+
+    private static readonly TimeSpan DialTimeout = TimeSpan.FromSeconds(5);
+
+    private async Task<QuicPcConnection> DialAsync(RoomMember pc, CancellationToken ct)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(DialTimeout);
+        var channel = await Connector
+            .ConnectAsync(new IPEndPoint(IPAddress.Parse(pc.LastAddress), pc.Port), pc.DeviceId, deadline.Token)
+            .ConfigureAwait(false);
+
+        // The connector admits only the certificate pinned for this PC. A channel that does not say so (the pin was
+        // removed while it connected) is not kept.
+        if (channel.PinnedDeviceId != pc.DeviceId)
+        {
+            await channel.DisposeAsync().ConfigureAwait(false);
+            throw new InvalidOperationException("The connection is not pinned to the PC that was dialled.");
+        }
+
+        return new QuicPcConnection(channel);
     }
 }

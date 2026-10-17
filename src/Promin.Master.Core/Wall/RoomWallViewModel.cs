@@ -20,7 +20,8 @@ namespace Promin.Master.Core.Wall;
 ///
 /// <b>Threads.</b> Every public member is called on the UI thread. <see cref="IDiscovery.Seen"/>,
 /// <see cref="IBroadcastController.ClientLost"/> and <see cref="IBroadcastController.BroadcastFailed"/>
-/// arrive on any thread and are marshalled through <c>runOnUiThread</c>.
+/// arrive on any thread and are marshalled through <c>runOnUiThread</c>;
+/// <see cref="IRoomConnections.PictureArrived"/> and <see cref="IRoomConnections.Ended"/> too.
 ///
 /// <b>State.</b> Presence and the broadcast's counters are read on <see cref="Tick"/>; an
 /// announcement only records when a PC was seen. The subscriptions are made on the first
@@ -44,6 +45,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private readonly IRoomStore _store;
     private readonly IDiscovery _discovery;
     private readonly IBroadcastController _broadcast;
+    private readonly IRoomConnections _connections;
     private readonly IPairingClient _pairing;
     private readonly IWallSettings _settings;
     private readonly Func<DateTimeOffset> _now;
@@ -62,6 +64,11 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     // announcement, so this is kept in memory only; the room file gets an address once a connection worked there.
     private readonly Dictionary<string, (string Address, int Port)> _announcedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _rejoinTriedAt = new(StringComparer.Ordinal);
+
+    // The newest picture each PC sent on its current connection, whatever its tile shows at the moment: on air, the first
+    // picture of a rejoined connection arrives while the tile still reads Reconnecting, and the agent sends the next one
+    // only when its screen changes.
+    private readonly Dictionary<string, byte[]> _pictures = new(StringComparer.Ordinal);
 
     // Cancelled when the broadcast ends, so a PC still connecting is let go instead of being left waiting for a picture.
     private CancellationTokenSource _rejoins = new();
@@ -100,6 +107,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         IRoomStore store,
         IDiscovery discovery,
         IBroadcastController broadcast,
+        IRoomConnections connections,
         IPairingClient pairing,
         IWallSettings settings,
         Func<DateTimeOffset> now,
@@ -108,6 +116,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(discovery);
         ArgumentNullException.ThrowIfNull(broadcast);
+        ArgumentNullException.ThrowIfNull(connections);
         ArgumentNullException.ThrowIfNull(pairing);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(now);
@@ -116,6 +125,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _store = store;
         _discovery = discovery;
         _broadcast = broadcast;
+        _connections = connections;
         _pairing = pairing;
         _settings = settings;
         _now = now;
@@ -225,6 +235,8 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             _discovery.Seen += OnSeenAnyThread;
             _broadcast.ClientLost += OnClientLostAnyThread;
             _broadcast.BroadcastFailed += OnBroadcastFailedAnyThread;
+            _connections.PictureArrived += OnPictureAnyThread;
+            _connections.Ended += OnEndedAnyThread;
         }
 
         try
@@ -412,6 +424,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         _stoppedByPresenter.Remove(tile.DeviceId);
+        _pictures.Remove(tile.DeviceId);
 
         try
         {
@@ -424,19 +437,27 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             _saveFailed = true;
         }
 
+        _connections.Drop(tile.DeviceId);
         Tiles.Remove(tile);
         Raise(nameof(IsEmptyRoom));
         Refresh();
     }
 
     /// <summary>
-    /// Once a second from the page's timer: on air, starts joining each PC the broadcast wants and
+    /// Once a second from the page's timer: keeps a connection wanted for every online PC; on air, starts joining each PC the broadcast wants and
     /// is not sending to (lost, unreachable or offline at the start) that is online now; then reads
     /// presence and the broadcast's counters and recomputes every state and text.
     /// </summary>
     public void Tick()
     {
         var now = _now();
+
+        // Every online PC has a standing connection: its screen pictures come on it, and a broadcast uses it.
+        foreach (var member in _members.Where(m => _presence.IsOnline(m.DeviceId, now)))
+        {
+            _connections.Want(AsDialled(member));
+        }
+
         foreach (var member in _members.Where(m => IsWanted(m) && !_sendingTo.Contains(m.DeviceId)).ToList())
         {
             if (_presence.IsOnline(member.DeviceId, now)
@@ -523,6 +544,8 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             }
 
             _stoppedByPresenter.Remove(gone);
+            _pictures.Remove(gone);
+            _connections.Drop(gone);
         }
 
         Tiles.Clear();
@@ -545,6 +568,34 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     }
 
     private void OnSeenAnyThread(AgentPc pc) => _runOnUiThread(() => OnSeen(pc));
+
+    private void OnPictureAnyThread(string deviceId, byte[] picture) => _runOnUiThread(() => OnPicture(deviceId, picture));
+
+    private void OnEndedAnyThread(string deviceId) => _runOnUiThread(() => OnEnded(deviceId));
+
+    private void OnEnded(string deviceId)
+    {
+        _pictures.Remove(deviceId);
+        Tiles.FirstOrDefault(t => t.DeviceId == deviceId)?.ClearPicture();
+    }
+
+    /// <summary>
+    /// A PC that is offline or reconnecting shows the hatch, so its picture is only remembered then;
+    /// <see cref="Refresh"/> shows it once the PC is back.
+    /// </summary>
+    private void OnPicture(string deviceId, byte[] picture)
+    {
+        if (Tiles.FirstOrDefault(t => t.DeviceId == deviceId) is not { } tile)
+        {
+            return;
+        }
+
+        _pictures[deviceId] = picture;
+        if (tile.State is not (PcTileState.Offline or PcTileState.Reconnecting))
+        {
+            tile.ShowPicture(picture);
+        }
+    }
 
     private void OnClientLostAnyThread(string deviceId) => _runOnUiThread(() => OnClientLost(deviceId));
 
@@ -793,6 +844,15 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
             var state = StateOf(member, tile, online, now);
             tile.State = state;
+            if (state is PcTileState.Offline or PcTileState.Reconnecting)
+            {
+                tile.ClearPicture();
+            }
+            else if (tile.Screen == TileScreen.Glyph && _pictures.TryGetValue(tile.DeviceId, out var remembered))
+            {
+                tile.ShowPicture(remembered);
+            }
+
             tile.StatusText = WallText.Status(state, tile.FramesDropped);
             tile.DetailSentence = WallText.DetailSentence(state);
             tile.CanSelect = selectable && online;

@@ -71,6 +71,13 @@ public sealed class DxgiScreenCapture : IScreenCapture
     /// </summary>
     public ID3D11Device Device { get; }
 
+    /// <summary>
+    /// False while there is no duplication to read from: the lock screen, a UAC prompt or a sign-in screen is showing,
+    /// or a mode change is in progress. A <see cref="TryGetNextFrame"/> that returned false with this false means the
+    /// screen cannot be captured right now, not that it is still.
+    /// </summary>
+    public bool IsDuplicating => _duplication is not null;
+
     /// <summary>Starts duplicating the primary display, the output whose desktop rectangle starts at (0, 0).</summary>
     public DxgiScreenCapture()
     {
