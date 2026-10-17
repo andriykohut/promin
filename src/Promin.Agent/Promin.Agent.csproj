@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\Promin.Agent.Core\Promin.Agent.Core.csproj" />
     <ProjectReference Include="..\Promin.Protocol\Promin.Protocol.csproj" />
     <ProjectReference Include="..\Promin.MediaPipeline\Promin.MediaPipeline.csproj" />
   </ItemGroup>
@@ -13,6 +14,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Promin.Agent.Tests" />
+    <Using Include="Promin.Agent.Core" />
   </ItemGroup>
 
   <PropertyGroup>

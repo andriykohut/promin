@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!--
+      What the agent and its window share: where the agent keeps its files and the room code file. No WinUI
+      dependency, so that a plain xUnit project can test it.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Promin.Protocol\Promin.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

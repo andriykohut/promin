@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Promin.Agent/Promin.Agent.csproj" />
+    <Project Path="src/Promin.Agent.Core/Promin.Agent.Core.csproj" />
     <Project Path="src/Promin.Master.Core/Promin.Master.Core.csproj" />
     <Project Path="src/Promin.Master/Promin.Master.csproj">
       <Platform Project="x64" />

@@ -1,4 +1,4 @@
-namespace Promin.Agent;
+namespace Promin.Agent.Core;
 
 /// <summary>
 /// Where the agent keeps what it keeps. Identity and pins belong to the Windows account (the private key is in
@@ -7,7 +7,7 @@ namespace Promin.Agent;
 /// </summary>
 /// <param name="AgentDirectory">Per account: identity, pinned console PCs and the log.</param>
 /// <param name="RoomCodeFile">Machine-wide: the room code.</param>
-internal sealed record AgentPaths(string AgentDirectory, string RoomCodeFile)
+public sealed record AgentPaths(string AgentDirectory, string RoomCodeFile)
 {
     /// <summary>Public certificate and device id (<c>DeviceIdentity.LoadOrCreate</c>); the private key is not in it.</summary>
     public string IdentityDirectory => Path.Combine(AgentDirectory, "identity");
