@@ -100,6 +100,9 @@ public sealed partial class PcTileControl : UserControl
         if (e.NewValue is PcTile tile)
         {
             tile.PropertyChanged += control.Tile_PropertyChanged;
+
+            // A recycled control is a new PC's: its first decode failure is traced too.
+            control._decodeFailureTraced = false;
             control.ShowState(tile);
             control.ShowScreen(tile);
             control.ShowPicture(tile.Picture);

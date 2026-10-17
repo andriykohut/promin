@@ -123,7 +123,7 @@ public sealed class GpuFrameConverter : IDisposable
     }
 
     // The colour handling the processor is told about. Usage 0 is "playback"; YCbCr_Matrix 1 means
-    // BT.709; RGB_Range 0 means full range (0-255); Nominal_Range is the range of the output (YCbCr for NV12, RGB for BGRA).
+    // BT.709; RGB_Range 0 means full range (0-255); Nominal_Range is the luma range of YCbCr data (NV12 output: 16-235); for RGB data RGB_Range applies.
     private static VideoProcessorColorSpace ColorSpace(VideoProcessorNominalRange nominalRange)
     {
         var space = default(VideoProcessorColorSpace);
