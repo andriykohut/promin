@@ -13,7 +13,7 @@ The name is Ukrainian: промінь, a beam of light.
 
 Early. Broadcasting works and has been run between two PCs; the room wall's pictures of each PC's screen have been tried on one PC. Neither has yet been tried in a full room of ten or more.
 
-Planned next, none of it built yet: live previews of the other screens, remote control, file transfer and locking screens.
+Planned next, none of it built yet: remote control, file transfer and locking screens.
 
 ## How it works
 
