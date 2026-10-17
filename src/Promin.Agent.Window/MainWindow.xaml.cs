@@ -70,7 +70,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
     {
         if (_model.Save(CodeBox.Text))
         {
-            CodeBox.Text = _model.StoredCode;
+            CodeBox.Text = _model.StoredCode ?? "";
         }
 
         Render();

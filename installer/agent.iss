@@ -33,8 +33,8 @@ english.WinVersionTooLowError=Promin needs Windows 11. This PC runs an older ver
 ukrainian.WinVersionTooLowError=Promin потребує Windows 11. На цьому ПК стоїть старіша версія Windows.
 
 [CustomMessages]
-english.InstallFailed=Promin agent was copied but could not be set up as a service (exit code %1). In an administrator terminal in %2, run "Promin.Agent.exe --install" to see why.
-ukrainian.InstallFailed=Агент Promin скопійовано, але не вдалося налаштувати його як службу (код виходу %1). Щоб побачити причину, виконайте "Promin.Agent.exe --install" у терміналі адміністратора в папці %2.
+english.InstallFailed=Promin agent was copied but could not be set up as a service (exit code %1). In an administrator terminal in %2, run "Promin.Agent.exe --install" to see why. Then open Promin agent from the Start menu to set the room code.
+ukrainian.InstallFailed=Агент Promin скопійовано, але не вдалося налаштувати його як службу (код виходу %1). Щоб побачити причину, виконайте "Promin.Agent.exe --install" у терміналі адміністратора в папці %2. Потім відкрийте Promin agent з меню «Пуск», щоб задати код кімнати.
 
 [InstallDelete]
 ; Removes the previous version's program files on upgrade. The agent's data is in %ProgramData%\Promin, never in {app}.
