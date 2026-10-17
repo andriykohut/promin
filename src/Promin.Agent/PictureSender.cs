@@ -24,6 +24,7 @@ internal sealed class PictureSender(
     private IScreenPictures? _pictures;
     private bool _notAvailableSent;
     private string? _lastProblem;
+    private string? _lastReleaseProblem;
 
     /// <summary>
     /// Runs until <paramref name="ct"/> is cancelled or a send fails. Never throws. A send that fails because the
@@ -55,8 +56,7 @@ internal sealed class PictureSender(
         }
         finally
         {
-            _pictures?.Dispose();
-            _pictures = null;
+            Release();
         }
     }
 
@@ -78,6 +78,25 @@ internal sealed class PictureSender(
         }
     }
 
+    // A capture that cannot be released is dropped all the same; the connection's handler must still get to dispose the connection.
+    private void Release()
+    {
+        var pictures = _pictures;
+        _pictures = null;
+        try
+        {
+            pictures?.Dispose();
+        }
+        catch (Exception failure)
+        {
+            if (failure.Message != _lastReleaseProblem)
+            {
+                log($"The screen capture could not be released: {failure.Message}");
+                _lastReleaseProblem = failure.Message;
+            }
+        }
+    }
+
     // Blocks for up to Interval while the screen is still: the capture waits for a change.
     private PictureOutcome Take(out byte[] jpeg)
     {
@@ -91,8 +110,7 @@ internal sealed class PictureSender(
         }
         catch (Exception failure)
         {
-            _pictures?.Dispose();
-            _pictures = null;
+            Release();
             if (failure.Message != _lastProblem)
             {
                 log($"The screen could not be captured: {failure.Message}");

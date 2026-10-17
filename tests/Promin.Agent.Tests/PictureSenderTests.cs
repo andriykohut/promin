@@ -12,6 +12,7 @@ public class PictureSenderTests
 
         public ConcurrentQueue<(PictureOutcome Outcome, byte[] Jpeg)> Next { get; } = new();
         public Exception? Throws { get; set; }
+        public Exception? DisposeThrows { get; set; }
         public bool Disposed { get; private set; }
         public int Takes => Volatile.Read(ref _takes);
 
@@ -27,7 +28,14 @@ public class PictureSenderTests
             return outcome;
         }
 
-        public void Dispose() => Disposed = true;
+        public void Dispose()
+        {
+            Disposed = true;
+            if (DisposeThrows is { } failure)
+            {
+                throw failure;
+            }
+        }
     }
 
     private readonly ConcurrentQueue<byte[]> _sent = new();
@@ -204,5 +212,17 @@ public class PictureSenderTests
 
         Assert.True(_pictures.Disposed);
         Assert.Equal(["Screen pictures stopped: boom"], _log);
+    }
+
+    [Fact]
+    public async Task ACaptureThatCannotBeReleased_DoesNotMakeRunAsyncThrow_AndIsLoggedOnce()
+    {
+        _pictures.Next.Enqueue((PictureOutcome.Picture, Jpeg(1)));
+        _pictures.DisposeThrows = new InvalidOperationException("stuck");
+
+        await Sender(send: (_, _) => throw new InvalidOperationException("boom")).RunAsync(CancellationToken.None);
+
+        Assert.True(_pictures.Disposed);
+        Assert.Equal(["Screen pictures stopped: boom", "The screen capture could not be released: stuck"], _log);
     }
 }
