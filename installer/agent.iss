@@ -17,6 +17,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; QUIC needs Windows 11: .NET's MsQuic takes TLS 1.3 from Schannel.
 MinVersion=10.0.22000
 WizardStyle=modern
+; Transparent renders of ..\assets\brand\promin-beacon-small-light.svg at the image-area sizes for 100% to 200% scaling.
+WizardSmallImageFile=images\beacon-58.png,images\beacon-77.png,images\beacon-97.png,images\beacon-116.png,images\beacon-124.png
 ; PrepareToInstall stops the agent and its window itself; Restart Manager would ask the user to close them.
 CloseApplications=no
 OutputBaseFilename=Promin Agent Setup

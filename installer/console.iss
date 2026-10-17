@@ -16,6 +16,10 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; QUIC needs Windows 11: .NET's MsQuic takes TLS 1.3 from Schannel.
 MinVersion=10.0.22000
 WizardStyle=modern
+; Transparent renders of ..\assets\brand\promin-beacon-small-light.svg at the image-area sizes for 100% to 200% scaling.
+WizardSmallImageFile=images\beacon-58.png,images\beacon-77.png,images\beacon-97.png,images\beacon-116.png,images\beacon-124.png
+; Transparent renders of ..\assets\brand\promin-lockup-light.svg, centred in the Finished page's side panel, same sizes.
+WizardImageFile=images\lockup-202x386.png,images\lockup-269x515.png,images\lockup-336x643.png,images\lockup-403x772.png,images\lockup-430x824.png
 OutputBaseFilename=Promin Console Setup
 SetupIconFile=..\src\Promin.Master\Assets\AppIcon.ico
 UninstallDisplayName=Promin
@@ -44,6 +48,8 @@ Name: "{autoprograms}\Promin"; Filename: "{app}\Promin.Master.exe"
 ; deletes the old one first; the delete fails harmlessly when there is none.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Promin console"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Promin console"" dir=in action=allow protocol=UDP localport=17844 program=""{app}\Promin.Master.exe"""; Flags: runhidden
+; The console keeps its data in the signed-in user's %LocalAppData%, so it must not inherit setup's elevation.
+Filename: "{app}\Promin.Master.exe"; Description: "{cm:LaunchProgram,Promin}"; Flags: postinstall skipifsilent nowait runasoriginaluser
 
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Promin console"""; Flags: runhidden; RunOnceId: "DeleteConsoleFirewallRule"
