@@ -6,9 +6,9 @@ namespace Promin.MediaPipeline.Scaling;
 
 /// <summary>
 /// Scales a BGRA texture and converts it to NV12 (for the encoder) or keeps it BGRA (for screen pictures),
-/// in one GPU step, with the Direct3D 11 video processor. The input is read as full-range RGB and the
-/// output is limited-range BT.709, so black stays black on the agent PC's screen. BGRA output is
-/// full-range RGB, as the screen is. Not thread-safe: one call at a time.
+/// in one GPU step, with the Direct3D 11 video processor. The input is read as full-range RGB. NV12 output
+/// (for the encoder) is limited-range BT.709, so black stays black on the agent PC's screen; BGRA output
+/// (screen pictures) stays full-range RGB, as the screen is. Not thread-safe: one call at a time.
 /// </summary>
 public sealed class GpuFrameConverter : IDisposable
 {
@@ -123,7 +123,7 @@ public sealed class GpuFrameConverter : IDisposable
     }
 
     // The colour handling the processor is told about. Usage 0 is "playback"; YCbCr_Matrix 1 means
-    // BT.709; RGB_Range 0 means full range (0-255); Nominal_Range names the range of the YCbCr side.
+    // BT.709; RGB_Range 0 means full range (0-255); Nominal_Range is the range of the output (YCbCr for NV12, RGB for BGRA).
     private static VideoProcessorColorSpace ColorSpace(VideoProcessorNominalRange nominalRange)
     {
         var space = default(VideoProcessorColorSpace);
