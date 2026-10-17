@@ -181,41 +181,47 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
             failure = e;
         }
 
-        bool current;
-        var report = false;
-        lock (_gate)
+        // Whatever happens below, the waiters in GetAsync must get their answer.
+        try
         {
-            current = _entries.TryGetValue(pc.DeviceId, out var now) && ReferenceEquals(now, entry);
-            entry.Dialling = null;
-            if (current && connection is not null)
+            bool current;
+            var report = false;
+            lock (_gate)
             {
-                entry.Connection = connection;
-                entry.Failing = false;
+                current = _entries.TryGetValue(pc.DeviceId, out var now) && ReferenceEquals(now, entry);
+                entry.Dialling = null;
+                if (current && connection is not null)
+                {
+                    entry.Connection = connection;
+                    entry.Failing = false;
+                }
+                else if (current && failure is not null && !entry.Failing)
+                {
+                    entry.Failing = report = true;
+                }
             }
-            else if (current && failure is not null && !entry.Failing)
+
+            if (connection is not null && !current)
             {
-                entry.Failing = report = true;
+                // Dropped, or the room connections closed, while it was dialling: not kept.
+                _ = CloseAsync(connection);
+                connection = null;
+            }
+
+            if (report)
+            {
+                _dialFailed(pc.DeviceId, failure!);
+            }
+
+            if (connection is not null)
+            {
+                _ = Task.Run(() => ReadAsync(pc.DeviceId, entry, connection));
             }
         }
-
-        if (connection is not null && !current)
+        finally
         {
-            // Dropped, or the room connections closed, while it was dialling: not kept.
-            _ = CloseAsync(connection);
-            connection = null;
+            dialled.TrySetResult(connection);
         }
-
-        if (report)
-        {
-            _dialFailed(pc.DeviceId, failure!);
-        }
-
-        if (connection is not null)
-        {
-            _ = Task.Run(() => ReadAsync(pc.DeviceId, entry, connection));
-        }
-
-        dialled.TrySetResult(connection);
     }
 
     private async Task ReadAsync(string deviceId, Entry entry, TConnection connection)
@@ -245,7 +251,7 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
 
         if (current)
         {
-            await CloseAsync(connection).ConfigureAwait(false);
+            _ = CloseAsync(connection);
             Ended?.Invoke(deviceId);
         }
     }

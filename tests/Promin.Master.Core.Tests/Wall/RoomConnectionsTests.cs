@@ -108,7 +108,6 @@ public sealed class RoomConnectionsTests
         Assert.Single(_dials);
     }
 
-    // Review focus 2: a PC that refuses is tried every 5 s, and the log hears about it once.
     [Fact]
     public async Task AFailedDial_IsRetriedEveryFiveSeconds_AndIsReportedOnce_HoweverOftenItFails()
     {
@@ -277,7 +276,19 @@ public sealed class RoomConnectionsTests
         Assert.Null(await connections.GetAsync(Pc(), CancellationToken.None));
     }
 
-    // Review focus 5: closing the console with a PC gone silent must not hang.
+    [Fact(Timeout = 10000)]
+    public async Task GetAsync_ReturnsNull_EvenWhenTheDialFailedCallbackThrows()
+    {
+        _answer = _ => Task.FromException<FakeConnection>(new InvalidOperationException("refused"));
+        await using var connections = new RoomConnections<FakeConnection>(
+            (pc, _) => _answer(pc),
+            () => _now,
+            (_, _) => throw new InvalidOperationException("log is full"));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Assert.Null(await connections.GetAsync(Pc(), cts.Token));
+    }
+
     [Fact(Timeout = 10000)]
     public async Task DisposeAsync_ClosesEveryConnection_WithinASecond_EvenOneThatNeverAnswers()
     {

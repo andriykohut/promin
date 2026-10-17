@@ -79,7 +79,7 @@ public class PictureSenderTests
         Assert.Empty(_sent);
     }
 
-    // Review focus 4: a PC locked when the console connects says so first.
+    // A PC locked when the console connects says so first, instead of leaving the tile empty.
     [Fact]
     public async Task ScreenNotAvailable_IsSentOnce_AsAnEmptyPicture_UntilAPictureClearsIt()
     {
