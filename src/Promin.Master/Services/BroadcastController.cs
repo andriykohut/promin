@@ -156,6 +156,10 @@ public sealed class BroadcastController : IBroadcastController
         });
     }
 
+    /// <summary>
+    /// Stops sending to the PC and tells it to stop. A PC that cannot be told is dropped, so its window does not
+    /// stay up: the PC removes it when its connection ends, and the wall dials it again.
+    /// </summary>
     public void StopSendingTo(string deviceId)
     {
         if (Current is not { } running)
@@ -168,7 +172,10 @@ public sealed class BroadcastController : IBroadcastController
             running.Session.RemoveClient(deviceId);
             if (running.Peers.TryRemove(deviceId, out var peer))
             {
-                await TellAsync(peer, new StopBroadcast()).ConfigureAwait(false);
+                if (!await TellAsync(peer, new StopBroadcast()).ConfigureAwait(false))
+                {
+                    _connections.Drop(deviceId);
+                }
             }
         });
     }
@@ -310,7 +317,7 @@ public sealed class BroadcastController : IBroadcastController
             lock (_gate)
             {
                 // Teardown reads Peers only after End cleared _running under this lock. So a peer registered here is
-                // one teardown says stop to; a PC that answers after that is told to stop below instead.
+                // one teardown says stop to; a PC that answers after that has its connection dropped below instead.
                 if (!ReferenceEquals(_running, running))
                 {
                     throw new InvalidOperationException("The broadcast ended while the PC was connecting.");
@@ -375,16 +382,23 @@ public sealed class BroadcastController : IBroadcastController
 
     /// <summary>
     /// Tells every PC the broadcast is over, all together and within a second; stops the session; releases the
-    /// encoder and the capture. The connections stay open: the screen pictures go on.
+    /// encoder and the capture. The connections stay open, so the screen pictures go on, except those of PCs that
+    /// could not be told: they are dropped, so their window does not stay up.
     /// Runs on the pool, after <see cref="End"/>, so the set of PCs no longer grows. Never throws.
     /// </summary>
-    private static async Task TearDownAsync(Running running)
+    private async Task TearDownAsync(Running running)
     {
         try
         {
             try
             {
-                await Task.WhenAll(running.Peers.Values.Select(peer => TellAsync(peer, new StopBroadcast()))).ConfigureAwait(false);
+                await Task.WhenAll(running.Peers.Select(async entry =>
+                {
+                    if (!await TellAsync(entry.Value, new StopBroadcast()).ConfigureAwait(false))
+                    {
+                        _connections.Drop(entry.Key);
+                    }
+                })).ConfigureAwait(false);
                 running.Session.Stop();
             }
             finally
@@ -399,17 +413,22 @@ public sealed class BroadcastController : IBroadcastController
         }
     }
 
-    /// <summary>Sends one control message within a second. A PC that is gone or slow is left to the session, which reports it lost when its next frame fails.</summary>
-    private static async Task TellAsync(Peer peer, ControlMessage message)
+    /// <summary>
+    /// Sends one control message within a second. True when it was sent; false when the PC is gone or slow, which
+    /// the session also reports as lost when its next frame fails.
+    /// </summary>
+    private static async Task<bool> TellAsync(Peer peer, ControlMessage message)
     {
         try
         {
             using var deadline = new CancellationTokenSource(GoodbyeTimeout);
             await peer.Control.SendAsync(message, deadline.Token).ConfigureAwait(false);
+            return true;
         }
         catch (Exception failure)
         {
             Trace.TraceInformation("Could not tell a PC {0}: {1}", message.GetType().Name, failure.Message);
+            return false;
         }
     }
 
