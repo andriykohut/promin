@@ -65,6 +65,11 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private readonly Dictionary<string, (string Address, int Port)> _announcedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _rejoinTriedAt = new(StringComparer.Ordinal);
 
+    // The newest picture each PC sent on its current connection, whatever its tile shows at the moment: on air, the first
+    // picture of a rejoined connection arrives while the tile still reads Reconnecting, and the agent sends the next one
+    // only when its screen changes.
+    private readonly Dictionary<string, byte[]> _pictures = new(StringComparer.Ordinal);
+
     // Cancelled when the broadcast ends, so a PC still connecting is let go instead of being left waiting for a picture.
     private CancellationTokenSource _rejoins = new();
 
@@ -419,6 +424,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         _stoppedByPresenter.Remove(tile.DeviceId);
+        _pictures.Remove(tile.DeviceId);
 
         try
         {
@@ -538,6 +544,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             }
 
             _stoppedByPresenter.Remove(gone);
+            _pictures.Remove(gone);
             _connections.Drop(gone);
         }
 
@@ -564,12 +571,27 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     private void OnPictureAnyThread(string deviceId, byte[] picture) => _runOnUiThread(() => OnPicture(deviceId, picture));
 
-    private void OnEndedAnyThread(string deviceId) => _runOnUiThread(() => Tiles.FirstOrDefault(t => t.DeviceId == deviceId)?.ClearPicture());
+    private void OnEndedAnyThread(string deviceId) => _runOnUiThread(() => OnEnded(deviceId));
 
-    /// <summary>A PC that is offline or reconnecting shows the hatch; a picture that slips in then is not shown.</summary>
+    private void OnEnded(string deviceId)
+    {
+        _pictures.Remove(deviceId);
+        Tiles.FirstOrDefault(t => t.DeviceId == deviceId)?.ClearPicture();
+    }
+
+    /// <summary>
+    /// A PC that is offline or reconnecting shows the hatch, so its picture is only remembered then;
+    /// <see cref="Refresh"/> shows it once the PC is back.
+    /// </summary>
     private void OnPicture(string deviceId, byte[] picture)
     {
-        if (Tiles.FirstOrDefault(t => t.DeviceId == deviceId) is { State: not (PcTileState.Offline or PcTileState.Reconnecting) } tile)
+        if (Tiles.FirstOrDefault(t => t.DeviceId == deviceId) is not { } tile)
+        {
+            return;
+        }
+
+        _pictures[deviceId] = picture;
+        if (tile.State is not (PcTileState.Offline or PcTileState.Reconnecting))
         {
             tile.ShowPicture(picture);
         }
@@ -825,6 +847,10 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             if (state is PcTileState.Offline or PcTileState.Reconnecting)
             {
                 tile.ClearPicture();
+            }
+            else if (tile.Screen == TileScreen.Glyph && _pictures.TryGetValue(tile.DeviceId, out var remembered))
+            {
+                tile.ShowPicture(remembered);
             }
 
             tile.StatusText = WallText.Status(state, tile.FramesDropped);

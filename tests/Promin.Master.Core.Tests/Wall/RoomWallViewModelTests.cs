@@ -1051,7 +1051,38 @@ public sealed class RoomWallViewModelTests
 
         _connections.RaisePicture(Id(4), Picture1);
 
+        Assert.Equal(PcTileState.Reconnecting, Tile(vm, 4).State);
         Assert.Equal(TileScreen.Glyph, Tile(vm, 4).Screen);
+        Assert.Null(Tile(vm, 4).Picture);
+    }
+
+    [Fact]
+    public async Task APictureThatArrivedWhileReconnecting_Shows_OnceThePcIsReceivingAgain()
+    {
+        var vm = await OnAir();
+        _broadcast.RaiseLost(Id(4));
+        _connections.RaisePicture(Id(4), Picture1);
+
+        vm.Tick();
+
+        Assert.Equal(PcTileState.Receiving, Tile(vm, 4).State);
+        Assert.Equal(TileScreen.Picture, Tile(vm, 4).Screen);
+        Assert.Same(Picture1, Tile(vm, 4).Picture);
+    }
+
+    [Fact]
+    public async Task APictureRememberedWhileReconnecting_IsForgotten_WhenItsConnectionEnds()
+    {
+        var vm = await OnAir();
+        _broadcast.RaiseLost(Id(4));
+        _connections.RaisePicture(Id(4), Picture1);
+        _connections.RaiseEnded(Id(4));
+
+        vm.Tick();
+
+        Assert.Equal(PcTileState.Receiving, Tile(vm, 4).State);
+        Assert.Equal(TileScreen.Glyph, Tile(vm, 4).Screen);
+        Assert.Null(Tile(vm, 4).Picture);
     }
 
     [Fact]
