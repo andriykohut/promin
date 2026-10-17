@@ -11,7 +11,7 @@ The name is Ukrainian: промінь, a beam of light.
 
 ## Status
 
-Early. Broadcasting works and has been run between two PCs. It has not yet been tried in a full room of ten or more.
+Early. Broadcasting works and has been run between two PCs; the room wall's pictures of each PC's screen have been tried on one PC. Neither has yet been tried in a full room of ten or more.
 
 Planned next, none of it built yet: live previews of the other screens, remote control, file transfer and locking screens.
 
@@ -19,8 +19,8 @@ Planned next, none of it built yet: live previews of the other screens, remote c
 
 There are two apps:
 
-- **The console** (`Promin.Master`) runs on the PC whose screen is shown. It lists the PCs in the room and starts and stops the broadcast.
-- **The agent** (`Promin.Agent`) runs on every other PC. It has no window of its own; when a broadcast starts, it covers the display with the picture.
+- **The console** (`Promin.Master`) runs on the PC whose screen is shown. It lists the PCs in the room, starts and stops the broadcast, and shows each PC's screen in its tile, refreshed about once a second.
+- **The agent** (`Promin.Agent`) runs on every other PC. It has no window of its own; when a broadcast starts, it covers the display with the picture. It also sends a small picture of its screen to the console about once a second.
 
 Agents announce themselves on the network and the console finds them. A PC joins a room once, by pairing: both sides must know the same six-digit room code, and the code itself never crosses the network. After pairing, each side accepts only the other's certificate. The picture travels as H.264 video over QUIC, encoded and decoded on the graphics card where there is one.
 
@@ -84,7 +84,7 @@ The service runs the agent under the SYSTEM account, so every PC pairs once more
 
 ## Security notes
 
-- Nobody on the network can watch or alter the broadcast, pair without the room code, or recover the code from the traffic.
+- Nobody on the network can watch or alter the broadcast or the screen pictures, pair without the room code, or recover the code from the traffic.
 - The room code is stored in a file that people using that PC can read. Pair each PC straight after setting its code. Until it is paired, anyone who knows the code can pair it to a different console.
 - On **Set up devices**, pair only the PCs you can account for. A device that knows the code can announce itself under any name.
 - Any device on the same network can disrupt Promin (for example, keep PCs from connecting), though it cannot watch.
