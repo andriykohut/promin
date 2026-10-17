@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices.WindowsRuntime;
 using Promin.Master.Core;
 using Promin.Master.Core.Wall;
 using Microsoft.UI.Xaml;
@@ -6,6 +8,9 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Graphics.Imaging;
+using Windows.Storage.Streams;
 
 namespace Promin.Master.Controls;
 
@@ -19,6 +24,10 @@ public sealed partial class PcTileControl : UserControl
         nameof(Tile), typeof(PcTile), typeof(PcTileControl), new PropertyMetadata(null, OnTileChanged));
 
     private static readonly TimeSpan LightUpDuration = TimeSpan.FromMilliseconds(450);
+
+    // A newer picture supersedes one still decoding.
+    private int _pictureVersion;
+    private SoftwareBitmapSource? _pictureSource;
 
     public PcTileControl()
     {
@@ -88,6 +97,8 @@ public sealed partial class PcTileControl : UserControl
         {
             tile.PropertyChanged += control.Tile_PropertyChanged;
             control.ShowState(tile);
+            control.ShowScreen(tile);
+            control.ShowPicture(tile.Picture);
         }
 
         // The template gives the control its tile after the bindings were made.
@@ -100,12 +111,69 @@ public sealed partial class PcTileControl : UserControl
         {
             ShowState((PcTile)sender!);
         }
+
+        if (e.PropertyName is nameof(PcTile.Screen))
+        {
+            ShowScreen((PcTile)sender!);
+        }
+
+        if (e.PropertyName is nameof(PcTile.Picture))
+        {
+            ShowPicture(((PcTile)sender!).Picture);
+        }
     }
 
     private void ShowState(PcTile tile)
     {
         VisualStateManager.GoToState(this, tile.State.ToString(), useTransitions: false);
         VisualStateManager.GoToState(this, tile.IsSelected ? "Selected" : "Unselected", useTransitions: false);
+    }
+
+    private void ShowScreen(PcTile tile)
+    {
+        Glyphs.Visibility = tile.Screen == TileScreen.Glyph ? Visibility.Visible : Visibility.Collapsed;
+        PictureLayer.Visibility = tile.Screen == TileScreen.Picture ? Visibility.Visible : Visibility.Collapsed;
+        NotAvailableNote.Visibility = tile.Screen == TileScreen.NotAvailable ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Decodes the JPEG and shows it; null clears the picture. One that will not decode is dropped and the
+    /// last good one stays. Fire-and-forget on purpose: it is a UI update, and it catches what decoding throws.
+    /// </summary>
+    private async void ShowPicture(byte[]? jpeg)
+    {
+        var version = ++_pictureVersion;
+        if (jpeg is null)
+        {
+            PictureImage.Source = null;
+            _pictureSource?.Dispose();
+            _pictureSource = null;
+            return;
+        }
+
+        try
+        {
+            using var stream = new InMemoryRandomAccessStream();
+            await stream.WriteAsync(jpeg.AsBuffer());
+            stream.Seek(0);
+            var decoder = await BitmapDecoder.CreateAsync(stream);
+            using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+            var source = new SoftwareBitmapSource();
+            await source.SetBitmapAsync(bitmap);
+            if (version != _pictureVersion)
+            {
+                source.Dispose();
+                return;
+            }
+
+            var old = _pictureSource;
+            PictureImage.Source = _pictureSource = source;
+            old?.Dispose();
+        }
+        catch (Exception failure)
+        {
+            Trace.TraceInformation("A screen picture from {0} could not be shown: {1}", Tile?.Name, failure.Message);
+        }
     }
 
     // 16:10, whatever width the grid gives the tile.
