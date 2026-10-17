@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Window_Title" xml:space="preserve">
+    <value>Promin agent</value>
+  </data>
+  <data name="Heading" xml:space="preserve">
+    <value>This PC</value>
+  </data>
+  <data name="Intro" xml:space="preserve">
+    <value>Every PC in the room shares one 6-digit room code.</value>
+  </data>
+  <data name="RoomCode" xml:space="preserve">
+    <value>Room code</value>
+  </data>
+  <data name="CodePlaceholder" xml:space="preserve">
+    <value>6 digits</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Status_NoCode" xml:space="preserve">
+    <value>No room code yet. Type the code and save it. Then pair this PC from the console.</value>
+  </data>
+  <data name="Status_NotPaired" xml:space="preserve">
+    <value>Not paired yet. On the console, open Set up devices, enter this code and choose Pair.</value>
+  </data>
+  <data name="Status_Paired" xml:space="preserve">
+    <value>Paired. This PC remembers its console and shows what it broadcasts.</value>
+  </data>
+  <data name="Status_BadCode" xml:space="preserve">
+    <value>The code is 6 digits. Nothing was saved. Spaces or hyphens between the digits are fine.</value>
+  </data>
+  <data name="Status_NotSaved" xml:space="preserve">
+    <value>The code could not be saved: {0}</value>
+  </data>
+  <data name="Status_PairingUnreadable" xml:space="preserve">
+    <value>Cannot tell whether this PC is paired: its pairing file could not be read ({0}).</value>
+  </data>
+  <data name="Status_CodeUnusable" xml:space="preserve">
+    <value>The saved room code cannot be used. Type the code and save it again.</value>
+  </data>
+</root>

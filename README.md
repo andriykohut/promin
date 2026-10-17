@@ -41,37 +41,40 @@ Tests that need a real screen or graphics card are skipped unless switched on in
 
 ## Setting up a room
 
-There is no installer yet. The steps below are what was used for the two-PC run.
+Every PC needs Windows 11 with Smart App Control off. The setups are not signed, so Windows shows "Windows protected your PC": choose **More info**, then **Run anyway**. If Smart App Control is on, or an IT policy blocks unsigned apps, Windows stops the setup and offers no way past it.
 
-**On the PC whose screen will be shown:**
+**Building the setups.** You need PowerShell 7.4 or newer, the .NET SDK and Inno Setup 6 (`winget install JRSoftware.InnoSetup`). Then run:
 
 ```
-dotnet run --project src/Promin.Master
+pwsh installer/build.ps1
 ```
 
-Windows Firewall asks once whether to allow the console. Allow it on both private and public networks.
+`Promin Console Setup.exe` and `Promin Agent Setup.exe` appear in `artifacts/setup/`. Copy them to a USB stick.
 
-**For every other PC**, build a self-contained copy of the agent (no .NET install needed there):
+**On the console PC**, run `Promin Console Setup.exe`, then open **Promin** from the Start menu. The setup installs the console to `C:\Program Files\Promin\Console` and adds a Windows Firewall rule named `Promin console` (UDP 17844, for the console's program only).
+
+**On every other PC**, run `Promin Agent Setup.exe`. It asks nothing beyond one **Install** click. It installs the agent to `C:\Program Files\Promin\Agent`, registers it as a Windows service that starts with Windows, opens the agent's firewall port, then opens the **Promin agent** window.
+
+1. In the window, type the room code (pick your own six digits) and save it.
+2. On the console, open **Set up devices**, enter the same code and choose **Pair**.
+
+The window shows one of three statuses: "No room code yet", "Not paired yet" or "Paired". Reopen it any time from the Start menu as **Promin agent**; it needs administrator rights.
+
+**Upgrading and uninstalling.** Run a newer setup to upgrade in place. An upgrade keeps the room code and pairing and does not open the window. On an agent PC that was set up by hand (a copied folder plus `--install`), running `Promin Agent Setup.exe` takes over that service, and the old folder can be deleted afterwards. To remove Promin, uninstall it from Installed apps. The agent keeps its room code, identity and pairing in `C:\ProgramData\Promin`, and the console keeps `%LocalAppData%\Promin`, so a reinstall needs no new pairing.
+
+### Without the installer
+
+To run the console from source, use `dotnet run --project src/Promin.Master`. Windows Firewall asks once whether to allow it; allow it on private and public networks.
+
+For an agent, publish a self-contained copy (no .NET install needed on that PC):
 
 ```
 dotnet publish src/Promin.Agent -c Release -r win-x64 --self-contained true -o src/Promin.Agent/bin/publish/win-x64
 ```
 
-Then, on that PC:
+Copy the folder to the PC, set the room code with `.\Promin.Agent.exe --set-room-code 482913 | Out-Host` (`| Out-Host` makes its one line of reply show up), then run `.\Promin.Agent.exe --install` in an **administrator** terminal and pair from the console as above.
 
-1. Copy the `win-x64` folder anywhere, for example `C:\Promin`.
-2. In a terminal in that folder, set the room code: `.\Promin.Agent.exe --set-room-code 482913 | Out-Host` (pick your own six digits; `| Out-Host` makes its one line of reply show up).
-3. In an **administrator** terminal in that folder, run `.\Promin.Agent.exe --install`. It registers the agent as a Windows service that starts with Windows, opens UDP 17843 through the firewall, and locks the data folder to SYSTEM and administrators. From then on the PC shows the broadcast by itself after each sign-in.
-4. On the console, open **Set up devices**, enter the same code and choose **Pair**.
-
-`--install` adds the agent's own firewall rule. The console is still started with `dotnet run`, so if its firewall prompt was dismissed, add its rule by hand in an administrator PowerShell:
-
-```
-# on the PC running the console
-New-NetFirewallRule -DisplayName "Promin console" -Direction Inbound -Protocol UDP -LocalPort 17844 -Action Allow
-```
-
-Other agent commands:
+Agent commands:
 
 | Command | What it does |
 |---|---|

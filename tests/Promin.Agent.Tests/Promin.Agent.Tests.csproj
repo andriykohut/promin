@@ -15,9 +15,11 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="Promin.Agent.Core" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Promin.Agent.Core\Promin.Agent.Core.csproj" />
     <ProjectReference Include="..\..\src\Promin.Agent\Promin.Agent.csproj" />
   </ItemGroup>
 

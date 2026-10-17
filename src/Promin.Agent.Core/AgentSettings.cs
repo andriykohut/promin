@@ -2,13 +2,13 @@ using System.Text.Json;
 using Promin.Protocol.Pairing;
 using Promin.Protocol.Transport;
 
-namespace Promin.Agent;
+namespace Promin.Agent.Core;
 
 /// <summary>
 /// The room code on an agent PC: <c>{"roomCode":"482913"}</c> in a file every user of the PC can read. That is
 /// accepted: knowing the code is of no use against a PC that already has a console PC pinned.
 /// </summary>
-internal sealed class AgentSettings(string path)
+public sealed class AgentSettings(string path)
 {
     private sealed record Stored(string? RoomCode);
 
