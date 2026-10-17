@@ -17,7 +17,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="Assets\AppIcon.ico" />
+    <!-- MainWindow loads it at run time; a publish leaves out Content that is not copied to the output. -->
+    <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
