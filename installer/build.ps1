@@ -22,8 +22,10 @@ foreach ($dir in $publish, $setup) {
 }
 
 dotnet publish "$root\src\Promin.Agent" -c Release -r win-x64 --self-contained true "-p:Version=$Version" -o "$publish\agent"
-# The .NET SDK leaves Promin.Agent.Window.pri, which holds the compiled XAML, out of a publish; only the Windows App
-# SDK's MSIX tooling adds it. The layout stays unpackaged.
+# The .NET SDK leaves a WinUI app's .pri, which holds its compiled XAML, out of a publish; only the Windows App SDK's
+# MSIX tooling adds it. The layouts stay unpackaged.
 dotnet publish "$root\src\Promin.Agent.Window" -c Release -r win-x64 --self-contained true "-p:Version=$Version" -p:EnableMsixTooling=true -o "$publish\agent-window"
+dotnet publish "$root\src\Promin.Master" -c Release -r win-x64 --self-contained true "-p:Version=$Version" -p:EnableMsixTooling=true -o "$publish\console"
 
 & $iscc "/DAppVersion=$Version" "/O$setup" "$PSScriptRoot\agent.iss"
+& $iscc "/DAppVersion=$Version" "/O$setup" "$PSScriptRoot\console.iss"
