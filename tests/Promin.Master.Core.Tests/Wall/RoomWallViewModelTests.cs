@@ -13,6 +13,7 @@ public sealed class RoomWallViewModelTests
     private readonly InMemoryRoomStore _store = new();
     private readonly FakeDiscovery _discovery = new();
     private readonly FakeBroadcastController _broadcast = new();
+    private readonly FakeRoomConnections _connections = new();
     private readonly FakePairingClient _pairing = new();
     private readonly InMemoryWallSettings _settings = new();
     private DateTimeOffset _now = new(2026, 10, 3, 10, 0, 0, TimeSpan.Zero);
@@ -36,7 +37,7 @@ public sealed class RoomWallViewModelTests
     }
 
     private RoomWallViewModel Build(Action<Action>? runOnUiThread = null) =>
-        new(_store, _discovery, _broadcast, _pairing, _settings, () => _now, runOnUiThread ?? (a => a()));
+        new(_store, _discovery, _broadcast, _connections, _pairing, _settings, () => _now, runOnUiThread ?? (a => a()));
 
     private RoomWallViewModel Activated(Action<Action>? runOnUiThread = null)
     {
@@ -955,5 +956,122 @@ public sealed class RoomWallViewModelTests
 
         Assert.Equal(Sharpness.Sharp, vm.SelectedSharpness.Value);
         Assert.Equal("720p, 10 fps, 2.8 Mbit/s", vm.QualityButtonText);
+    }
+
+    private static readonly byte[] Picture1 = [0xFF, 0xD8, 1];
+    private static readonly byte[] Picture2 = [0xFF, 0xD8, 2];
+
+    [Fact]
+    public void Tick_WantsEveryOnlinePc_AtTheAddressItAnnounced_AndNoOfflineOne()
+    {
+        Room(3);
+        var vm = Activated();
+        _discovery.Raise(new AgentPc(Id(1), "PC-01", "10.0.0.5", 17843));
+        See(2);
+
+        vm.Tick();
+
+        Assert.Equal([Id(1), Id(2)], _connections.Wanted.Select(m => m.DeviceId));
+        Assert.Equal("10.0.0.5", _connections.Wanted[0].LastAddress);
+    }
+
+    [Fact]
+    public void APicture_ShowsOnItsTile()
+    {
+        var vm = TenWithSevenOffline();
+
+        _connections.RaisePicture(Id(1), Picture1);
+
+        Assert.Equal(TileScreen.Picture, Tile(vm, 1).Screen);
+        Assert.Same(Picture1, Tile(vm, 1).Picture);
+        Assert.Equal(TileScreen.Glyph, Tile(vm, 2).Screen);
+    }
+
+    [Fact]
+    public void AnEmptyPicture_ShowsScreenNotAvailable_AndTheNextPictureClearsIt()
+    {
+        var vm = TenWithSevenOffline();
+
+        _connections.RaisePicture(Id(1), []);
+        Assert.Equal(TileScreen.NotAvailable, Tile(vm, 1).Screen);
+        Assert.Null(Tile(vm, 1).Picture);
+
+        _connections.RaisePicture(Id(1), Picture2);
+        Assert.Equal(TileScreen.Picture, Tile(vm, 1).Screen);
+        Assert.Same(Picture2, Tile(vm, 1).Picture);
+    }
+
+    [Fact]
+    public void AnEndedConnection_DropsThePicture()
+    {
+        var vm = TenWithSevenOffline();
+        _connections.RaisePicture(Id(1), Picture1);
+
+        _connections.RaiseEnded(Id(1));
+
+        Assert.Equal(TileScreen.Glyph, Tile(vm, 1).Screen);
+        Assert.Null(Tile(vm, 1).Picture);
+    }
+
+    [Fact]
+    public void APcThatGoesOffline_LosesItsPicture()
+    {
+        var vm = TenWithSevenOffline();
+        _connections.RaisePicture(Id(1), Picture1);
+
+        _now = _now.AddSeconds(7);
+        See(2, 3, 4, 5, 6, 8, 9, 10);
+        vm.Tick();
+
+        Assert.Equal(PcTileState.Offline, Tile(vm, 1).State);
+        Assert.Equal(TileScreen.Glyph, Tile(vm, 1).Screen);
+        Assert.Null(Tile(vm, 1).Picture);
+    }
+
+    [Fact]
+    public async Task OnAir_AReceivingPc_KeepsItsPicture_AReconnectingOneLosesIt()
+    {
+        var vm = await OnAir();
+        _connections.RaisePicture(Id(1), Picture1);
+        _connections.RaisePicture(Id(4), Picture2);
+
+        _broadcast.RaiseLost(Id(4));
+
+        Assert.Equal(PcTileState.Receiving, Tile(vm, 1).State);
+        Assert.Equal(TileScreen.Picture, Tile(vm, 1).Screen);
+        Assert.Equal(PcTileState.Reconnecting, Tile(vm, 4).State);
+        Assert.Equal(TileScreen.Glyph, Tile(vm, 4).Screen);
+    }
+
+    [Fact]
+    public async Task APicture_WhileReconnecting_IsNotShown()
+    {
+        var vm = await OnAir();
+        _broadcast.RaiseLost(Id(4));
+
+        _connections.RaisePicture(Id(4), Picture1);
+
+        Assert.Equal(TileScreen.Glyph, Tile(vm, 4).Screen);
+    }
+
+    [Fact]
+    public void APicture_ForAPcNotOnTheWall_IsIgnored()
+    {
+        var vm = TenWithSevenOffline();
+
+        _connections.RaisePicture("device-99", Picture1);
+        _connections.RaiseEnded("device-99");
+
+        Assert.All(vm.Tiles, t => Assert.Equal(TileScreen.Glyph, t.Screen));
+    }
+
+    [Fact]
+    public void Remove_DropsThePcsConnection()
+    {
+        var vm = TenWithSevenOffline();
+
+        vm.Remove(Tile(vm, 3));
+
+        Assert.Equal([Id(3)], _connections.Dropped);
     }
 }

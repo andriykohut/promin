@@ -104,6 +104,10 @@
     <value>Paired</value>
     <comment>Label of the date this PC was paired.</comment>
   </data>
+  <data name="Tile_ScreenNotAvailable" xml:space="preserve">
+    <value>Screen not available</value>
+    <comment>In a tile's screen area when the PC's screen cannot be captured: it is locked, or at a sign-in or UAC prompt.</comment>
+  </data>
   <data name="Tile_StopSending" xml:space="preserve">
     <value>Stop sending to this PC</value>
   </data>

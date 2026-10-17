@@ -102,6 +102,9 @@
   <data name="Tile_Paired" xml:space="preserve">
     <value>Додано</value>
   </data>
+  <data name="Tile_ScreenNotAvailable" xml:space="preserve">
+    <value>Екран недоступний</value>
+  </data>
   <data name="Tile_StopSending" xml:space="preserve">
     <value>Не надсилати на цей ПК</value>
   </data>

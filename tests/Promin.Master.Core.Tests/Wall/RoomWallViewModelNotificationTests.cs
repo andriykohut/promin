@@ -13,7 +13,7 @@ public sealed class RoomWallViewModelNotificationTests
         store.Members.Add(new RoomMember("device-01", "PC-01", "192.168.1.21", 17843, new DateOnly(2026, 9, 22), Selected: true));
         var discovery = new FakeDiscovery();
         var now = new DateTimeOffset(2026, 10, 3, 10, 0, 0, TimeSpan.Zero);
-        var vm = new RoomWallViewModel(store, discovery, new FakeBroadcastController(), new FakePairingClient(), new InMemoryWallSettings(), () => now, a => a());
+        var vm = new RoomWallViewModel(store, discovery, new FakeBroadcastController(), new FakeRoomConnections(), new FakePairingClient(), new InMemoryWallSettings(), () => now, a => a());
         vm.Activate();
         discovery.Raise(new AgentPc("device-01", "PC-01", "192.168.1.21", 17843));
         var raised = 0;
