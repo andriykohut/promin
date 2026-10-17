@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Net;
 using System.Runtime.InteropServices;
 using Promin.Master.Core.Rooms;
 using Promin.Master.Core.Wall;
@@ -17,8 +16,9 @@ namespace Promin.Master.Services;
 /// <summary>
 /// <see cref="IBroadcastController"/> over the real pipeline: one <see cref="DxgiScreenCapture"/>
 /// and <see cref="MediaFoundationH264Encoder"/> behind a <see cref="CaptureEncodeSource"/>, one
-/// <see cref="BroadcastSession"/>, and one QUIC connection per agent PC. Composition only; every
-/// decision lives in the parts, which are tested.
+/// <see cref="BroadcastSession"/>, and each agent PC's standing connection from the room connections:
+/// the broadcast never dials and never closes a connection; it only starts and stops on it. Composition
+/// only; every decision lives in the parts, which are tested.
 /// </summary>
 /// <remarks>
 /// <b>Threads.</b> <see cref="StartAsync"/>, <see cref="AddAsync"/>, <see cref="StopSendingTo"/>,
@@ -35,17 +35,17 @@ public sealed class BroadcastController : IBroadcastController
     // How long a start waits for every PC to answer before the picture starts for those that have.
     private static readonly TimeSpan StartTogetherTime = TimeSpan.FromSeconds(1);
 
-    private readonly QuicMasterConnector _connector;
+    private readonly RoomConnections<QuicPcConnection> _connections;
     private readonly object _gate = new();
     private Running? _running;
 
     // The newest teardown: what the next start, and the closing app, wait for. It never faults.
     private Task _tearDown = Task.CompletedTask;
 
-    public BroadcastController(QuicMasterConnector connector)
+    public BroadcastController(RoomConnections<QuicPcConnection> connections)
     {
-        ArgumentNullException.ThrowIfNull(connector);
-        _connector = connector;
+        ArgumentNullException.ThrowIfNull(connections);
+        _connections = connections;
         try
         {
             HardwareEncoderAvailable = MediaFoundationH264Encoder.IsHardwareEncoderAvailable();
@@ -168,7 +168,7 @@ public sealed class BroadcastController : IBroadcastController
             running.Session.RemoveClient(deviceId);
             if (running.Peers.TryRemove(deviceId, out var peer))
             {
-                await SayGoodbyeAsync(peer).ConfigureAwait(false);
+                await TellAsync(peer, new StopBroadcast()).ConfigureAwait(false);
             }
         });
     }
@@ -283,73 +283,61 @@ public sealed class BroadcastController : IBroadcastController
             });
     }
 
-    /// <summary>Connects, says what is coming, and adds the PC to the session. False, and nothing left open, when it could not be reached in time.</summary>
+    /// <summary>Takes the PC's connection, says what is coming, and adds the PC to the session. False when it could not be reached, or did not answer, in time.</summary>
     private async Task<bool> TryAddAsync(Running running, RoomMember pc, CancellationToken ct)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(ConnectTimeout);
 
-        QuicChannel? channel = null;
-        QuicControlChannel? control = null;
+        QuicPcConnection? connection = null;
         try
         {
-            var endpoint = new IPEndPoint(IPAddress.Parse(pc.LastAddress), pc.Port);
-            channel = await _connector.ConnectAsync(endpoint, pc.DeviceId, deadline.Token).ConfigureAwait(false);
-
-            // The connector's handshake admits only the certificate pinned for this PC. A channel that does not
-            // say so (the pin was removed while it connected) is not told to show anything.
-            if (channel.PinnedDeviceId != pc.DeviceId)
+            connection = await _connections.GetAsync(pc, deadline.Token).ConfigureAwait(false);
+            if (connection is null)
             {
-                throw new InvalidOperationException("The connection is not pinned to the PC that was dialled.");
+                Trace.TraceInformation("Could not reach {0} at {1}:{2}.", pc.DeviceId, pc.LastAddress, pc.Port);
+                return false;
             }
 
-            control = await channel.OpenControlChannelAsync(deadline.Token).ConfigureAwait(false);
+            var control = await connection.ControlAsync(deadline.Token).ConfigureAwait(false);
             var size = running.Source.EncodeSize;
-            await control.SendAsync(new StartBroadcast(size.Width, size.Height, running.Fps), deadline.Token).ConfigureAwait(false);
 
             // The PC answers once its display can take pictures; only then is it given a keyframe (AddClient asks
-            // the source for one). This is the only read of the control stream on this side, within the connect
-            // deadline; a PC whose display did not come up answers nothing and is unreachable like any other.
-            if (await control.ReceiveAsync(deadline.Token).ConfigureAwait(false) is not BroadcastReady)
-            {
-                throw new InvalidOperationException("The PC answered the start with something other than BroadcastReady.");
-            }
+            // the source for one). A PC whose display did not come up answers nothing and is unreachable like any other.
+            await control.StartAsync(new StartBroadcast(size.Width, size.Height, running.Fps), deadline.Token).ConfigureAwait(false);
 
-            var peer = new Peer(channel, control, pc.DisplayName);
-            Peer? replaced;
+            var peer = new Peer(connection, control, pc.DisplayName);
             lock (_gate)
             {
-                // Teardown reads Peers only after End cleared _running under this lock. So a peer registered
-                // here is one teardown says goodbye to; a PC that answers after that is refused, and the catch
-                // below closes its connection instead of leaving its display up with nothing to show.
+                // Teardown reads Peers only after End cleared _running under this lock. So a peer registered here is
+                // one teardown says stop to; a PC that answers after that is told to stop below instead.
                 if (!ReferenceEquals(_running, running))
                 {
                     throw new InvalidOperationException("The broadcast ended while the PC was connecting.");
                 }
 
-                running.Peers.TryGetValue(pc.DeviceId, out replaced);
                 running.Peers[pc.DeviceId] = peer;
             }
 
-            if (replaced is not null)
-            {
-                // The agent keeps the newest connection from this PC; the old one is just closed.
-                _ = CloseAsync(replaced);
-            }
-
             // Outside the lock: replacing a client can wait on its send loop.
-            running.Session.AddClient(pc.DeviceId, new QuicVideoSink(channel));
+            running.Session.AddClient(pc.DeviceId, new QuicVideoSink(connection.Channel));
             return true;
         }
         catch (Exception failure)
         {
-            await CloseAsync(control, channel).ConfigureAwait(false);
+            if (connection is not null)
+            {
+                // A PC that took the start but is not being sent to must not keep a display up; and a connection that
+                // did not answer in time is not trusted with the next start (its late answer would be read as it).
+                _connections.Drop(pc.DeviceId);
+            }
+
             if (ct.IsCancellationRequested)
             {
                 throw;
             }
 
-            Trace.TraceInformation("Could not reach {0} at {1}:{2}: {3}", pc.DeviceId, pc.LastAddress, pc.Port, failure.Message);
+            Trace.TraceInformation("Could not start the broadcast on {0} at {1}:{2}: {3}", pc.DeviceId, pc.LastAddress, pc.Port, failure.Message);
             return false;
         }
     }
@@ -358,7 +346,8 @@ public sealed class BroadcastController : IBroadcastController
     {
         if (running.Peers.TryRemove(deviceId, out var peer))
         {
-            _ = CloseAsync(peer);
+            // A send failed: the connection is dead, and dropping it gets it dialled again.
+            _connections.Drop(deviceId);
         }
 
         // A late report from a broadcast that has ended says nothing about the PCs of the one running now.
@@ -386,8 +375,7 @@ public sealed class BroadcastController : IBroadcastController
 
     /// <summary>
     /// Tells every PC the broadcast is over, all together and within a second; stops the session; releases the
-    /// encoder and the capture; and only then closes the connections, without waiting for them: closing one to
-    /// a PC that has gone silent lasts until QUIC gives up on it, and the screen must not be held that long.
+    /// encoder and the capture. The connections stay open: the screen pictures go on.
     /// Runs on the pool, after <see cref="End"/>, so the set of PCs no longer grows. Never throws.
     /// </summary>
     private static async Task TearDownAsync(Running running)
@@ -402,11 +390,6 @@ public sealed class BroadcastController : IBroadcastController
             finally
             {
                 running.Source.Dispose();
-                foreach (var peer in running.Peers.Values)
-                {
-                    _ = CloseAsync(peer);
-                }
-
                 running.Peers.Clear();
             }
         }
@@ -414,12 +397,6 @@ public sealed class BroadcastController : IBroadcastController
         {
             Trace.TraceError("Stopping the broadcast failed: {0}", failure);
         }
-    }
-
-    private static async Task SayGoodbyeAsync(Peer peer)
-    {
-        await TellAsync(peer, new StopBroadcast()).ConfigureAwait(false);
-        await CloseAsync(peer).ConfigureAwait(false);
     }
 
     /// <summary>Sends one control message within a second. A PC that is gone or slow is left to the session, which reports it lost when its next frame fails.</summary>
@@ -436,29 +413,6 @@ public sealed class BroadcastController : IBroadcastController
         }
     }
 
-    private static Task CloseAsync(Peer peer) => CloseAsync(peer.Control, peer.Channel);
-
-    /// <summary>Best effort: closing is how a PC is told its connection is over, and nothing here may throw.</summary>
-    private static async Task CloseAsync(QuicControlChannel? control, QuicChannel? channel)
-    {
-        try
-        {
-            if (control is not null)
-            {
-                await control.DisposeAsync().ConfigureAwait(false);
-            }
-
-            if (channel is not null)
-            {
-                await channel.DisposeAsync().ConfigureAwait(false);
-            }
-        }
-        catch (Exception failure)
-        {
-            Trace.TraceInformation("Closing a PC's connection failed: {0}", failure.Message);
-        }
-    }
-
     private sealed class Running(CaptureEncodeSource source, BroadcastSession session, int fps)
     {
         public CaptureEncodeSource Source { get; } = source;
@@ -471,7 +425,7 @@ public sealed class BroadcastController : IBroadcastController
     }
 
     /// <param name="Name">The PC's name in the room, for the log.</param>
-    private sealed record Peer(QuicChannel Channel, QuicControlChannel Control, string Name);
+    private sealed record Peer(QuicPcConnection Connection, ConsoleControl Control, string Name);
 
     /// <summary>
     /// Writes the size of every keyframe the source produces to the log, about one every two seconds: it is

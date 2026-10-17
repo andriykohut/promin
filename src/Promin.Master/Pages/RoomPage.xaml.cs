@@ -33,6 +33,7 @@ public sealed partial class RoomPage : Page
             services.RoomStore,
             services.Discovery,
             services.Broadcast,
+            services.Connections,
             services.Pairing,
             services.WallSettings,
             () => DateTimeOffset.Now,
