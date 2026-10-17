@@ -1,3 +1,4 @@
+using System.Net.Quic;
 using Promin.MediaPipeline.Pictures;
 
 namespace Promin.Agent;
@@ -24,7 +25,10 @@ internal sealed class PictureSender(
     private bool _notAvailableSent;
     private string? _lastProblem;
 
-    /// <summary>Runs until <paramref name="ct"/> is cancelled or a send fails (the connection has ended). Never throws.</summary>
+    /// <summary>
+    /// Runs until <paramref name="ct"/> is cancelled or a send fails. Never throws. A send that fails because the
+    /// connection ended is not logged (the connection's handler logs the end); any other failure is.
+    /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
         try
@@ -39,6 +43,11 @@ internal sealed class PictureSender(
                     await Task.Delay(rest, time, ct).ConfigureAwait(false);
                 }
             }
+        }
+        catch (Exception failure) when (failure is not (OperationCanceledException or QuicException or ObjectDisposedException))
+        {
+            // The connection is fine but no more pictures will come: that must be in the log.
+            log($"Screen pictures stopped: {failure.Message}");
         }
         catch (Exception)
         {

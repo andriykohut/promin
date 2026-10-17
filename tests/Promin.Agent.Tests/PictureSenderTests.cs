@@ -194,4 +194,15 @@ public class PictureSenderTests
         Assert.True(_pictures.Disposed);
         Assert.Empty(_log);
     }
+
+    [Fact]
+    public async Task ASendThatFailsForAnotherReason_EndsTheSender_AndIsLoggedOnce()
+    {
+        _pictures.Next.Enqueue((PictureOutcome.Picture, Jpeg(1)));
+
+        await Sender(send: (_, _) => throw new InvalidOperationException("boom")).RunAsync(CancellationToken.None);
+
+        Assert.True(_pictures.Disposed);
+        Assert.Equal(["Screen pictures stopped: boom"], _log);
+    }
 }
