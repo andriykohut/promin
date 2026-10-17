@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Window_Title" xml:space="preserve">
+    <value>Promin agent</value>
+  </data>
+  <data name="Heading" xml:space="preserve">
+    <value>Цей ПК</value>
+  </data>
+  <data name="Intro" xml:space="preserve">
+    <value>Усі ПК у кімнаті використовують один спільний 6-значний код.</value>
+  </data>
+  <data name="RoomCode" xml:space="preserve">
+    <value>Код кімнати</value>
+  </data>
+  <data name="CodePlaceholder" xml:space="preserve">
+    <value>6 цифр</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>Зберегти</value>
+  </data>
+  <data name="Status_NoCode" xml:space="preserve">
+    <value>Коду кімнати ще немає. Введіть код і збережіть його. Потім додайте цей ПК на консолі.</value>
+  </data>
+  <data name="Status_NotPaired" xml:space="preserve">
+    <value>Ще не додано. На консолі відкрийте «Налаштувати пристрої», введіть цей код і виберіть «Додати».</value>
+  </data>
+  <data name="Status_Paired" xml:space="preserve">
+    <value>Додано. Цей ПК пам’ятає свою консоль і показує те, що вона транслює.</value>
+  </data>
+  <data name="Status_BadCode" xml:space="preserve">
+    <value>Код складається з 6 цифр. Нічого не збережено. Пробіли чи дефіси між цифрами допустимі.</value>
+  </data>
+  <data name="Status_NotSaved" xml:space="preserve">
+    <value>Не вдалося зберегти код: {0}</value>
+  </data>
+  <data name="Status_PairingUnreadable" xml:space="preserve">
+    <value>Невідомо, чи додано цей ПК: не вдалося прочитати файл із даними про консоль ({0}).</value>
+  </data>
+  <data name="Status_CodeUnusable" xml:space="preserve">
+    <value>Збережений код кімнати не можна використати. Введіть код і збережіть його ще раз.</value>
+  </data>
+</root>
