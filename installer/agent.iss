@@ -65,17 +65,31 @@ begin
   Result := True;
 end;
 
-// --install leaves an already running service on its old exe, and running files cannot be replaced, so the service
-// (which ends its session process), the window and any leftover agent process are stopped first. This also covers an
-// agent installed by hand, which this setup has no record of. Each one may not be running, so results are ignored.
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+// Stops the service (which ends its session process), the window and any leftover agent process, and waits for each.
+// Running files cannot be replaced or deleted. Each one may not be running, so results are ignored.
+procedure StopAgent();
 var
   ResultCode: Integer;
 begin
   Exec(ExpandConstant('{sys}\net.exe'), 'stop ProminAgent', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM Promin.Agent.Window.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM Promin.Agent.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+// --install leaves an already running service on its old exe, so it is stopped here first. This also covers an agent
+// installed by hand, which this setup has no record of.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopAgent();
   Result := '';
+end;
+
+// usUninstall comes before [UninstallRun] and the file deletion. --uninstall does not wait for the service to stop, and
+// a file still in use would make the uninstaller ask for a restart.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+    StopAgent();
 end;
 
 // The window is started here rather than from [Run] so that it always runs after --install. It inherits setup's
