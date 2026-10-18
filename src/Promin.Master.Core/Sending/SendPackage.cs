@@ -11,15 +11,16 @@ public sealed record PickedItem(string Path, bool IsFolder);
 /// </summary>
 /// <remarks>
 /// Hidden and system files and folders (<c>desktop.ini</c>, <c>.git</c>) are left out of a picked folder, and links
-/// inside it are not followed: a junction to another drive must not pull that drive into the send. What the operator
-/// picked by name is always sent, whatever its attributes.
+/// inside it (symlinks and junctions) are neither sent nor followed: a junction to another drive must not pull that
+/// drive into the send. Cloud placeholders (OneDrive files not downloaded) are not links and are sent. What the
+/// operator picked by name is always sent, whatever its attributes.
 /// </remarks>
 public sealed class SendPackage
 {
-    private static readonly EnumerationOptions Walk = new()
+    // One folder's own entries; Folder recurses itself so that it can pass over links, which the enumerator would follow.
+    private static readonly EnumerationOptions Level = new()
     {
-        RecurseSubdirectories = true,
-        AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint,
+        AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
         IgnoreInaccessible = false,
     };
 
@@ -60,19 +61,40 @@ public sealed class SendPackage
         if (!picked.IsFolder)
         {
             var file = new FileInfo(picked.Path);
-            yield return new OutgoingItem(file.Name, file.Length, IsFolder: false, () => File.OpenRead(picked.Path));
-            yield break;
+            return [FileItem(file, file.Name)];
         }
 
         var root = new DirectoryInfo(picked.Path);
-        yield return new OutgoingItem(root.Name, 0, IsFolder: true, Open: null);
-        foreach (var entry in root.EnumerateFileSystemInfos("*", Walk))
+        return Folder(root, root.Name);
+    }
+
+    // A folder comes before everything in it. Links (symlinks and junctions) are passed over, file or folder; a
+    // cloud placeholder also carries the reparse-point attribute but has no link target, and is sent like any file.
+    private static IEnumerable<OutgoingItem> Folder(DirectoryInfo folder, string path)
+    {
+        yield return new OutgoingItem(path, 0, IsFolder: true, Open: null);
+        foreach (var entry in folder.EnumerateFileSystemInfos("*", Level))
         {
-            var inside = Path.GetRelativePath(root.FullName, entry.FullName).Replace(Path.DirectorySeparatorChar, '/');
-            var path = root.Name + "/" + inside;
-            yield return entry is FileInfo file
-                ? new OutgoingItem(path, file.Length, IsFolder: false, () => File.OpenRead(file.FullName))
-                : new OutgoingItem(path, 0, IsFolder: true, Open: null);
+            if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint) && entry.LinkTarget is not null)
+            {
+                continue;
+            }
+
+            var entryPath = path + "/" + entry.Name;
+            if (entry is DirectoryInfo directory)
+            {
+                foreach (var item in Folder(directory, entryPath))
+                {
+                    yield return item;
+                }
+            }
+            else
+            {
+                yield return FileItem((FileInfo)entry, entryPath);
+            }
         }
     }
+
+    private static OutgoingItem FileItem(FileInfo file, string path) =>
+        new(path, file.Length, IsFolder: false, () => File.OpenRead(file.FullName));
 }

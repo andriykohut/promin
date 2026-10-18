@@ -8,8 +8,8 @@ namespace Promin.Master.Services;
 
 /// <summary>
 /// <see cref="IFileSender"/> over the room connections: each send is a fresh stream on the PC's standing connection,
-/// which a send never dials for longer than five seconds and never closes. Composition only; the exchange is
-/// <see cref="SendExchange"/>, which is tested.
+/// which a send never waits more than five seconds for and never closes. Composition only; the exchange is
+/// <see cref="SendExchange"/>.
 /// </summary>
 public sealed class FileSender(RoomConnections<QuicPcConnection> connections) : IFileSender
 {

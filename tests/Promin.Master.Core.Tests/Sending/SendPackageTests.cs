@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Promin.Master.Core.Sending;
 
 namespace Promin.Master.Core.Tests.Sending;
@@ -84,6 +85,21 @@ public sealed class SendPackageTests : IDisposable
     }
 
     [Fact]
+    public void AReparsePointThatIsNotALink_IsSent()
+    {
+        Write(@"Lesson\kept.txt");
+        var placeholder = Write(@"Lesson\placeholder.txt", "12345");
+        MakeReparsePointThatIsNotALink(placeholder);
+        Assert.True(File.GetAttributes(placeholder).HasFlag(FileAttributes.ReparsePoint));
+        Assert.Null(new FileInfo(placeholder).LinkTarget);
+
+        var package = From(Path.Combine(_directory, "Lesson"), isFolder: true);
+
+        Assert.Equal(["Lesson", "Lesson/kept.txt", "Lesson/placeholder.txt"], package.Items.Select(i => i.Path).Order(StringComparer.Ordinal));
+        Assert.Equal(6, package.TotalBytes);
+    }
+
+    [Fact]
     public void TotalBytes_IsTheSumOfFiles_AndSizeOfAgreesForAFolder()
     {
         Write(@"Lesson\a.txt", "12345");
@@ -116,6 +132,23 @@ public sealed class SendPackageTests : IDisposable
     {
         Assert.ThrowsAny<IOException>(() => From(Path.Combine(_directory, "nowhere"), isFolder: true));
     }
+
+    // What a OneDrive placeholder is to the file system: a reparse point whose tag is not a symbolic link's or a
+    // junction's, so the file has the attribute and no link target. Needs no elevation. Such a file cannot be opened
+    // afterwards, which is fine here: the walk only lists it.
+    private static void MakeReparsePointThatIsNotALink(string path)
+    {
+        const uint FsctlSetReparsePoint = 0x000900A4;
+        var buffer = new byte[8 + 4];
+        BitConverter.GetBytes(0x8000FFF0u).CopyTo(buffer, 0); // a Microsoft-range tag that no file system feature owns
+        BitConverter.GetBytes((ushort)4).CopyTo(buffer, 4);
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Write);
+        Assert.True(DeviceIoControl(file.SafeFileHandle, FsctlSetReparsePoint, buffer, buffer.Length, IntPtr.Zero, 0, out _, IntPtr.Zero));
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool DeviceIoControl(
+        Microsoft.Win32.SafeHandles.SafeFileHandle device, uint code, byte[] input, int inputLength, IntPtr output, int outputLength, out int returned, IntPtr overlapped);
 
     // A junction needs no elevation, unlike a symbolic link.
     private static void MakeJunction(string link, string target)
