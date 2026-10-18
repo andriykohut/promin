@@ -3,11 +3,14 @@ using Promin.Protocol.Messages;
 namespace Promin.Agent;
 
 /// <summary>
-/// One console PC's connection as the agent handles it: its control messages and its video frames. In the agent
-/// this is a <c>QuicChannel</c>; the seam keeps the handling testable with no network.
+/// One console PC's connection as the agent handles it: its control messages, its video frames and its file sends.
+/// In the agent this is a <c>QuicChannel</c>; the seam keeps the handling testable with no network.
 /// </summary>
 internal interface IAgentConnection
 {
+    /// <summary>The next send the console PC opened on this connection. Throws when the connection has ended.</summary>
+    Task<IIncomingSend> AcceptSendAsync(CancellationToken ct);
+
     /// <summary>
     /// The next control message. The first call waits for the console PC to open its control stream, which it does
     /// by sending its first message. Throws when the connection is lost or its control stream is corrupt.
