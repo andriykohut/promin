@@ -6,7 +6,7 @@ namespace Promin.Agent;
 internal static class Program
 {
     /// <summary>What <c>--helper-check</c> exits with when the helper runs as SYSTEM instead of as the signed-in person.</summary>
-    private const int HelperRunsAsSystem = 2;
+    internal const int HelperRunsAsSystem = 2;
 
     private static int Main(string[] args)
     {

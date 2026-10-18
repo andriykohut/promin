@@ -200,6 +200,16 @@ internal static class NativeMethods
     public const int TokenPrimary = 1; // TOKEN_TYPE
 
     public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+    public const uint CREATE_NO_WINDOW = 0x08000000;
+
+    /// <summary>WTSQueryUserToken fails with this when nobody is signed in to the session.</summary>
+    public const int ERROR_NO_TOKEN = 1008;
+
+    /// <summary>WTSQueryUserToken fails with this when the caller is not SYSTEM.</summary>
+    public const int ERROR_PRIVILEGE_NOT_HELD = 1314;
+
+    public static readonly Guid FOLDERID_Desktop = new("B4BFCC3A-DB2C-424C-B029-7FE99A87C641");
+    public static readonly Guid FOLDERID_LocalAppData = new("F1B32785-6FBA-4FCF-9D55-7B8E7F157091");
 
     // The access a primary token needs to launch a process with CreateProcessAsUser, and to be retargeted to another
     // session: TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID.
@@ -294,6 +304,18 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool TerminateProcess(nint process, uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetExitCodeProcess(nint process, out uint exitCode);
+
+    /// <summary>
+    /// The path of a known folder of the user whose token this is (zero: this process's user). Throws when Windows
+    /// cannot give it; for another user, their profile must be loaded, as it is while they are signed in.
+    /// </summary>
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, PreserveSig = false)]
+    [return: MarshalAs(UnmanagedType.LPWStr)]
+    public static extern string SHGetKnownFolderPath(in Guid folderId, uint flags, nint token);
 
     /// <summary>Whether Windows warns before opening files of this type (programs and scripts). <paramref name="association"/> is an extension with its dot, e.g. <c>.exe</c>.</summary>
     [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]

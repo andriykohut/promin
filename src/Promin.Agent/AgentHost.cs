@@ -38,14 +38,16 @@ internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAg
 /// <summary>
 /// The parts of start-up that touch this machine (QUIC, the Windows key store, the network), as functions, so
 /// that every way the agent can fail to start, and the exit code and log line for it, can be reached from a test.
-/// <c>OpenScreenPictures</c> is null in tests, which then take no pictures.
+/// <c>OpenScreenPictures</c> is null in tests, which then take no pictures; <c>Person</c> is null in tests, which then
+/// never act as the signed-in person.
 /// </summary>
 internal sealed record AgentServices(
     Action EnsureQuicSupported,
     Func<string, DeviceIdentity> LoadIdentity,
     Func<DeviceIdentity, PeerCertificateStore, Action<Exception>, IAgentListener> CreateListener,
     Func<DeviceIdentity, IDisposable> StartBeacon,
-    Func<IScreenPictures>? OpenScreenPictures = null)
+    Func<IScreenPictures>? OpenScreenPictures = null,
+    Func<ISignedInPerson>? Person = null)
 {
     public static AgentServices ForThisMachine() => new(
         QuicTransportSettings.EnsureSupported,
@@ -65,7 +67,8 @@ internal sealed record AgentServices(
             beacon.Start();
             return beacon;
         },
-        () => new ScreenPictures());
+        () => new ScreenPictures(),
+        () => new WindowsSignedInPerson(Environment.ProcessPath!));
 }
 
 /// <summary>
@@ -178,6 +181,14 @@ internal static class AgentHost
                 // Off the start-up path: a capture can take seconds to deliver its first picture. It is let go within five
                 // seconds; a console PC that connects meanwhile has its first capture refused once and retried a second later.
                 _ = Task.Run(() => log.Write(ScreenPictureProbe.Describe(openPictures)), CancellationToken.None);
+            }
+
+            if (services.Person is { } person)
+            {
+                // Off the start-up path: the helper it starts is given up to ten seconds to report.
+                _ = Task.Run(
+                    async () => log.Write(await SignedInPersonProbe.DescribeAsync(person()).ConfigureAwait(false)),
+                    CancellationToken.None);
             }
 
             var pairing = new AgentPairingLoop(
