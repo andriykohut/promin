@@ -438,4 +438,13 @@
   <data name="Send_Send" xml:space="preserve">
     <value>Надіслати</value>
   </data>
+  <data name="Size_KB" xml:space="preserve">
+    <value>{size} КБ</value>
+  </data>
+  <data name="Size_MB" xml:space="preserve">
+    <value>{size} МБ</value>
+  </data>
+  <data name="Size_GB" xml:space="preserve">
+    <value>{size} ГБ</value>
+  </data>
 </root>

@@ -1106,8 +1106,6 @@ public sealed class RoomWallViewModelTests
         Assert.Equal([Id(3)], _connections.Dropped);
     }
 
-    // ---- who a send can go to -----------------------------------------------------------------
-
     [Fact]
     public void SendTargets_OffAir_SelectedAreTheTickedOnlinePcs_AllIsEveryPc()
     {
@@ -1148,6 +1146,21 @@ public sealed class RoomWallViewModelTests
 
         Assert.Equal([1, 2, 5, 6, 8, 9, 10], targets.Selected.Select(t => int.Parse(t.Member.DeviceId[^2..])));
         Assert.Equal(10, targets.All.Count);
+        Assert.False(targets.All.Single(t => t.Name == "PC-07").Online);
+    }
+
+    [Fact]
+    public async Task SendTargets_OnAir_APcBeingSentToIsOnline_WhateverPresenceSays()
+    {
+        var vm = await OnAir();
+        vm.StopSendingTo(Tile(vm, 3));
+
+        _now += RoomWallViewModel.PresenceTimeout + TimeSpan.FromSeconds(1);
+        var targets = vm.SendTargets();
+
+        Assert.All(targets.Selected, t => Assert.True(t.Online));
+        Assert.True(targets.All.Single(t => t.Name == "PC-04").Online);
+        Assert.False(targets.All.Single(t => t.Name == "PC-03").Online);
         Assert.False(targets.All.Single(t => t.Name == "PC-07").Online);
     }
 }

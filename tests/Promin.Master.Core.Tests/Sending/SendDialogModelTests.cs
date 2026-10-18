@@ -237,6 +237,19 @@ public sealed class SendDialogModelTests : IDisposable
     }
 
     [Fact]
+    public void WhenTheListChanges_TheSummaryAlreadyAgreesWithIt()
+    {
+        var model = new SendDialogModel(TenWithSevenOffline());
+        var seen = new List<string>();
+        model.Items.CollectionChanged += (_, _) => seen.Add(model.SummaryText);
+
+        model.AddFiles([File("a.txt", 1_024), File("b.txt", 3_072)]);
+        model.Remove(model.Items[0]);
+
+        Assert.Equal(["1 item · 1 KB", "2 items · 4 KB", "1 item · 3 KB"], seen);
+    }
+
+    [Fact]
     public void ChangesRaiseTheTextsTheyAffect()
     {
         var model = new SendDialogModel(TenWithSevenOffline());

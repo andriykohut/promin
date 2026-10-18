@@ -95,9 +95,9 @@ public sealed class SendDialogModel(SendTargets targets) : INotifyPropertyChange
     public void Remove(SendListItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        if (Items.Remove(item))
+        if (_bytes.Remove(item))
         {
-            _bytes.Remove(item);
+            Items.Remove(item);
             ListChanged();
         }
     }
@@ -122,8 +122,8 @@ public sealed class SendDialogModel(SendTargets targets) : INotifyPropertyChange
         }
 
         var item = new SendListItem(name, SendText.Size(bytes, CultureInfo.CurrentCulture), picked.IsFolder, picked);
-        Items.Add(item);
         _bytes[item] = bytes;
+        Items.Add(item);
         ListChanged();
     }
 

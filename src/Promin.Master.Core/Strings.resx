@@ -454,4 +454,13 @@
   <data name="Send_Send" xml:space="preserve">
     <value>Send</value>
   </data>
+  <data name="Size_KB" xml:space="preserve">
+    <value>{size} KB</value>
+  </data>
+  <data name="Size_MB" xml:space="preserve">
+    <value>{size} MB</value>
+  </data>
+  <data name="Size_GB" xml:space="preserve">
+    <value>{size} GB</value>
+  </data>
 </root>
