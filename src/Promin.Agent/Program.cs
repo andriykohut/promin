@@ -59,7 +59,8 @@ internal static class Program
         {
             if (command.Mode == AgentMode.HelperCheck)
             {
-                return WindowsIdentity.GetCurrent().IsSystem ? HelperRunsAsSystem : ExitCodes.Success;
+                using var identity = WindowsIdentity.GetCurrent();
+                return identity.IsSystem ? HelperRunsAsSystem : ExitCodes.Success;
             }
 
             ReceivedCommand.Run(
