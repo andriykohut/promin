@@ -12,6 +12,10 @@ namespace Promin.Protocol.Messages;
 [JsonDerivedType(typeof(StartBroadcast), "startBroadcast")]
 [JsonDerivedType(typeof(StopBroadcast), "stopBroadcast")]
 [JsonDerivedType(typeof(BroadcastReady), "broadcastReady")]
+[JsonDerivedType(typeof(SendFiles), "sendFiles")]
+[JsonDerivedType(typeof(SendItem), "sendItem")]
+[JsonDerivedType(typeof(SendEnd), "sendEnd")]
+[JsonDerivedType(typeof(SendDone), "sendDone")]
 public abstract record ControlMessage;
 
 /// <summary>
@@ -94,3 +98,21 @@ public sealed record PairConfirm : ControlMessage;
 public sealed record StartBroadcast(int Width, int Height, int TargetFps) : ControlMessage;
 public sealed record StopBroadcast : ControlMessage;
 public sealed record BroadcastReady : ControlMessage;
+
+/// <summary>
+/// Opens a send stream: how many file bytes follow in all, so the receiver can check its free
+/// space before anything is written, and whether to open the items once they have arrived.
+/// </summary>
+public sealed record SendFiles(long TotalBytes, bool Open) : ControlMessage;
+
+/// <summary>
+/// One item of a send, named relative to the receiving folder with '/' separators. A file's
+/// <paramref name="Length"/> raw bytes follow this message at once; a folder has none.
+/// </summary>
+public sealed record SendItem(string Path, long Length, bool IsFolder) : ControlMessage;
+
+/// <summary>The sender has no more items on this stream.</summary>
+public sealed record SendEnd : ControlMessage;
+
+/// <summary>The receiver's one answer on a send stream.</summary>
+public sealed record SendDone(SendOutcome Outcome) : ControlMessage;
