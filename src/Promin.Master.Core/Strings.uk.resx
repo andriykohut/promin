@@ -390,4 +390,52 @@
   <data name="Message_BackText" xml:space="preserve">
     <value>Він автоматично приєднався до трансляції.</value>
   </data>
+  <data name="Send_Title" xml:space="preserve">
+    <value>Надіслати файли</value>
+  </data>
+  <data name="Send_What" xml:space="preserve">
+    <value>Що</value>
+  </data>
+  <data name="Send_To" xml:space="preserve">
+    <value>Кому</value>
+  </data>
+  <data name="Send_Add" xml:space="preserve">
+    <value>Додати</value>
+  </data>
+  <data name="Send_AddFiles" xml:space="preserve">
+    <value>Файли…</value>
+  </data>
+  <data name="Send_AddFolder" xml:space="preserve">
+    <value>Папка…</value>
+  </data>
+  <data name="Send_Empty" xml:space="preserve">
+    <value>Ще нічого не додано. Додайте файли або папку.</value>
+  </data>
+  <data name="Send_Where" xml:space="preserve">
+    <value>Вони потраплять до папки Promin на робочому столі кожного ПК.</value>
+  </data>
+  <data name="Send_Selected" xml:space="preserve">
+    <value>{count, plural, =1 {Вибраний ПК} other {Вибрані {count} ПК}}</value>
+  </data>
+  <data name="Send_All" xml:space="preserve">
+    <value>{count, plural, =1 {Єдиний ПК} other {Усі {count} ПК}}</value>
+  </data>
+  <data name="Send_OfflineOne" xml:space="preserve">
+    <value>{name} не в мережі й не отримає їх. Надіслати знову можна пізніше.</value>
+  </data>
+  <data name="Send_OfflineMany" xml:space="preserve">
+    <value>{count} ПК не в мережі й не отримають їх. Надіслати знову можна пізніше.</value>
+  </data>
+  <data name="Send_Open" xml:space="preserve">
+    <value>Відкрити на кожному ПК одразу після отримання</value>
+  </data>
+  <data name="Send_OpenHelp" xml:space="preserve">
+    <value>Файли відкриваються у звичній для них програмі; програми ніколи не запускаються. Папка відкривається лише тоді, коли це єдине, що ви надсилаєте; її вміст не відкривається.</value>
+  </data>
+  <data name="Send_Summary" xml:space="preserve">
+    <value>{count, plural, one {# елемент} few {# елементи} many {# елементів} other {# елемента}} · {size}</value>
+  </data>
+  <data name="Send_Send" xml:space="preserve">
+    <value>Надіслати</value>
+  </data>
 </root>

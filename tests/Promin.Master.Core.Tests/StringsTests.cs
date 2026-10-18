@@ -47,6 +47,20 @@ public sealed class StringsTests
     public void UkrainianPillWords_AgreeWithTheCount(int ready, string expected) =>
         Assert.Equal(expected, In(Ukrainian, () => WallText.PillsOffAir(ready, 0).Single().Word));
 
+    [Theory]
+    [InlineData(1, "1 елемент · 3 MB")]
+    [InlineData(3, "3 елементи · 3 MB")]
+    [InlineData(5, "5 елементів · 3 MB")]
+    [InlineData(21, "21 елемент · 3 MB")]
+    public void UkrainianSendSummary_TakesTheFormTheNumberNeeds(int items, string expected) =>
+        Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.Send_Summary, ("count", items), ("size", "3 MB"))));
+
+    [Theory]
+    [InlineData(1, "Вибраний ПК")]
+    [InlineData(21, "Вибрані 21 ПК")]
+    public void UkrainianSendChoices_NameOnlyASinglePc_ForExactlyOne(int pcs, string expected) =>
+        Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.Send_Selected, ("count", pcs))));
+
     [Fact]
     public void ANameWithBracesOrAnApostrophe_IsShownAsTyped() =>
         Assert.Equal("{PC}'s is back.", WallMessage.IsBack("{PC}'s").Title);

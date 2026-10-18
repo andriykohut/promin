@@ -1105,4 +1105,49 @@ public sealed class RoomWallViewModelTests
 
         Assert.Equal([Id(3)], _connections.Dropped);
     }
+
+    // ---- who a send can go to -----------------------------------------------------------------
+
+    [Fact]
+    public void SendTargets_OffAir_SelectedAreTheTickedOnlinePcs_AllIsEveryPc()
+    {
+        var vm = TenWithSevenOffline();
+        vm.ToggleSelected(Tile(vm, 1));
+
+        var targets = vm.SendTargets();
+
+        Assert.Equal([2, 3, 4, 5, 6, 8, 9, 10], targets.Selected.Select(t => int.Parse(t.Member.DeviceId[^2..])));
+        Assert.All(targets.Selected, t => Assert.True(t.Online));
+        Assert.Equal(10, targets.All.Count);
+        Assert.Equal(Enumerable.Range(1, 10).Select(n => $"PC-{n:00}"), targets.All.Select(t => t.Name));
+        Assert.Equal(Enumerable.Range(1, 10).Select(n => n != 7), targets.All.Select(t => t.Online));
+    }
+
+    [Fact]
+    public void SendTargets_CarryTheAddressEachPcLastAnnouncedFrom()
+    {
+        var vm = TenWithSevenOffline();
+        _discovery.Raise(new AgentPc(Id(2), "PC-02", "10.0.0.2", 17900));
+
+        var targets = vm.SendTargets();
+
+        Assert.Equal(("10.0.0.2", 17900), (targets.Selected[1].Member.LastAddress, targets.Selected[1].Member.Port));
+        Assert.Equal("10.0.0.2", targets.All[1].Member.LastAddress);
+        Assert.Equal("192.168.1.21", targets.All[0].Member.LastAddress);
+        Assert.Equal("192.168.1.22", Stored(_store, 2).LastAddress);
+    }
+
+    [Fact]
+    public async Task SendTargets_OnAir_SelectedAreThePcsBeingSentTo()
+    {
+        var vm = await OnAir();
+        vm.StopSendingTo(Tile(vm, 3));
+        _broadcast.RaiseLost(Id(4));
+
+        var targets = vm.SendTargets();
+
+        Assert.Equal([1, 2, 5, 6, 8, 9, 10], targets.Selected.Select(t => int.Parse(t.Member.DeviceId[^2..])));
+        Assert.Equal(10, targets.All.Count);
+        Assert.False(targets.All.Single(t => t.Name == "PC-07").Online);
+    }
 }

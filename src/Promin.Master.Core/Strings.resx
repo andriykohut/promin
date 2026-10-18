@@ -406,4 +406,52 @@
   <data name="Message_BackText" xml:space="preserve">
     <value>It joined the broadcast by itself.</value>
   </data>
+  <data name="Send_Title" xml:space="preserve">
+    <value>Send files</value>
+  </data>
+  <data name="Send_What" xml:space="preserve">
+    <value>What</value>
+  </data>
+  <data name="Send_To" xml:space="preserve">
+    <value>To</value>
+  </data>
+  <data name="Send_Add" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="Send_AddFiles" xml:space="preserve">
+    <value>Files…</value>
+  </data>
+  <data name="Send_AddFolder" xml:space="preserve">
+    <value>Folder…</value>
+  </data>
+  <data name="Send_Empty" xml:space="preserve">
+    <value>Nothing to send yet. Add files or a folder.</value>
+  </data>
+  <data name="Send_Where" xml:space="preserve">
+    <value>They go to the Promin folder on each PC's desktop.</value>
+  </data>
+  <data name="Send_Selected" xml:space="preserve">
+    <value>{count, plural, one {The selected PC} other {The {count} selected PCs}}</value>
+  </data>
+  <data name="Send_All" xml:space="preserve">
+    <value>{count, plural, one {The only PC} other {All {count} PCs}}</value>
+  </data>
+  <data name="Send_OfflineOne" xml:space="preserve">
+    <value>{name} is offline and will not get them. You can send again later.</value>
+  </data>
+  <data name="Send_OfflineMany" xml:space="preserve">
+    <value>{count} PCs are offline and will not get them. You can send again later.</value>
+  </data>
+  <data name="Send_Open" xml:space="preserve">
+    <value>Open them on each PC when they arrive</value>
+  </data>
+  <data name="Send_OpenHelp" xml:space="preserve">
+    <value>Files open in their usual program; programs are never run. A folder opens only when it is the one thing you send; what is inside it does not.</value>
+  </data>
+  <data name="Send_Summary" xml:space="preserve">
+    <value>{count, plural, one {# item} other {# items}} · {size}</value>
+  </data>
+  <data name="Send_Send" xml:space="preserve">
+    <value>Send</value>
+  </data>
 </root>

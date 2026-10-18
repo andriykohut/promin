@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using Promin.Master.Core.Rooms;
+using Promin.Master.Core.Sending;
 using Promin.Master.Core.Setup;
 using Promin.Protocol.Video;
 
@@ -339,6 +340,19 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         SetFlags([member], !member.Selected);
+    }
+
+    /// <summary>
+    /// The PCs a send can go to. Off air, <see cref="SendTargets.Selected"/> is the selected PCs that are online; on air, the
+    /// PCs the broadcast is going to. <see cref="SendTargets.All"/> is every PC in the room. Each carries the address it last
+    /// announced from, as a broadcast start does.
+    /// </summary>
+    public SendTargets SendTargets()
+    {
+        var now = _now();
+        var all = _members.Select(m => new SendTarget(AsDialled(m), m.DisplayName, _presence.IsOnline(m.DeviceId, now))).ToList();
+        var selected = all.Where(t => _onAir ? _sendingTo.Contains(t.Member.DeviceId) : t.Member.Selected && t.Online).ToList();
+        return new SendTargets(selected, all);
     }
 
     /// <summary>Selects every online PC; offline ones keep their flag.</summary>
