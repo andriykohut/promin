@@ -871,14 +871,14 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             }
 
             tile.StatusText = WallText.Status(state, tile.FramesDropped);
-            tile.DetailSentence = WallText.DetailSentence(state);
+            tile.DetailSentence = WallText.DetailSentence(state, tile.SendDetail);
             tile.CanSelect = selectable && online;
             tile.IsSelected = tile.CanSelect && member.Selected;
             tile.IsOnAir = _onAir;
             tile.ReceivingForText = _onAir ? WallText.Elapsed(now - _startedAt) : string.Empty;
             tile.SelectBoxName = WallText.SelectBoxName(tile.Name);
             tile.DetailsButtonName = WallText.DetailsButtonName(tile.Name);
-            tile.TileName = WallText.TileName(tile.Name, tile.StatusText);
+            tile.TileName = WallText.TileName(tile.Name, tile.StatusText, tile.SendMark, tile.SendPercent);
 
             if (member.Selected && online)
             {

@@ -61,6 +61,13 @@ public sealed class StringsTests
     public void UkrainianSendChoices_NameOnlyASinglePc_ForExactlyOne(int pcs, string expected) =>
         Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.Send_Selected, ("count", pcs))));
 
+    [Theory]
+    [InlineData(1, 9, 1, "1 з 9 ПК уже його отримав.")]
+    [InlineData(5, 9, 3, "5 з 9 ПК уже їх отримали.")]
+    [InlineData(21, 30, 1, "21 з 30 ПК уже його отримав.")]
+    public void UkrainianSendCount_AgreesWithThePcsAndTheItems(int have, int count, int items, string expected) =>
+        Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.SendStrip_Have, ("have", have), ("count", count), ("items", items))));
+
     [Fact]
     public void ANameWithBracesOrAnApostrophe_IsShownAsTyped() =>
         Assert.Equal("{PC}'s is back.", WallMessage.IsBack("{PC}'s").Title);

@@ -1,5 +1,6 @@
 using System.Globalization;
 using Promin.Master.Core.Rooms;
+using Promin.Master.Core.Sending;
 using Promin.Master.Core.Tests.TestDoubles;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Video;
@@ -797,6 +798,29 @@ public sealed class RoomWallViewModelTests
         Assert.Equal("Select Front left", Tile(vm, 4).SelectBoxName);
         Assert.Equal("Front left, Receiving", Tile(vm, 4).TileName);
         Assert.Equal("PC-07, Reconnecting", Tile(vm, 7).TileName);
+    }
+
+    [Fact]
+    public void ATilesNameAndDetails_CarryItsSendState_AndANotSentMarkOutlivesItsComingBack()
+    {
+        var vm = TenWithSevenOffline();
+        var sender = new FakeFileSender();
+        var send = new RoomSend(sender, id => vm.Tiles.FirstOrDefault(t => t.DeviceId == id), () => _now, a => a());
+        send.Start(FakeFileSender.Package(("quiz-chapter-3.html", 1000)), open: false, vm.SendTargets().All);
+
+        sender.To(Id(3)).Written(640);
+        vm.Tick();
+
+        Assert.Equal("PC-03, Ready, sending, 64%", Tile(vm, 3).TileName);
+        Assert.Equal("PC-07, Offline, did not get the files", Tile(vm, 7).TileName);
+        Assert.Equal("It is switched off or not on this network. Not sent: offline.", Tile(vm, 7).DetailSentence);
+        Assert.Equal("Offline", Tile(vm, 7).StatusText);
+
+        See(7);
+        vm.Tick();
+
+        Assert.Equal("PC-07, Ready, did not get the files", Tile(vm, 7).TileName);
+        Assert.Equal("Not sent: offline.", Tile(vm, 7).DetailSentence);
     }
 
     // ---- activate again (back from Set up devices) ---------------------------------------------

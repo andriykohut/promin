@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace Promin.Master.Core.Sending;
 
-/// <summary>The wording of sizes in the send window.</summary>
+/// <summary>The wording of sizes in the send window, and of why a PC did not get a send.</summary>
 public static class SendText
 {
     private const long KB = 1024;
@@ -24,6 +24,17 @@ public static class SendText
             : Math.Round(mb, MidpointRounding.AwayFromZero) < 1024 ? Unit(Strings.Size_MB, mb.ToString("0", culture))
             : Unit(Strings.Size_GB, ((double)bytes / GB).ToString("0.0", culture));
     }
+
+    /// <summary>The sentence a PC's details give for why it did not get the send.</summary>
+    public static string NotSent(NotSentReason reason) => reason switch
+    {
+        NotSentReason.Offline => Strings.NotSent_Offline,
+        NotSentReason.ConnectionLost => Strings.NotSent_ConnectionLost,
+        NotSentReason.NotEnoughSpace => Strings.NotSent_NotEnoughSpace,
+        NotSentReason.InUse => Strings.NotSent_InUse,
+        NotSentReason.Stopped => Strings.NotSent_Stopped,
+        _ => Strings.NotSent_Other,
+    };
 
     private static string Unit(string text, string number) => Phrase.Format(text, ("size", number));
 }

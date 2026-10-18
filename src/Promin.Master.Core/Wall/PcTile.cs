@@ -2,12 +2,13 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using Promin.Master.Core.Rooms;
+using Promin.Master.Core.Sending;
 
 namespace Promin.Master.Core.Wall;
 
 /// <summary>
 /// One agent PC on the wall. The page binds to this and nothing else decides what a tile says:
-/// <see cref="RoomWallViewModel"/> sets every value here on each tick.
+/// <see cref="RoomWallViewModel"/> sets every value here on each tick, except the send's, which <see cref="RoomSend"/> sets.
 /// </summary>
 public sealed class PcTile : INotifyPropertyChanged
 {
@@ -27,6 +28,9 @@ public sealed class PcTile : INotifyPropertyChanged
     private string _tileName = string.Empty;
     private TileScreen _screen;
     private byte[]? _picture;
+    private TileSendMark _sendMark;
+    private int _sendPercent;
+    private string _sendDetail = string.Empty;
 
     public PcTile(RoomMember member, TimeSpan dropWindow)
     {
@@ -87,7 +91,9 @@ public sealed class PcTile : INotifyPropertyChanged
         Screen = TileScreen.Glyph;
     }
 
-    /// <summary>One sentence on the state when it is not healthy; empty otherwise.</summary>
+    /// <summary>
+    /// One sentence on the state when it is not healthy, then <see cref="SendDetail"/>; empty when there is neither.
+    /// </summary>
     public string DetailSentence
     {
         get => _detailSentence;
@@ -157,11 +163,31 @@ public sealed class PcTile : INotifyPropertyChanged
         internal set => Set(ref _detailsButtonName, value);
     }
 
-    /// <summary>What a screen reader says for the tile: <c>{name}, {status}</c>.</summary>
+    /// <summary>What a screen reader says for the tile: <c>{name}, {status}</c>, then the send state while there is one.</summary>
     public string TileName
     {
         get => _tileName;
         internal set => Set(ref _tileName, value);
+    }
+
+    public TileSendMark SendMark
+    {
+        get => _sendMark;
+        internal set => Set(ref _sendMark, value);
+    }
+
+    /// <summary>The bytes written to the PC over the send's total, 0 to 100, while <see cref="SendMark"/> is <see cref="TileSendMark.Sending"/>.</summary>
+    public int SendPercent
+    {
+        get => _sendPercent;
+        internal set => Set(ref _sendPercent, value);
+    }
+
+    /// <summary>Why the PC did not get the last send, as a sentence, while <see cref="SendMark"/> is <see cref="TileSendMark.NotSent"/>; empty otherwise.</summary>
+    public string SendDetail
+    {
+        get => _sendDetail;
+        internal set => Set(ref _sendDetail, value);
     }
 
     internal RecentDrops Drops { get; }

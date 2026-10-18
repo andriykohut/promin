@@ -1,4 +1,5 @@
 using System.Globalization;
+using Promin.Master.Core.Sending;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Video;
 
@@ -81,7 +82,14 @@ public class WallTextTests
     [InlineData(PcTileState.Ready, "")]
     [InlineData(PcTileState.Receiving, "")]
     public void DetailSentence(PcTileState state, string expected) =>
-        Assert.Equal(expected, WallText.DetailSentence(state));
+        Assert.Equal(expected, WallText.DetailSentence(state, string.Empty));
+
+    [Theory]
+    [InlineData(PcTileState.Offline, "Not sent: offline.", "It is switched off or not on this network. Not sent: offline.")]
+    [InlineData(PcTileState.Ready, "Not sent: stopped.", "Not sent: stopped.")]
+    [InlineData(PcTileState.Ready, "", "")]
+    public void DetailSentence_IsTheStateSentence_ThenWhyThePcDidNotGetTheSend(PcTileState state, string sendDetail, string expected) =>
+        Assert.Equal(expected, WallText.DetailSentence(state, sendDetail));
 
     [Theory]
     [InlineData(Sharpness.Light, 3_110_400, "Light, 3.1 Mbit/s")]
@@ -130,9 +138,17 @@ public class WallTextTests
     [Fact]
     public void AccessibleNames_NameTheStateAndTheChoice()
     {
-        Assert.Equal("PC-04, 37 frames dropped", WallText.TileName("PC-04", "37 frames dropped"));
+        Assert.Equal("PC-04, 37 frames dropped", WallText.TileName("PC-04", "37 frames dropped", TileSendMark.None, 0));
         Assert.Equal("Quality, 1080p, 15 fps, 6.2 Mbit/s", WallText.QualityPickerName("1080p, 15 fps, 6.2 Mbit/s"));
     }
+
+    [Theory]
+    [InlineData("PC-03", "Ready", TileSendMark.Sending, 64, "PC-03, Ready, sending, 64%")]
+    [InlineData("PC-03", "Receiving", TileSendMark.Done, 100, "PC-03, Receiving, has the files")]
+    [InlineData("PC-07", "Offline", TileSendMark.NotSent, 0, "PC-07, Offline, did not get the files")]
+    [InlineData("PC-07", "Offline", TileSendMark.None, 0, "PC-07, Offline")]
+    public void TheTilesName_SaysItsSendState(string name, string status, TileSendMark mark, int percent, string expected) =>
+        Assert.Equal(expected, WallText.TileName(name, status, mark, percent));
 
     [Fact]
     public void Rates_FollowTheCulture() =>
