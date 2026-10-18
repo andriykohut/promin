@@ -1,10 +1,22 @@
+using System.Diagnostics;
+using System.Security.Principal;
+
 namespace Promin.Agent;
 
 internal static class Program
 {
+    /// <summary>What <c>--helper-check</c> exits with when the helper runs as SYSTEM instead of as the signed-in person.</summary>
+    private const int HelperRunsAsSystem = 2;
+
     private static int Main(string[] args)
     {
         var command = AgentCommandLine.Parse(args);
+
+        if (command.Mode is AgentMode.Received or AgentMode.HelperCheck)
+        {
+            return RunHelper(command);
+        }
+
         var paths = AgentPaths.ForThisMachine();
 
         if (command.Mode == AgentMode.Service)
@@ -35,5 +47,43 @@ internal static class Program
         AgentHost.LogWhatNobodyCatches(log);
         return AgentHost.RunAsync(command, paths, log, AgentServices.ForThisMachine(), CancellationToken.None)
             .GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// The helper modes run as the signed-in person, who cannot write the agent's log folder, so they print and log
+    /// nothing: the exit code is the only report.
+    /// </summary>
+    private static int RunHelper(AgentCommandLine command)
+    {
+        try
+        {
+            if (command.Mode == AgentMode.HelperCheck)
+            {
+                return WindowsIdentity.GetCurrent().IsSystem ? HelperRunsAsSystem : ExitCodes.Success;
+            }
+
+            ReceivedCommand.Run(
+                command.ReceivedCount, command.ProminFolder!, command.OpenPaths!,
+                DangerousTypes.IsDangerous, ShellOpen, ReceivedNotice.Show);
+            return ExitCodes.Success;
+        }
+        catch (Exception)
+        {
+            return ExitCodes.Unexpected;
+        }
+    }
+
+    /// <summary>Opens a file with its default app, or a folder in Explorer; false when Windows could not.</summary>
+    private static bool ShellOpen(string path)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })?.Dispose();
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 }

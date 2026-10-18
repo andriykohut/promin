@@ -294,4 +294,9 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool TerminateProcess(nint process, uint exitCode);
+
+    /// <summary>Whether Windows warns before opening files of this type (programs and scripts). <paramref name="association"/> is an extension with its dot, e.g. <c>.exe</c>.</summary>
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AssocIsDangerous(string association);
 }

@@ -13,6 +13,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The icon of the received-files notification (ReceivedNotice); the agent setup ships whatever the build puts beside the exe. -->
+    <Content Include="..\..\installer\images\beacon-97.png" Link="Beacon.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Promin.Agent.Tests" />
     <Using Include="Promin.Agent.Core" />
   </ItemGroup>

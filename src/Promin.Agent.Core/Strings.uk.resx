@@ -51,4 +51,19 @@
   <data name="Status_CodeUnusable" xml:space="preserve">
     <value>Збережений код кімнати не можна використати. Введіть код і збережіть його ще раз.</value>
   </data>
+  <data name="Notice_OneArrived" xml:space="preserve">
+    <value>Надійшов файл</value>
+  </data>
+  <data name="Notice_ManyArrived" xml:space="preserve">
+    <value>Надійшли файли ({0})</value>
+  </data>
+  <data name="Notice_WhereOne" xml:space="preserve">
+    <value>Він у папці Promin на робочому столі.</value>
+  </data>
+  <data name="Notice_WhereMany" xml:space="preserve">
+    <value>Вони в папці Promin на робочому столі.</value>
+  </data>
+  <data name="Notice_OpenFolder" xml:space="preserve">
+    <value>Відкрити папку</value>
+  </data>
 </root>
