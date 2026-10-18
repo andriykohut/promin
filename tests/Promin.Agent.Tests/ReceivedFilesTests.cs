@@ -31,6 +31,7 @@ public sealed class ReceivedFilesTests : IDisposable
         Assert.Equal(SendOutcome.Sent, target.Finish());
         Assert.Equal("new", File.ReadAllText(InPromin("quiz.html")));
         Assert.False(Directory.Exists(staging));
+        Assert.Null(target.Failure);
     }
 
     [Fact]
@@ -84,13 +85,33 @@ public sealed class ReceivedFilesTests : IDisposable
     {
         Place("a.txt", "old");
 
+        var target = NewTarget();
         using (new FileStream(InPromin("a.txt"), FileMode.Open, FileAccess.Read, FileShare.None))
         {
-            Assert.Equal(SendOutcome.InUse, Send(("a.txt", "new"), ("b.txt", "new")));
+            Assert.Equal(SendOutcome.InUse, Send(target, ("a.txt", "new"), ("b.txt", "new")));
         }
 
         Assert.Equal("old", File.ReadAllText(InPromin("a.txt")));
         Assert.Equal("new", File.ReadAllText(InPromin("b.txt")));
+        Assert.Contains(InPromin("a.txt"), target.Failure!.Message);
+    }
+
+    // Items move in name order, so "0" clashes before a.txt is found open and "w" after.
+    [Theory]
+    [InlineData("0")]
+    [InlineData("w")]
+    public void AClashAndAnOpenOldCopy_FailWithTheClashAsTheReason(string clash)
+    {
+        Place("a.txt", "old");
+        Place(Path.Combine(clash, "mine.txt"), "mine");
+
+        var target = NewTarget();
+        using (new FileStream(InPromin("a.txt"), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Equal(SendOutcome.Failed, Send(target, ("a.txt", "new"), (clash, "new")));
+        }
+
+        Assert.Contains(InPromin(clash), target.Failure!.Message);
     }
 
     // Replacing it is denied as for an open file, but nothing holds it, so it is not "in use".
@@ -121,6 +142,14 @@ public sealed class ReceivedFilesTests : IDisposable
     }
 
     [Fact]
+    public void TooLittleRoomOnTheDesktopDrive_IsRefusedAtBegin()
+    {
+        var target = new ReceivedFiles(staging, promin, path => path == staging ? long.MaxValue : 10);
+
+        Assert.Equal(SendOutcome.NotEnoughSpace, Assert.Throws<SendRefusedException>(() => target.Begin(11)).Outcome);
+    }
+
+    [Fact]
     public void ALeftoverFromAnEarlierCrash_IsRemovedAtBegin()
     {
         Directory.CreateDirectory(staging);
@@ -145,8 +174,10 @@ public sealed class ReceivedFilesTests : IDisposable
     {
         File.WriteAllText(promin, "mine");
 
-        Assert.Equal(SendOutcome.Failed, Send(("a.txt", "new")));
+        var target = NewTarget();
+        Assert.Equal(SendOutcome.Failed, Send(target, ("a.txt", "new")));
         Assert.Equal("mine", File.ReadAllText(promin));
+        Assert.Contains(promin, target.Failure!.Message);
         Assert.False(Directory.Exists(staging));
     }
 
@@ -155,8 +186,10 @@ public sealed class ReceivedFilesTests : IDisposable
     {
         Place("w", "mine");
 
-        Assert.Equal(SendOutcome.Failed, Send(("w/a.txt", "new")));
+        var target = NewTarget();
+        Assert.Equal(SendOutcome.Failed, Send(target, ("w/a.txt", "new")));
         Assert.Equal("mine", File.ReadAllText(InPromin("w")));
+        Assert.Contains(InPromin("w"), target.Failure!.Message);
     }
 
     [Fact]
@@ -164,8 +197,10 @@ public sealed class ReceivedFilesTests : IDisposable
     {
         Place(@"w\mine.txt", "mine");
 
-        Assert.Equal(SendOutcome.Failed, Send(("w", "new")));
+        var target = NewTarget();
+        Assert.Equal(SendOutcome.Failed, Send(target, ("w", "new")));
         Assert.Equal("mine", File.ReadAllText(InPromin(@"w\mine.txt")));
+        Assert.Contains(InPromin("w"), target.Failure!.Message);
     }
 
     [Fact]
@@ -208,10 +243,11 @@ public sealed class ReceivedFilesTests : IDisposable
         stream.Write(bytes);
     }
 
+    private SendOutcome Send(params (string Path, string Text)[] files) => Send(NewTarget(), files);
+
     /// <summary>A whole send of the given files, returning what <see cref="ReceivedFiles.Finish"/> says.</summary>
-    private SendOutcome Send(params (string Path, string Text)[] files)
+    private static SendOutcome Send(ReceivedFiles target, params (string Path, string Text)[] files)
     {
-        var target = NewTarget();
         target.Begin(files.Sum(file => Encoding.UTF8.GetByteCount(file.Text)));
         foreach (var (path, text) in files)
         {

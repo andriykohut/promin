@@ -22,11 +22,19 @@ internal sealed class ReceivedFiles(string staging, string promin, Func<string, 
     public IReadOnlyList<(string Name, bool IsFolder)> TopLevel => topLevel;
 
     /// <summary>
+    /// Why <see cref="Finish"/> returned <see cref="SendOutcome.InUse"/> or <see cref="SendOutcome.Failed"/>: the
+    /// first reason for the outcome it returned, with a message that names the item. Null before
+    /// <see cref="Finish"/> and after <see cref="SendOutcome.Sent"/>.
+    /// </summary>
+    public Exception? Failure { get; private set; }
+
+    /// <summary>
     /// Deletes what an earlier send left in staging and creates it afresh. Refuses
     /// <see cref="SendOutcome.NotEnoughSpace"/> when the drive of staging or of the desktop has less than
     /// <paramref name="totalBytes"/> free.
     /// </summary>
-    /// <exception cref="IOException">The leftover could not be deleted.</exception>
+    /// <exception cref="IOException">The leftover could not be deleted, or staging could not be created.</exception>
+    /// <exception cref="UnauthorizedAccessException">The same, for want of permission.</exception>
     public void Begin(long totalBytes)
     {
         if (Directory.Exists(staging))
@@ -59,9 +67,15 @@ internal sealed class ReceivedFiles(string staging, string promin, Func<string, 
     /// <summary>
     /// Moves every item into Desktop\Promin, then deletes staging. Returns <see cref="SendOutcome.InUse"/> when an
     /// old copy is open and cannot be replaced, and <see cref="SendOutcome.Failed"/> when a file stands where a
-    /// folder goes (Desktop\Promin itself included) or the reverse, or the disk fails otherwise; that existing item is
-    /// left as it was. Either way the other items still move. Never throws for anything the disk does.
+    /// folder goes (Desktop\Promin itself included) or the reverse, or the disk fails otherwise. Failed outranks
+    /// InUse when both happen, and <see cref="Failure"/> says why. Either way the other items still move. Never
+    /// throws for anything the disk does.
     /// </summary>
+    /// <remarks>
+    /// When staging and the Desktop share a drive (the usual case), an item that is not put in place leaves the
+    /// existing one untouched. Across drives a move is a copy, and a copy that fails part way can leave the old copy
+    /// damaged.
+    /// </remarks>
     public SendOutcome Finish()
     {
         var outcome = SendOutcome.Sent;
@@ -84,7 +98,7 @@ internal sealed class ReceivedFiles(string staging, string promin, Func<string, 
                 }
                 else if (Directory.Exists(to))
                 {
-                    outcome = SendOutcome.Failed;
+                    throw new IOException("A folder of that name is there, and a file cannot replace it.");
                 }
                 else
                 {
@@ -93,13 +107,21 @@ internal sealed class ReceivedFiles(string staging, string promin, Func<string, 
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
+                // Failed outranks InUse, and the reason kept is the first for the outcome that wins.
+                if (outcome == SendOutcome.Failed)
+                {
+                    return;
+                }
+
                 if (!InUse(e, to))
                 {
                     outcome = SendOutcome.Failed;
+                    Failure = new IOException($"{to} could not be put in place: {e.Message}", e);
                 }
                 else if (outcome == SendOutcome.Sent)
                 {
                     outcome = SendOutcome.InUse;
+                    Failure = new IOException($"{to} is open in another program, so it was not replaced.", e);
                 }
             }
         }
