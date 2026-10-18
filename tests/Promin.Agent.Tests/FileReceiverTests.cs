@@ -39,6 +39,9 @@ public class FileReceiverTests
 
         public Exception? HelperFailure { get; set; }
 
+        /// <summary>When set, every helper start waits for this.</summary>
+        public Task<int?>? HelperStarting { get; set; }
+
         public bool Acting => _acting.Value;
 
         public IReadOnlyList<string>[] Helpers
@@ -69,7 +72,7 @@ public class FileReceiverTests
                 _helpers.Add(arguments);
             }
 
-            return HelperFailure is { } failure ? Task.FromException<int?>(failure) : Task.FromResult<int?>(null);
+            return HelperFailure is { } failure ? Task.FromException<int?>(failure) : HelperStarting ?? Task.FromResult<int?>(null);
         }
     }
 
@@ -90,6 +93,9 @@ public class FileReceiverTests
 
         /// <summary>The target fails with this while writing, and the exchange answers Failed.</summary>
         public IOException? WriteFails { get; set; }
+
+        /// <summary>After <see cref="WriteFails"/>, the stream ends with this before the answer goes.</summary>
+        public Exception? AnswerFails { get; set; }
 
         /// <summary>The stream ends early with this.</summary>
         public Exception? EndsEarly { get; set; }
@@ -134,7 +140,7 @@ public class FileReceiverTests
             {
                 failed?.Invoke(failure);
                 target.Discard();
-                return SendOutcome.Failed;
+                return AnswerFails is { } gone ? throw gone : SendOutcome.Failed;
             }
 
             foreach (var item in items)
@@ -216,6 +222,16 @@ public class FileReceiverTests
         }
 
         public FakeSend Send(bool open, params string[] items) => new(Person, open, items);
+
+        public static async Task UntilAsync(Func<bool> condition, string what)
+        {
+            for (var i = 0; i < 2000 && !condition(); i++)
+            {
+                await Task.Delay(5);
+            }
+
+            Assert.True(condition(), $"timed out waiting for: {what}");
+        }
 
         /// <summary>Offers <paramref name="send"/> and waits until the receiver has let it go.</summary>
         public async Task ReceiveAsync(FakeSend send)
@@ -354,6 +370,46 @@ public class FileReceiverTests
 
         Assert.Contains(rig.Log, line => line.Contains("The disk is full."));
         Assert.Equal(0, rig.LinesLoggedAsPerson);
+    }
+
+    [Fact]
+    public async Task WhyAWriteFailed_IsLogged_WhenTheStreamEndsBeforeTheAnswer()
+    {
+        await using var rig = new Rig();
+        var send = rig.Send(open: false, "a.txt");
+        send.WriteFails = new IOException("The disk is full.");
+        send.AnswerFails = new IOException("The console PC stopped the send.");
+
+        await rig.ReceiveAsync(send);
+
+        Assert.Contains(rig.Log, line => line.Contains("The console PC stopped the send.") && line.Contains("The disk is full."));
+        Assert.Equal(0, rig.LinesLoggedAsPerson);
+    }
+
+    /// <summary>A Desktop redirected to a network share has no drive to ask; the share says so itself, as a write error, if it is full.</summary>
+    [Fact]
+    public void FreeSpaceOnANetworkShare_IsNotAsked()
+    {
+        Assert.Equal(long.MaxValue, FileReceiver.FreeBytes(@"\\server\share\Desktop"));
+    }
+
+    /// <summary>A console PC may start its next send as soon as it has the answer; only the exchange holds the staging folder.</summary>
+    [Fact]
+    public async Task TheNextSend_IsTaken_WhileTheHelperForTheLastOneStarts()
+    {
+        await using var rig = new Rig();
+        var helper = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Person.HelperStarting = helper.Task;
+        rig.Connection.Offer(rig.Send(open: false, "a.txt"));
+        await Rig.UntilAsync(() => rig.Person.Helpers.Length == 1, "the first send's helper starting");
+
+        var next = rig.Send(open: false, "b.txt");
+        rig.Connection.Offer(next);
+        await Rig.UntilAsync(() => rig.Person.Helpers.Length == 2, "the next send's helper starting");
+
+        Assert.Null(next.Refused);
+        helper.SetResult(null);
+        await next.Done.WaitAsync(TimeSpan.FromSeconds(10));
     }
 
     [Fact]

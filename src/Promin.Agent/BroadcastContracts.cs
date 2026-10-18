@@ -13,7 +13,9 @@ internal interface IAgentConnection
 
     /// <summary>
     /// The next control message. The first call waits for the console PC to open its control stream, which it does
-    /// by sending its first message. Throws when the connection is lost or its control stream is corrupt.
+    /// by sending its first message; a stream whose first message is corrupt, or does not come in time, is aborted
+    /// without a word and the wait goes on. Throws when the connection is lost or a later message on the control
+    /// stream is corrupt.
     /// </summary>
     Task<ControlMessage> ReceiveControlAsync(CancellationToken ct);
 

@@ -13,21 +13,27 @@ namespace Promin.Agent;
 internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> log)
 {
     /// <summary>
-    /// Runs until the connection ends or <paramref name="ct"/> is cancelled, then waits for the send under way. A
-    /// send that arrives while another is under way is refused <see cref="SendOutcome.Busy"/>. Throws nothing for what
-    /// the connection or the console PC does.
+    /// Runs until the connection ends or <paramref name="ct"/> is cancelled, then waits for the sends under way. A
+    /// send that arrives while another is being received is refused <see cref="SendOutcome.Busy"/>; one whose
+    /// files are all in place, and is only starting the helper, does not hold the next. Throws nothing for what the
+    /// connection or the console PC does.
     /// </summary>
     public async Task RunAsync(IAgentConnection connection, CancellationToken ct)
     {
-        var receiving = Task.CompletedTask;
+        // Completes once the send being received is done with the staging folder.
+        var exchanging = Task.CompletedTask;
+        var sends = new List<Task>();
         try
         {
             while (true)
             {
                 var send = await connection.AcceptSendAsync(ct).ConfigureAwait(false);
-                if (receiving.IsCompleted)
+                if (exchanging.IsCompleted)
                 {
-                    receiving = Task.Run(() => ReceiveAsync(send, ct), CancellationToken.None);
+                    var exchanged = new TaskCompletionSource();
+                    exchanging = exchanged.Task;
+                    sends.RemoveAll(running => running.IsCompleted);
+                    sends.Add(Task.Run(() => ReceiveAsync(send, exchanged, ct), CancellationToken.None));
                     continue;
                 }
 
@@ -42,17 +48,21 @@ internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> 
         }
         finally
         {
-            await receiving.ConfigureAwait(false);
+            await Task.WhenAll(sends).ConfigureAwait(false);
         }
     }
 
-    /// <summary>Receives one send and starts the helper for it. Throws nothing.</summary>
-    private async Task ReceiveAsync(IIncomingSend send, CancellationToken ct)
+    /// <summary>
+    /// Receives one send and starts the helper for it, completing <paramref name="exchanged"/> as soon as the send
+    /// no longer uses the staging folder. Throws nothing.
+    /// </summary>
+    private async Task ReceiveAsync(IIncomingSend send, TaskCompletionSource exchanged, CancellationToken ct)
     {
         await using (send.ConfigureAwait(false))
         {
             // Until the exchange begins, nothing has answered the console PC.
             var exchanging = false;
+            Exception? writeFailure = null;
             try
             {
                 var signedIn = person();
@@ -65,7 +75,6 @@ internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> 
 
                 var promin = Path.Combine(folders.Desktop, "Promin");
                 var target = new ReceivedFiles(Path.Combine(folders.LocalAppData, "Promin", "Incoming"), promin, FreeBytes);
-                Exception? writeFailure = null;
                 var outcome = await signedIn.RunAsAsync(() =>
                 {
                     exchanging = true;
@@ -73,6 +82,7 @@ internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> 
                     // Kept, not logged: this runs as the person, and the log is locked to SYSTEM.
                     return send.ReceiveAsync(target, ct, failure => writeFailure = failure);
                 }).ConfigureAwait(false);
+                exchanged.TrySetResult();
 
                 var why = (target.Failure ?? writeFailure) is { } reason ? $" {reason.Message}" : "";
                 log($"A send ended: {outcome}, {target.TopLevel.Count} items, {send.Header.TotalBytes} bytes.{why}");
@@ -107,7 +117,12 @@ internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> 
             }
             catch (Exception e)
             {
-                log($"A send ended early: {e.Message}");
+                var before = writeFailure is { } failure ? $" Before that, it could not be written: {failure.Message}" : "";
+                log($"A send ended early: {e.Message}{before}");
+            }
+            finally
+            {
+                exchanged.TrySetResult();
             }
         }
     }
@@ -125,5 +140,19 @@ internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> 
         }
     }
 
-    private static long FreeBytes(string path) => new DriveInfo(Path.GetPathRoot(path)!).AvailableFreeSpace;
+    /// <summary>
+    /// Free bytes on the drive of <paramref name="path"/>, or <see cref="long.MaxValue"/> when its root is not a
+    /// drive (a Desktop redirected to a network share): a full share then fails the send as a write error.
+    /// </summary>
+    internal static long FreeBytes(string path)
+    {
+        try
+        {
+            return new DriveInfo(Path.GetPathRoot(path)!).AvailableFreeSpace;
+        }
+        catch (ArgumentException)
+        {
+            return long.MaxValue;
+        }
+    }
 }
