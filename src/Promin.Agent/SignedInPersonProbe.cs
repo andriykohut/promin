@@ -1,3 +1,5 @@
+using System.Security.Principal;
+
 namespace Promin.Agent;
 
 /// <summary>
@@ -8,10 +10,14 @@ internal static class SignedInPersonProbe
 {
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
 
-    /// <summary>The line to log; it never throws, a failure is said in the line.</summary>
-    public static async Task<string> DescribeAsync(ISignedInPerson person)
+    /// <summary>
+    /// The line to log; it never throws, a failure is said in the line. The name it reports is
+    /// <paramref name="currentName"/> (by default, who this thread runs as) read inside
+    /// <see cref="ISignedInPerson.RunAsAsync{T}"/>, so the line shows who file work really runs as.
+    /// </summary>
+    public static async Task<string> DescribeAsync(ISignedInPerson person, Func<string>? currentName = null)
     {
-        string? name;
+        string name;
         string placed;
         try
         {
@@ -20,7 +26,7 @@ internal static class SignedInPersonProbe
                 return "Nobody is signed in: received files cannot be placed.";
             }
 
-            name = person.Name;
+            name = await person.RunAsAsync(() => Task.FromResult((currentName ?? CurrentName)())).ConfigureAwait(false);
             placed = $"Received files go to {Path.Combine(folders.Desktop, "Promin")}, written as {name}.";
         }
         catch (Exception failure)
@@ -43,5 +49,11 @@ internal static class SignedInPersonProbe
         {
             return $"{placed} The helper cannot be started: {failure.Message}";
         }
+    }
+
+    private static string CurrentName()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return identity.Name;
     }
 }

@@ -27,8 +27,9 @@ internal interface ISignedInPerson
     /// <summary>
     /// Starts Promin.Agent.exe with these arguments as the person, without administrator rights and without a window.
     /// Returns its exit code if it ended within <paramref name="wait"/>, otherwise null; a helper still running is
-    /// left to finish. Throws <see cref="System.ComponentModel.Win32Exception"/> when it cannot start, and
-    /// <see cref="InvalidOperationException"/> when nobody is signed in.
+    /// left to finish. Throws <see cref="System.ComponentModel.Win32Exception"/> when it cannot start,
+    /// <see cref="InvalidOperationException"/> when nobody is signed in, and <see cref="ArgumentException"/> when an
+    /// argument contains a quote (no Windows path can).
     /// </summary>
     Task<int?> RunHelperAsync(IReadOnlyList<string> arguments, TimeSpan wait);
 }
