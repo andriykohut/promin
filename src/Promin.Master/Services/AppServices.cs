@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Quic;
 using Promin.Master.Core;
 using Promin.Master.Core.Rooms;
+using Promin.Master.Core.Sending;
 using Promin.Master.Core.Setup;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Transport;
@@ -14,7 +15,7 @@ namespace Promin.Master.Services;
 /// Everything the console owns for its whole life, built once in <c>App.OnLaunched</c>: the
 /// paths under <c>%LocalAppData%\Promin\</c>, this PC's identity, the one QUIC connector, the
 /// trust store, the room store, the two adapters the setup screen talks to, and the room
-/// connections, broadcast controller and wall settings the room wall talks to.
+/// connections, broadcast controller, file sender and wall settings the room wall talks to.
 /// </summary>
 /// <remarks>
 /// The paths are per Windows account because the identity is: its private key lives in the key
@@ -44,6 +45,7 @@ public sealed class AppServices : IDisposable
         Connections = _connections;
         WallSettings = new JsonWallSettings(SettingsPath);
         Broadcast = _broadcast = new BroadcastController(_connections);
+        Files = new FileSender(_connections);
     }
 
     /// <summary>Where this Windows account's Promin state lives.</summary>
@@ -79,6 +81,9 @@ public sealed class AppServices : IDisposable
 
     /// <summary>Every online agent PC's standing connection: its screen pictures, and the broadcast.</summary>
     public IRoomConnections Connections { get; }
+
+    /// <summary>Sends files and folders to one PC over its standing connection.</summary>
+    public IFileSender Files { get; }
 
     public static AppServices Create() => new(RootDirectory);
 
