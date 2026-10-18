@@ -20,8 +20,8 @@ public interface IReceiveTarget
     void AddFolder(string path);
 
     /// <summary>
-    /// Returns where a file's bytes go. The exchange writes exactly <paramref name="length"/>
-    /// bytes into it and then disposes it.
+    /// Returns where a file's bytes go. The exchange writes the file's bytes into it, all
+    /// <paramref name="length"/> of them unless the send ends early, and always disposes it.
     /// </summary>
     Stream AddFile(string path, long length);
 

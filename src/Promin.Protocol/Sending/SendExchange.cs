@@ -85,15 +85,24 @@ public static class SendExchange
     /// bytes beyond the header's total, an unexpected message), discards, answers, and stops the
     /// console sending.
     /// </summary>
-    /// <exception cref="OperationCanceledException">
-    /// <paramref name="ct"/> was cancelled. <paramref name="target"/> has been discarded.
-    /// </exception>
+    /// <param name="failed">
+    /// Gets the <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> from
+    /// <paramref name="target"/> that this answers as <see cref="SendOutcome.Failed"/>, before
+    /// the answer goes, so the reason can be logged. The answer itself carries no reason.
+    /// </param>
+    /// <exception cref="OperationCanceledException"><paramref name="ct"/> was cancelled.</exception>
     /// <remarks>
-    /// Any other exception means the stream or the connection ended early, and
-    /// <paramref name="target"/> has been discarded.
+    /// Any other exception means the stream or the connection ended early. An exception thrown
+    /// before <see cref="IReceiveTarget.Finish"/> comes after <paramref name="target"/> has been
+    /// discarded. One thrown while sending the answer after <see cref="IReceiveTarget.Finish"/>
+    /// leaves the items it put in place.
     /// </remarks>
     public static async Task<SendOutcome> ReceiveAsync(
-        QuicControlChannel channel, SendFiles header, IReceiveTarget target, CancellationToken ct)
+        QuicControlChannel channel,
+        SendFiles header,
+        IReceiveTarget target,
+        CancellationToken ct,
+        Action<Exception>? failed = null)
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(header);
@@ -113,6 +122,7 @@ public static class SendExchange
         {
             // QuicException and ControlChannelClosedException are IOExceptions too, but they
             // mean the stream ended, not that the target failed.
+            failed?.Invoke(e);
             return await DiscardAndRefuseAsync(channel, target, SendOutcome.Failed, ct).ConfigureAwait(false);
         }
         catch

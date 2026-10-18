@@ -14,8 +14,11 @@ public sealed class MemoryReceiveTarget : IReceiveTarget
     /// <summary>When set, <see cref="Begin"/> refuses with this outcome.</summary>
     public SendOutcome? RefuseAtBegin { get; init; }
 
-    /// <summary>When set, the Nth item (from 1, folders and files alike) is refused with this outcome.</summary>
-    public (int Item, SendOutcome Outcome)? RefuseAtItem { get; init; }
+    /// <summary>
+    /// When set, the Nth item (from 1, folders and files alike) throws this: a
+    /// <see cref="SendRefusedException"/> to refuse, or any other exception to fail.
+    /// </summary>
+    public (int Item, Exception Error)? ThrowAtItem { get; init; }
 
     public SendOutcome FinishWith { get; init; } = SendOutcome.Sent;
 
@@ -62,9 +65,9 @@ public sealed class MemoryReceiveTarget : IReceiveTarget
 
     private void Add(string path, bool isFolder)
     {
-        if (RefuseAtItem is { } refusal && ++_itemCount == refusal.Item)
+        if (ThrowAtItem is { } thrown && ++_itemCount == thrown.Item)
         {
-            throw new SendRefusedException(refusal.Outcome);
+            throw thrown.Error;
         }
 
         Items.Add((path, isFolder));

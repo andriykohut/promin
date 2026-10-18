@@ -76,16 +76,20 @@ public class SendExchangeTests
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
+        // Both files span several 64 KiB chunks, so the bytes must also survive being split.
+        var a = QuicLoopbackHarness.RandomBytes(200_000);
+        var b = QuicLoopbackHarness.RandomBytes(70_000);
+        var target = new MemoryReceiveTarget();
         long lastWritten = 0;
 
         var sending = Task.Run(() => SendExchange.SendAsync(
-            master,
-            [FileItem("a.bin", QuicLoopbackHarness.RandomBytes(200_000)), FileItem("b.bin", QuicLoopbackHarness.RandomBytes(70_000))],
-            open: false, n => lastWritten = n, deadline.Token));
-        await ReceiveAsync(agentPending, new MemoryReceiveTarget(), deadline.Token);
+            master, [FileItem("a.bin", a), FileItem("b.bin", b)], open: false, n => lastWritten = n, deadline.Token));
+        await ReceiveAsync(agentPending, target, deadline.Token);
 
         Assert.Equal(SendOutcome.Sent, await sending);
         Assert.Equal(270_000, lastWritten);
+        Assert.Equal(a, target.Files["a.bin"].ToArray());
+        Assert.Equal(b, target.Files["b.bin"].ToArray());
     }
 
     /// <summary>
@@ -119,7 +123,7 @@ public class SendExchangeTests
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
-        var target = new MemoryReceiveTarget { RefuseAtItem = (2, SendOutcome.BadPath) };
+        var target = new MemoryReceiveTarget { ThrowAtItem = (2, new SendRefusedException(SendOutcome.BadPath)) };
 
         var sending = Task.Run(() => SendExchange.SendAsync(
             master,
@@ -129,6 +133,33 @@ public class SendExchangeTests
 
         Assert.Equal(SendOutcome.BadPath, await sending);
         Assert.Equal(SendOutcome.BadPath, answered);
+        Assert.True(target.Discarded);
+        Assert.False(target.Finished);
+    }
+
+    /// <summary>
+    /// A target that cannot write (a full disk, access denied) fails the send. The answer to
+    /// the console carries no reason, so the agent's caller is handed it. Fails an agent that
+    /// drops the reason.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    public async Task ATargetThatCannotWrite_FailsTheSend_AndHandsOverTheReason()
+    {
+        using var deadline = QuicLoopbackHarness.Deadline();
+        await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
+        var (master, agentPending) = await OpenAsync(harness, deadline.Token);
+        await using var ownedMaster = master;
+        var diskFull = new IOException("There is not enough space on the disk.");
+        var target = new MemoryReceiveTarget { ThrowAtItem = (1, diskFull) };
+        Exception? reported = null;
+
+        var sending = Task.Run(() => SendExchange.SendAsync(
+            master, [FileItem("a.bin", QuicLoopbackHarness.RandomBytes(MiB))], open: false, _ => { }, deadline.Token));
+        var (_, answered) = await ReceiveAsync(agentPending, target, deadline.Token, e => reported = e);
+
+        Assert.Equal(SendOutcome.Failed, await sending);
+        Assert.Equal(SendOutcome.Failed, answered);
+        Assert.Same(diskFull, reported);
         Assert.True(target.Discarded);
         Assert.False(target.Finished);
     }
@@ -184,6 +215,29 @@ public class SendExchangeTests
     }
 
     /// <summary>
+    /// A file that grew after it was picked would arrive cut short at its old length. Fails a
+    /// console that sends the declared bytes and ignores the rest.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    public async Task ASourceLongerThanDeclared_ThrowsSendSourceException_NamingIt()
+    {
+        using var deadline = QuicLoopbackHarness.Deadline();
+        await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
+        var (master, agentPending) = await OpenAsync(harness, deadline.Token);
+        await using var ownedMaster = master;
+        var longItem = new OutgoingItem(
+            "long.bin", 10, IsFolder: false, () => new MemoryStream(QuicLoopbackHarness.RandomBytes(1_000)));
+
+        var sending = Task.Run(() => SendExchange.SendAsync(
+            master, [longItem], open: false, _ => { }, deadline.Token));
+        var receiving = ReceiveAsync(agentPending, new MemoryReceiveTarget(), deadline.Token);
+
+        var error = await Assert.ThrowsAsync<SendSourceException>(() => sending);
+        Assert.Equal("long.bin", error.Path);
+        await Assert.ThrowsAsync<QuicException>(() => receiving);
+    }
+
+    /// <summary>
     /// A console that promises fewer bytes than it sends could fill the disk past what the
     /// free-space check allowed. Fails an agent that takes bytes beyond the header's total.
     /// </summary>
@@ -226,10 +280,13 @@ public class SendExchangeTests
     /// then disposes the stream.
     /// </summary>
     private static async Task<(SendFiles Header, SendOutcome Outcome)> ReceiveAsync(
-        Task<QuicControlChannel> agentPending, IReceiveTarget target, CancellationToken ct)
+        Task<QuicControlChannel> agentPending,
+        IReceiveTarget target,
+        CancellationToken ct,
+        Action<Exception>? failed = null)
     {
         await using var agent = await agentPending;
         var header = Assert.IsType<SendFiles>(await agent.ReceiveAsync(ct));
-        return (header, await SendExchange.ReceiveAsync(agent, header, target, ct));
+        return (header, await SendExchange.ReceiveAsync(agent, header, target, ct, failed));
     }
 }
