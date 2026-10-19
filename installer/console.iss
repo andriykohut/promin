@@ -1,4 +1,4 @@
-; Promin Console Setup.exe: installs the console and opens its discovery port in Windows Firewall.
+; Promin-Console-Setup.exe: installs the console and opens its discovery port in Windows Firewall.
 ; build.ps1 publishes the apps into ..\artifacts\publish and passes AppVersion.
 
 [Setup]
@@ -20,7 +20,7 @@ WizardStyle=modern
 WizardSmallImageFile=images\beacon-58.png,images\beacon-77.png,images\beacon-97.png,images\beacon-116.png,images\beacon-124.png
 ; Transparent renders of ..\assets\brand\promin-lockup-light.svg, centred in the Finished page's side panel, same sizes.
 WizardImageFile=images\lockup-202x386.png,images\lockup-269x515.png,images\lockup-336x643.png,images\lockup-403x772.png,images\lockup-430x824.png
-OutputBaseFilename=Promin Console Setup
+OutputBaseFilename=Promin-Console-Setup
 SetupIconFile=..\src\Promin.Master\Assets\AppIcon.ico
 UninstallDisplayName=Promin
 UninstallDisplayIcon={app}\Promin.Master.exe
