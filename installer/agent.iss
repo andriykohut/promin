@@ -1,4 +1,4 @@
-; Promin Agent Setup.exe: installs the agent as a service and its window on a room PC, asking nothing.
+; Promin-Agent-Setup.exe: installs the agent as a service and its window on a room PC, asking nothing.
 ; build.ps1 publishes the apps into ..\artifacts\publish and passes AppVersion.
 
 [Setup]
@@ -21,7 +21,7 @@ WizardStyle=modern
 WizardSmallImageFile=images\beacon-58.png,images\beacon-77.png,images\beacon-97.png,images\beacon-116.png,images\beacon-124.png
 ; PrepareToInstall stops the agent and its window itself; Restart Manager would ask the user to close them.
 CloseApplications=no
-OutputBaseFilename=Promin Agent Setup
+OutputBaseFilename=Promin-Agent-Setup
 SetupIconFile=..\src\Promin.Master\Assets\AppIcon.ico
 UninstallDisplayName=Promin agent
 UninstallDisplayIcon={app}\Promin.Agent.exe
