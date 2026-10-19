@@ -1,7 +1,6 @@
 using Promin.MediaPipeline.Capture;
 using Promin.MediaPipeline.Encoding;
 using Promin.Protocol.Video;
-using Xunit.Abstractions;
 
 namespace Promin.MediaPipeline.Tests.Encoding;
 

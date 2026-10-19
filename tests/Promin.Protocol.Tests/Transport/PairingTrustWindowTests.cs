@@ -63,7 +63,7 @@ public class PairingTrustWindowTests
         var window = new PairingTrustWindow(
             new PeerCertificateStore(), "agent-1", TimeSpan.FromMilliseconds(50));
 
-        await Task.Delay(200);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
 
         Assert.False(window.TryAdmit(certificate));
 

@@ -101,7 +101,7 @@ public class QuicPairingHandshakeTests
     [InlineData(true)]
     public async Task ATimedOutHandshake_AbortsTheControlStream_WhicheverDeadlineFired(bool callersTokenFires)
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
 
         var acceptTask = harness.Listener.AcceptAsync(deadline.Token);
@@ -152,7 +152,7 @@ public class QuicPairingHandshakeTests
     [Fact(Timeout = 30000)]
     public async Task FailedHandshake_AbortsTheControlStream_SoThePeerIsNotLeftWaiting()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
 
         var acceptTask = harness.Listener.AcceptAsync(deadline.Token);

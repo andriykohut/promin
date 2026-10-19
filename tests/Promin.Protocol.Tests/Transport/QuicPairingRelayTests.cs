@@ -23,7 +23,7 @@ public class QuicPairingRelayTests
     [Fact(Timeout = 30000)]
     public async Task ARelayForwardingTheHandshakeUnchanged_IsNotPinnedByEitherSide()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(
             deadline.Token, pinMasterOnAgent: false, pinAgentOnMaster: false);
 

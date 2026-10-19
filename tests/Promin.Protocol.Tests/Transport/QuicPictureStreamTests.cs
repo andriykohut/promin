@@ -9,7 +9,7 @@ public class QuicPictureStreamTests
     [Fact(Timeout = 30000)]
     public async Task APicture_FromTheAgent_ArrivesWhole_OnTheConsolesConnection()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -23,7 +23,7 @@ public class QuicPictureStreamTests
     [Fact(Timeout = 30000)]
     public async Task AnEmptyStream_ArrivesAsAnEmptyPicture()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -35,7 +35,7 @@ public class QuicPictureStreamTests
     [Fact(Timeout = 30000)]
     public async Task APictureOverOneMegabyte_IsRefused_AndTheConnectionCarriesOn()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -64,7 +64,7 @@ public class QuicPictureStreamTests
     [Fact(Timeout = 30000)]
     public async Task ABroadcastStartedAndStopped_LeavesTheConnectionOpen_WithPicturesArrivingThroughout()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -97,7 +97,7 @@ public class QuicPictureStreamTests
     [Fact(Timeout = 30000)]
     public async Task APairingConnection_GrantsTheAgentNoStreams()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         using var masterCertificate = SelfSignedCertificateFactory.Create(QuicLoopbackHarness.MasterDeviceId);
         using var agentCertificate = SelfSignedCertificateFactory.Create(QuicLoopbackHarness.AgentDeviceId);
         Exception? opening = null;
@@ -129,7 +129,7 @@ public class QuicPictureStreamTests
     [Fact(Timeout = 30000)]
     public async Task TheConsolesReceive_EndsWhenTheAgentCloses()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 

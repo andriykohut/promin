@@ -19,7 +19,7 @@ public class SendExchangeTests
     [Fact(Timeout = 30000)]
     public async Task AWholeSend_ArrivesInOrder_AndTheAgentsAnswerIsReturned()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
@@ -50,7 +50,7 @@ public class SendExchangeTests
     [Fact(Timeout = 30000)]
     public async Task TwoThousandSmallFiles_AllArrive()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
@@ -72,7 +72,7 @@ public class SendExchangeTests
     [Fact(Timeout = 30000)]
     public async Task WrittenReportsEveryByte()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
@@ -99,7 +99,7 @@ public class SendExchangeTests
     [Fact(Timeout = 30000)]
     public async Task AnEarlyRefusal_StopsTheConsoleBeforeItHasWrittenEverything()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
@@ -119,7 +119,7 @@ public class SendExchangeTests
     [Fact(Timeout = 30000)]
     public async Task ABadPathOnTheSecondItem_IsRefused_AndTheTargetDiscards()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
@@ -145,7 +145,7 @@ public class SendExchangeTests
     [Fact(Timeout = 30000)]
     public async Task ATargetThatCannotWrite_FailsTheSend_AndHandsOverTheReason()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
@@ -167,7 +167,7 @@ public class SendExchangeTests
     [Fact(Timeout = 30000)]
     public async Task CancellingOnTheConsole_EndsTheAgentsReceive_AndTheTargetDiscards()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
@@ -198,7 +198,7 @@ public class SendExchangeTests
     [Fact(Timeout = 30000)]
     public async Task ASourceThatEndsEarly_ThrowsSendSourceException_NamingIt()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
@@ -221,7 +221,7 @@ public class SendExchangeTests
     [Fact(Timeout = 30000)]
     public async Task ASourceLongerThanDeclared_ThrowsSendSourceException_NamingIt()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;
@@ -244,7 +244,7 @@ public class SendExchangeTests
     [Fact(Timeout = 30000)]
     public async Task AHeaderThatUnderstatesTheBytes_IsRefusedAsFailed()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agentPending) = await OpenAsync(harness, deadline.Token);
         await using var ownedMaster = master;

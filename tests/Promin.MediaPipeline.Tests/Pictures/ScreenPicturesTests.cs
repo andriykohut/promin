@@ -1,5 +1,4 @@
 using Promin.MediaPipeline.Pictures;
-using Xunit.Abstractions;
 
 namespace Promin.MediaPipeline.Tests.Pictures;
 

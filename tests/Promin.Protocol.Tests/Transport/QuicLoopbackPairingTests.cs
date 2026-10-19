@@ -23,7 +23,7 @@ public class QuicLoopbackPairingTests
     [Fact(Timeout = 30000)]
     public async Task PairingSucceeds_OverRealLoopbackQuicConnection_WhenPresharedKeysMatch()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -46,7 +46,7 @@ public class QuicLoopbackPairingTests
     [Fact(Timeout = 30000)]
     public async Task Pairing_FailsOnBothSides_WhenPresharedKeysDiffer()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -70,7 +70,7 @@ public class QuicLoopbackPairingTests
     [Fact(Timeout = 30000)]
     public async Task MasterPairing_GivesUp_WhenTheAgentAcceptsTheConnectionAndThenSaysNothing()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         // The agent end is accepted but its control channel is deliberately never read.
         var (master, _) = await harness.ConnectAsync(deadline.Token);
@@ -93,7 +93,7 @@ public class QuicLoopbackPairingTests
     [Fact(Timeout = 30000)]
     public async Task Connection_IsRefused_WhenTheAgentHoldsNoPinForTheMaster()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token, pinMasterOnAgent: false);
 
         var connector = new QuicMasterConnector(harness.MasterCertificate, harness.MasterTrust);
@@ -115,7 +115,7 @@ public class QuicLoopbackPairingTests
     [Fact(Timeout = 30000)]
     public async Task Connection_IsRefused_WhenAnUnpinnedMasterDialsAnAgentThatAlreadyPinsAnother()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
 
         // A second master machine with its own key, which this agent has never paired with.
@@ -144,7 +144,7 @@ public class QuicLoopbackPairingTests
     [Fact(Timeout = 30000)]
     public async Task Connection_IsRefused_WhenTheMasterDialsADeviceIdItHasNoPinFor()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
 
         var connector = new QuicMasterConnector(harness.MasterCertificate, harness.MasterTrust);

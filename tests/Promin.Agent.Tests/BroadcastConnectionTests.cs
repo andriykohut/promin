@@ -285,7 +285,7 @@ public class BroadcastConnectionTests
         var display = Assert.Single(rig.Factory.Created);
 
         rig.Connection.Lose();
-        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5));
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.True(display.Disposed);
         Assert.Contains(rig.Log, line => line.Contains("the connection was lost"));
@@ -302,7 +302,7 @@ public class BroadcastConnectionTests
         await rig.UntilAsync(() => rig.Factory.Created.Count == 1, "display created");
 
         connection.Video.Writer.TryComplete();
-        await running.WaitAsync(TimeSpan.FromSeconds(5));
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.True(rig.Factory.Created[0].Disposed);
     }
@@ -329,7 +329,7 @@ public class BroadcastConnectionTests
         await rig.StartedAsync();
 
         rig.Cancel(); // a newer connection took over
-        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5));
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.True(rig.Factory.Created[0].Disposed);
         Assert.True(rig.Running.IsCompletedSuccessfully);
@@ -349,7 +349,7 @@ public class BroadcastConnectionTests
         var display = Assert.Single(rig.Factory.Created);
         await rig.UntilAsync(() => display.Received.Length == 1, "a frame shown");
 
-        await Task.Delay(300);
+        await Task.Delay(300, TestContext.Current.CancellationToken);
 
         Assert.False(display.Disposed);
         Assert.False(rig.Running.IsCompleted);
@@ -420,7 +420,7 @@ public class BroadcastConnectionTests
 
         first.IsOpen = false; // the viewer closed the window (--windowed), or the GPU failed
         rig.Connection.SendFrame(1);
-        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5));
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Empty(first.Received);
         Assert.True(first.Disposed);
@@ -466,7 +466,7 @@ public class BroadcastConnectionTests
         await rig.StartedAsync();
 
         rig.Connection.Lose(new ControlMessageFormatException("not a control frame"));
-        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5));
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.True(rig.Running.IsCompletedSuccessfully);
         Assert.True(rig.Factory.Created[0].Disposed);
@@ -496,7 +496,7 @@ public class BroadcastConnectionTests
         connection.Send(new StartBroadcast(1920, 1080, 15));
         for (var i = 0; i < 500 && !log.Any(line => line.Contains("not ready after")); i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
         Assert.Contains(log, line => line.Contains("not ready after 0.1 seconds"));
@@ -505,7 +505,7 @@ public class BroadcastConnectionTests
 
         connection.Send(new StopBroadcast());
         connection.Lose();
-        await running.WaitAsync(TimeSpan.FromSeconds(5));
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }
 
     [Fact(Timeout = 20000)]
@@ -519,20 +519,20 @@ public class BroadcastConnectionTests
         connection.Send(new StartBroadcast(1920, 1080, 15));
         for (var i = 0; i < 500 && !log.Any(line => line.Contains("not ready after")); i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
         var late = new FakeDisplay();
         factory.Pending.SetResult(late);
         for (var i = 0; i < 500 && !late.Disposed; i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
         Assert.True(late.Disposed);
         Assert.Null(handler.Display);
         connection.Lose();
-        await running.WaitAsync(TimeSpan.FromSeconds(5));
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }
 
     [Fact(Timeout = 20000)]
@@ -546,17 +546,17 @@ public class BroadcastConnectionTests
         connection.Send(new StartBroadcast(1920, 1080, 15));
         for (var i = 0; i < 500 && Volatile.Read(ref factory.Asked) == 0; i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
         await cts.CancelAsync(); // a newer connection took over
-        await running.WaitAsync(TimeSpan.FromSeconds(5));
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         var late = new FakeDisplay();
         factory.Pending.SetResult(late);
         for (var i = 0; i < 500 && !late.Disposed; i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
         Assert.True(late.Disposed);

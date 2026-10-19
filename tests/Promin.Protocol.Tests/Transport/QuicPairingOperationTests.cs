@@ -42,7 +42,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task Pairing_PinsBothSides_AndTheOrdinaryConnectionThenSucceeds()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
         var agentThumbprint = PeerCertificateStore.ComputeThumbprint(harness.AgentCertificate);
         var masterThumbprint = PeerCertificateStore.ComputeThumbprint(harness.MasterCertificate);
@@ -77,7 +77,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task FailedPairing_LeavesBothStoresByteIdentical()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
         harness.MasterTrust.Pin("agent-other", UnrelatedThumbprint);
         harness.AgentTrust.Pin("master-other", OtherThumbprint);
@@ -115,7 +115,7 @@ public class QuicPairingOperationTests
     [InlineData("silent")]
     public async Task RogueMaster_ThatNeverProvesTheKey_IsRejected_AndIsNotPinned(string forgery)
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
         harness.AgentTrust.Pin("master-other", OtherThumbprint);
         var before = QuicLoopbackHarness.PersistedBytes(harness.AgentTrust);
@@ -176,7 +176,7 @@ public class QuicPairingOperationTests
     [InlineData(false)]
     public async Task PairingWindow_IsGoneWhenItsOperationEnds_WhetherThatPairedOrNot(bool pairs)
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
 
         var agentPairing = harness.Listener.AcceptPairingAsync(pairs ? PresharedKey : WrongKey, deadline.Token);
@@ -196,7 +196,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task PairingWindow_AdmitsOnlyTheFirstStranger()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
         var before = QuicLoopbackHarness.PersistedBytes(harness.AgentTrust);
 
@@ -225,7 +225,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task PairingWindow_ClosesOnItsOwnDeadline_WithoutTheCallerCancelling()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
 
         var started = Stopwatch.StartNew();
@@ -248,7 +248,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task PairingWindow_MustBeLongerThanZero_AndAtMostTenMinutes()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
 
         foreach (var refused in new[]
@@ -281,7 +281,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task OnlyOnePairingWindow_CanBeOpenOnAListenerAtATime()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
 
         var first = harness.Listener.AcceptPairingAsync(
@@ -306,7 +306,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task AnOrdinaryDial_IsNeverJudgedByAnOpenPairingWindow()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
 
         var agentPairing = harness.Listener.AcceptPairingAsync(PresharedKey, deadline.Token);
@@ -331,7 +331,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task AConnectionAdmittedForPairing_NeverComesOutOfAcceptAsync()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
 
         using var ordinaryWait = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
@@ -358,7 +358,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task AConnectionAdmittedForPairing_IsGrantedNoVideoStreams()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
 
         var agentPairing = harness.Listener.AcceptPairingAsync(
@@ -389,7 +389,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 60000)]
     public async Task Pairing_Succeeds_WithAFullAcceptQueue_AndNobodyAccepting()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(40);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 40);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var paired = MasterOf(harness);
 
@@ -446,7 +446,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task Master_RefusesAnAgentWhoseCertificateNamesAnotherDevice()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
         var before = QuicLoopbackHarness.PersistedBytes(harness.MasterTrust);
 
@@ -478,7 +478,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 60000)]
     public async Task Master_DoesNotReKeyAPinnedAgent_UntilItIsExplicitlyUnpinned()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(40);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 40);
         await using var harness = await StartUnpairedAsync(deadline.Token);
         harness.MasterTrust.Pin(QuicLoopbackHarness.AgentDeviceId, UnrelatedThumbprint);
         var masterBefore = QuicLoopbackHarness.PersistedBytes(harness.MasterTrust);
@@ -517,7 +517,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 60000)]
     public async Task Agent_DoesNotReKeyAPinnedMasterName_AndSaysAtOnceThatItsWindowWasSpent()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(40);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 40);
         await using var harness = await StartUnpairedAsync(deadline.Token);
         harness.AgentTrust.Pin(QuicLoopbackHarness.MasterDeviceId, OtherThumbprint);
         var masterBefore = QuicLoopbackHarness.PersistedBytes(harness.MasterTrust);
@@ -558,7 +558,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task PairAsync_ReturnsAnOutcome_WhenNothingIsListeningAtTheAddress()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         using var masterCertificate = SelfSignedCertificateFactory.Create("master-1");
         var trust = new PeerCertificateStore();
 
@@ -591,7 +591,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task ACompletedConnection_IsNotACompletedPairing()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token, pinMasterOnAgent: false);
         var before = QuicLoopbackHarness.PersistedBytes(harness.MasterTrust);
 
@@ -638,7 +638,7 @@ public class QuicPairingOperationTests
     [InlineData("goes silent")]
     public async Task AnAgentThatGivesUpAfterTheMastersProof_LeavesTheMasterUnpinned(string givingUp)
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         using var masterCertificate = SelfSignedCertificateFactory.Create("master-1");
         using var agentCertificate = SelfSignedCertificateFactory.Create("agent-1");
         var masterTrust = new PeerCertificateStore();
@@ -703,7 +703,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task AnAgentSideHandshakeTimeout_AbortsTheStream_ConfirmsNothing_AndPinsNothing()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
         var before = QuicLoopbackHarness.PersistedBytes(harness.AgentTrust);
 
@@ -739,7 +739,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task AMasterThatDisownsThePairingAfterTheAgentConfirms_LeavesTheAgentUnpinned()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
         harness.AgentTrust.Pin("master-other", OtherThumbprint);
         var before = QuicLoopbackHarness.PersistedBytes(harness.AgentTrust);
@@ -777,7 +777,7 @@ public class QuicPairingOperationTests
     [Fact(Timeout = 30000)]
     public async Task AgentOnlyPinned_HealsOnAPlainRetry_WithNoUnpin()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await StartUnpairedAsync(deadline.Token);
         var masterThumbprint = PeerCertificateStore.ComputeThumbprint(harness.MasterCertificate);
 
@@ -831,7 +831,7 @@ public class QuicPairingOperationTests
     [InlineData(true, true)]
     public async Task PairingTheSameCertificatesAgain_IsIdempotent(bool masterAlreadyPins, bool agentAlreadyPins)
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(
             deadline.Token, pinMasterOnAgent: agentAlreadyPins, pinAgentOnMaster: masterAlreadyPins);
         var masterBefore = QuicLoopbackHarness.PersistedBytes(harness.MasterTrust);

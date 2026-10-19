@@ -152,7 +152,7 @@ public class PictureSenderTests
 
         await Eventually(() => _sent.Count == 1 && clock.PendingTimers == 1, "the first picture, then the wait");
         clock.Advance(TimeSpan.FromMilliseconds(999));
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
         Assert.Single(_sent);
 
         clock.Advance(TimeSpan.FromMilliseconds(1));
@@ -181,7 +181,7 @@ public class PictureSenderTests
 
         await Eventually(() => _sent.Count == 1, "the first picture");
         clock.Advance(TimeSpan.FromSeconds(5));
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
         Assert.Equal(1, _pictures.Takes);
 
         arrived.SetResult();

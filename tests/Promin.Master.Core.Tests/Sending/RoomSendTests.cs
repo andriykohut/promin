@@ -393,7 +393,7 @@ public sealed class RoomSendTests
         _send.Start(Quiz, open: false, EightOnline());
 
         SendTo(1).Answer.SetException(new IOException("the stream was aborted"));
-        SendTo(2).Answer.SetCanceled();
+        SendTo(2).Answer.SetCanceled(CancellationToken.None);
 
         Assert.Equal("Not sent: the connection was lost.", Tile(1).SendDetail);
         Assert.Equal("Not sent: the connection was lost.", Tile(2).SendDetail);

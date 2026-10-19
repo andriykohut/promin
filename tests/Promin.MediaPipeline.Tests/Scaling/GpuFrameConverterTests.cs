@@ -1,6 +1,5 @@
 using Promin.MediaPipeline.Scaling;
 using Promin.MediaPipeline.Tests.Encoding;
-using Xunit.Abstractions;
 
 namespace Promin.MediaPipeline.Tests.Scaling;
 

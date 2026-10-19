@@ -4,7 +4,6 @@ using Promin.MediaPipeline.Decoding;
 using Promin.MediaPipeline.Encoding;
 using Promin.MediaPipeline.Tests.Encoding;
 using Promin.Protocol.Video;
-using Xunit.Abstractions;
 
 namespace Promin.MediaPipeline.Tests.Decoding;
 

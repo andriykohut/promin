@@ -17,7 +17,7 @@ public class QuicControlStreamTests
     [Fact(Timeout = 30000)]
     public async Task ControlMessages_RoundTrip_InBothDirections()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -50,7 +50,7 @@ public class QuicControlStreamTests
     [Fact(Timeout = 30000)]
     public async Task Master_GrantsAnAgentNoInboundControlStreams()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -80,7 +80,7 @@ public class QuicControlStreamTests
     [Fact(Timeout = 30000)]
     public async Task ControlChannel_ReassemblesAFrameSplitAcrossSeparateWrites()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
 
         var acceptTask = harness.Listener.AcceptAsync(deadline.Token);
@@ -117,7 +117,7 @@ public class QuicControlStreamTests
     [Fact(Timeout = 30000)]
     public async Task CorruptFrame_FaultsOnlyItsOwnConnection_AndTheListenerKeepsServing()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
 
         var acceptTask = harness.Listener.AcceptAsync(deadline.Token);
@@ -160,7 +160,7 @@ public class QuicControlStreamTests
     [Fact(Timeout = 30000)]
     public async Task ControlChannel_RejectsAnOversizedLengthPrefix_WithoutBuffering()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
 
         var acceptTask = harness.Listener.AcceptAsync(deadline.Token);
@@ -187,7 +187,7 @@ public class QuicControlStreamTests
     [Fact(Timeout = 30000)]
     public async Task ReceiveAsync_Throws_WhenThePeerClosesTheStreamMidMessage()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
 
         var acceptTask = harness.Listener.AcceptAsync(deadline.Token);

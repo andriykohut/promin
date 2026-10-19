@@ -47,7 +47,7 @@ public class QuicReceiveQueueBoundTests
     [Fact(Timeout = 30000)]
     public async Task TheDefaultDepth_IsEightFrames()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -69,7 +69,7 @@ public class QuicReceiveQueueBoundTests
     [Fact(Timeout = 30000)]
     public async Task WhenTheBoundIsHit_TheOldestFramesAreLost_AndTheSessionTreatsItAsAGap()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(
             deadline.Token, inboundFrameQueueCapacity: 2);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);

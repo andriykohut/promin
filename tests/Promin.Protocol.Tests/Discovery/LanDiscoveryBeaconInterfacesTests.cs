@@ -263,7 +263,7 @@ public class LanDiscoveryBeaconInterfacesTests
         while (!interfaces.IsClosed(Second))
         {
             Assert.True(DateTime.UtcNow < deadline, "the socket of an address that left was never closed");
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
         listener.ForgetEverything();

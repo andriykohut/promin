@@ -762,12 +762,12 @@ public class BroadcastSessionTests
 
         // The manual clock runs the capture loop's continuation inline, and this source blocks, so the
         // advance goes on another thread.
-        var advancing = Task.Run(() => clock.Advance(TimeSpan.FromMilliseconds(100)));
+        var advancing = Task.Run(() => clock.Advance(TimeSpan.FromMilliseconds(100)), TestContext.Current.CancellationToken);
         await Eventually(() => source.Entered.IsSet, "the source to be producing frame 1, a delta");
         var late = new ScriptedVideoSink(OnCancel.Throw);
         session.AddClient("late", late);
         source.Release.Set();
-        await advancing.WaitAsync(WaitLimit);
+        await advancing.WaitAsync(WaitLimit, TestContext.Current.CancellationToken);
         await Eventually(() => first.ReceivedFrames.Count >= 2, "frame 1 to be fanned out");
 
         await TickHoldable(clock, source, 100); // frame 2: the keyframe the join forced
@@ -1156,10 +1156,10 @@ public class BroadcastSessionTests
         }
 
         await Eventually(() => session.FramesOfferedTo("pc") >= 6, "five frames queued behind the stuck one");
-        var removal = Task.Run(() => session.RemoveClient("pc"));
+        var removal = Task.Run(() => session.RemoveClient("pc"), TestContext.Current.CancellationToken);
         await Eventually(() => sink.FirstToken.IsCancellationRequested, "the client to be cancelled");
         sink.Finish();
-        await removal.WaitAsync(WaitLimit);
+        await removal.WaitAsync(WaitLimit, TestContext.Current.CancellationToken);
         session.Stop();
 
         Assert.Equal(1, sink.Calls);
@@ -1199,13 +1199,13 @@ public class BroadcastSessionTests
         session.Start();
         await Eventually(() => source.Entered.IsSet && sink.PassedCount >= 1, "the source to be blocked");
 
-        var stopping = Task.Run(session.Stop);
+        var stopping = Task.Run(session.Stop, TestContext.Current.CancellationToken);
 
         // Stop cancels the capture loop first and the clients after it, so a cancelled client token means
         // the capture loop has already been told to stop.
         await Eventually(() => sink.TokenOfCall(0).IsCancellationRequested, "Stop to be under way");
         source.Release.Set(); // now the source throws
-        await stopping.WaitAsync(WaitLimit);
+        await stopping.WaitAsync(WaitLimit, TestContext.Current.CancellationToken);
 
         Assert.Equal(0, failures);
     }
@@ -1332,7 +1332,7 @@ public class BroadcastSessionTests
             clock.Advance(TimeSpan.FromMilliseconds(100));
         }
 
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
         session.Stop();
 
         lock (failures)
@@ -1462,7 +1462,7 @@ public class BroadcastSessionTests
         session.Stop();
         var stopTook = clock.Elapsed;
         var callsAtStop = source.CallCount;
-        await Task.Delay(300); // several intervals: a loop that survived Stop would have called the source again
+        await Task.Delay(300, TestContext.Current.CancellationToken); // several intervals: a loop that survived Stop would have called the source again
 
         // Below Stop's own 2 s drain timeout, so a drain that timed out fails here.
         Assert.True(stopTook < TimeSpan.FromSeconds(1), $"Stop took {stopTook.TotalMilliseconds:0} ms");
@@ -1486,7 +1486,7 @@ public class BroadcastSessionTests
             clock.Advance(TimeSpan.FromMilliseconds(10));
         }
 
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
 
         Assert.Equal(callsAtStop, source.CallCount);
     }

@@ -203,7 +203,7 @@ public sealed class RoomConnectionsTests
         _answer = _ => Task.FromResult(new FakeConnection());
         connections.Want(Pc());
         Assert.Equal(2, _dials.Count);
-        await Task.Delay(50);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
         Assert.Single(_ended);   // the dropped connection's read loop does not report it a second time
     }
 
@@ -284,9 +284,8 @@ public sealed class RoomConnectionsTests
             (pc, _) => _answer(pc),
             () => _now,
             (_, _) => throw new InvalidOperationException("log is full"));
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-        Assert.Null(await connections.GetAsync(Pc(), cts.Token));
+        Assert.Null(await connections.GetAsync(Pc(), TestContext.Current.CancellationToken));
     }
 
     [Fact(Timeout = 10000)]
@@ -298,7 +297,7 @@ public sealed class RoomConnectionsTests
         connections.Want(Pc());
 
         var clock = Stopwatch.StartNew();
-        await connections.DisposeAsync();
+        await connections.DisposeAsync().AsTask().WaitAsync(TestContext.Current.CancellationToken);
 
         Assert.True(silent.Disposed);
         Assert.InRange(clock.Elapsed, TimeSpan.Zero, TimeSpan.FromSeconds(2));
