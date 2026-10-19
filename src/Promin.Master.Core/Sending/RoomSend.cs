@@ -69,7 +69,8 @@ public sealed class RoomSend(IFileSender sender, Func<string, PcTile?> tileOf, F
 
     public string StripText => _package is null ? string.Empty : StripKind switch
     {
-        SendStripKind.Sending => Phrase.Format(Strings.SendStrip_Have, ("have", Have), ("count", _pcs.Count), ("items", Items)),
+        // "0 of 9 already have it" would read wrong; the line waits for the first PC.
+        SendStripKind.Sending when Have > 0 => Phrase.Format(Strings.SendStrip_Have, ("have", Have), ("count", _pcs.Count), ("items", Items)),
         SendStripKind.SomeMissed => Missed switch
         {
             [var one] when SendText.Why(one.Reason) is { } why =>

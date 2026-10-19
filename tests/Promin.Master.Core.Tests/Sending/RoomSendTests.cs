@@ -158,9 +158,12 @@ public sealed class RoomSendTests
         _send.Start(package, open: false, EightOnline());
 
         Assert.Equal("Sending 3 items", _send.StripTitle);
-        Assert.Equal("0 of 8 have them.", _send.StripText);
 
-        Answer(SendOutcome.Sent, 1, 2, 3, 4, 5, 6, 7, 8);
+        Answer(SendOutcome.Sent, 1);
+
+        Assert.Equal("1 of 8 have them.", _send.StripText);
+
+        Answer(SendOutcome.Sent, 2, 3, 4, 5, 6, 7, 8);
 
         Assert.Equal("3 items sent to all 8 PCs.", _send.StripTitle);
     }
@@ -346,7 +349,7 @@ public sealed class RoomSendTests
         Assert.True(_send.IsRunning);
         Assert.Equal(TileSendMark.Sending, Tile(7).SendMark);
         Assert.Equal(TileSendMark.None, Tile(1).SendMark);
-        Assert.Equal("0 of 2 have it.", _send.StripText);
+        Assert.Equal(string.Empty, _send.StripText);
     }
 
     [Fact]
@@ -424,6 +427,6 @@ public sealed class RoomSendTests
 
         Assert.Equal(8, _sender.Sends.Count);
         Assert.Equal("Sending quiz-chapter-3.html", _send.StripTitle);
-        Assert.Equal("0 of 9 have it.", _send.StripText);
+        Assert.Equal(string.Empty, _send.StripText);
     }
 }
