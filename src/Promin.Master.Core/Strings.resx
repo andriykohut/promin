@@ -454,6 +454,9 @@
   <data name="Send_Send" xml:space="preserve">
     <value>Send</value>
   </data>
+  <data name="Send_RemoveName" xml:space="preserve">
+    <value>Remove {name}</value>
+  </data>
   <data name="Size_KB" xml:space="preserve">
     <value>{size} KB</value>
   </data>

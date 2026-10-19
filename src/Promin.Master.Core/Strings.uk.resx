@@ -438,6 +438,9 @@
   <data name="Send_Send" xml:space="preserve">
     <value>Надіслати</value>
   </data>
+  <data name="Send_RemoveName" xml:space="preserve">
+    <value>Вилучити {name}</value>
+  </data>
   <data name="Size_KB" xml:space="preserve">
     <value>{size} КБ</value>
   </data>

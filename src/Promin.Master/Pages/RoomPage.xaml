@@ -196,7 +196,8 @@
             IsOpen="{x:Bind Sending.IsStripOpen, Mode=OneWay}"
             Message="{x:Bind Sending.StripText, Mode=OneWay}"
             Severity="{x:Bind StripSeverity(Sending.StripKind), Mode=OneWay}"
-            Title="{x:Bind Sending.StripTitle, Mode=OneWay}">
+            Title="{x:Bind Sending.StripTitle, Mode=OneWay}"
+            Visibility="{x:Bind Sending.IsStripOpen, Mode=OneWay}">
             <InfoBar.ActionButton>
                 <Button
                     Click="StripAction_Click"

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Promin.Master.Core;
 using Promin.Master.Core.Sending;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
@@ -19,6 +20,9 @@ public sealed partial class SendFilesDialog : ContentDialog
         Model = new SendDialogModel(targets);
         InitializeComponent();
         To.SelectedIndex = Model.ToAll ? 1 : 0;
+
+        // A changed list may no longer hold the item Send could not read.
+        Model.Items.CollectionChanged += (_, _) => SourceError.IsOpen = false;
     }
 
     public SendDialogModel Model { get; }
@@ -33,6 +37,10 @@ public sealed partial class SendFilesDialog : ContentDialog
     public Visibility NotEmpty(string value) => string.IsNullOrEmpty(value) ? Visibility.Collapsed : Visibility.Visible;
 
     public static Visibility IsFile(bool isFolder) => isFolder ? Visibility.Collapsed : Visibility.Visible;
+
+    public static string RowName(string name, string sizeText) => $"{name}, {sizeText}";
+
+    public static string RemoveName(string name) => Phrase.Format(Strings.Send_RemoveName, ("name", name));
 
     // The pickers open over the window the dialog is in.
     private WindowId WindowId => XamlRoot.ContentIslandEnvironment.AppWindowId;
@@ -74,9 +82,24 @@ public sealed partial class SendFilesDialog : ContentDialog
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            SourceError.Message = e.Message;
+            // From does not say which pick failed, so each is sized again to name it; one that reads again by then is named by the exception.
+            var bad = Model.Items.FirstOrDefault(i => !Readable(i.Picked));
+            SourceError.Message = bad is null ? e.Message : Phrase.Format(Strings.SendStrip_SourceText, ("file", bad.Name));
             SourceError.IsOpen = true;
             args.Cancel = true;
+        }
+    }
+
+    private static bool Readable(PickedItem picked)
+    {
+        try
+        {
+            SendPackage.SizeOf(picked);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 

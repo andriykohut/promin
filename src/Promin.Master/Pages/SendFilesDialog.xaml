@@ -31,7 +31,7 @@
 
         <!-- One row of the list: a file or folder glyph, the name, the size, an X. -->
         <DataTemplate x:Key="ItemTemplate" x:DataType="sending:SendListItem">
-            <Grid ColumnSpacing="10">
+            <Grid AutomationProperties.Name="{x:Bind pages:SendFilesDialog.RowName(Name, SizeText)}" ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="24" />
                     <ColumnDefinition Width="*" />
@@ -64,7 +64,7 @@
                     Width="28"
                     Height="28"
                     Padding="0"
-                    AutomationProperties.Name="{x:Bind core:Strings.Remove}"
+                    AutomationProperties.Name="{x:Bind pages:SendFilesDialog.RemoveName(Name)}"
                     Background="Transparent"
                     BorderThickness="0"
                     Click="Remove_Click">
@@ -89,7 +89,10 @@
         </Grid.RowDefinitions>
 
         <!-- What: Add, then the list with its total line, or the dashed box while nothing is added. -->
-        <TextBlock Style="{StaticResource LabelStyle}" Text="{x:Bind core:Strings.Send_What}" />
+        <TextBlock
+            x:Name="WhatLabel"
+            Style="{StaticResource LabelStyle}"
+            Text="{x:Bind core:Strings.Send_What}" />
         <StackPanel Grid.Column="1" Spacing="6">
             <DropDownButton Margin="0,0,0,2" HorizontalAlignment="Left">
                 <StackPanel Orientation="Horizontal" Spacing="9">
@@ -119,6 +122,7 @@
                 <StackPanel>
                     <ListView
                         MaxHeight="216"
+                        AutomationProperties.LabeledBy="{x:Bind WhatLabel}"
                         ItemTemplate="{StaticResource ItemTemplate}"
                         ItemsSource="{x:Bind Model.Items}"
                         SelectionMode="None" />
@@ -163,6 +167,7 @@
 
         <!-- To: the selected PCs or all of them, and which of those are offline. -->
         <TextBlock
+            x:Name="ToLabel"
             Grid.Row="1"
             Style="{StaticResource LabelStyle}"
             Text="{x:Bind core:Strings.Send_To}" />
@@ -172,6 +177,7 @@
             Spacing="4">
             <RadioButtons
                 x:Name="To"
+                AutomationProperties.LabeledBy="{x:Bind ToLabel}"
                 MaxColumns="2"
                 SelectionChanged="To_SelectionChanged">
                 <RadioButton Content="{x:Bind Model.SelectedChoiceText}" IsEnabled="{x:Bind Model.CanChooseSelected}" />
