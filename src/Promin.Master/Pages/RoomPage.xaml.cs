@@ -155,7 +155,7 @@ public sealed partial class RoomPage : Page
         var dialog = new SendFilesDialog(ViewModel.SendTargets()) { XamlRoot = XamlRoot };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary && dialog.Package is { } package)
         {
-            Sending.Start(package, dialog.Model.OpenOnArrival, dialog.Model.Chosen);
+            Sending.Start(package, dialog.Model.OpenOnArrival, ViewModel.SendTargets().Current(dialog.Model.Chosen));
         }
     });
 
