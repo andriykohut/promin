@@ -104,9 +104,9 @@
         </Grid.RowDefinitions>
 
         <!--
-            The screen area, 16:10 (the height follows the width in code-behind). One of its three
+            The screen area, 16:10 (the height follows the width in code-behind). One of its first three
             children shows, as Tile.Screen says: the state glyph, the PC's screen picture, or the
-            note that the screen is not available.
+            note that the screen is not available. The send's ring and badges lie over whichever shows.
         -->
         <Grid
             x:Name="Screen"
@@ -178,6 +178,58 @@
                     Style="{StaticResource CaptionTextBlockStyle}"
                     Text="{x:Bind core:Strings.Tile_ScreenNotAvailable}" />
             </StackPanel>
+
+            <!-- A send to this PC: the picture dims under a ring with the percentage; then a tick, or a "!" when it did not get it. -->
+            <Border
+                Background="#73000000"
+                CornerRadius="5"
+                Visibility="{x:Bind SendingVisibility(Tile.SendMark), Mode=OneWay}">
+                <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <ProgressRing
+                        Width="44"
+                        Height="44"
+                        IsIndeterminate="False"
+                        Value="{x:Bind Tile.SendPercent, Mode=OneWay}" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Foreground="White"
+                        Text="{x:Bind PercentText(Tile.SendPercent), Mode=OneWay}" />
+                </Grid>
+            </Border>
+            <Border
+                Width="20"
+                Height="20"
+                Margin="0,6,6,0"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Background="{ThemeResource SystemFillColorSuccessBrush}"
+                CornerRadius="10"
+                Visibility="{x:Bind DoneVisibility(Tile.SendMark), Mode=OneWay}">
+                <FontIcon
+                    FontSize="10"
+                    Foreground="White"
+                    Glyph="&#xE73E;" />
+            </Border>
+            <Border
+                Width="20"
+                Height="20"
+                Margin="0,6,6,0"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Background="{ThemeResource SystemFillColorCriticalBrush}"
+                CornerRadius="10"
+                Visibility="{x:Bind NotSentVisibility(Tile.SendMark), Mode=OneWay}">
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    FontSize="10"
+                    FontWeight="Bold"
+                    Foreground="White"
+                    Text="!" />
+            </Border>
         </Grid>
 
         <!-- The checkbox, top left of the screen area, off air only; its halo keeps it readable over a dark picture. -->

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using Promin.Master.Controls;
+using Promin.Master.Core.Sending;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Video;
 using Microsoft.UI.Dispatching;
@@ -13,10 +14,10 @@ using Windows.UI.ViewManagement;
 namespace Promin.Master.Pages;
 
 /// <summary>
-/// The room wall. Everything it shows comes from <see cref="RoomWallViewModel"/>; this file only
-/// binds, forwards clicks, ticks the view model once a second, opens the two dialogs, and plays the
-/// one animation the design allows. The page is kept across navigation so the wall, and a running
-/// broadcast, survive a visit to Set up devices.
+/// The room wall. Everything it shows comes from <see cref="RoomWallViewModel"/> and, for a send,
+/// <see cref="RoomSend"/>; this file only binds, forwards clicks, ticks them once a second, opens the
+/// dialogs, and plays the one animation the design allows. The page is kept across navigation so the
+/// wall, and a running broadcast or send, survive a visit to Set up devices.
 /// </summary>
 public sealed partial class RoomPage : Page
 {
@@ -38,12 +39,21 @@ public sealed partial class RoomPage : Page
             services.WallSettings,
             () => DateTimeOffset.Now,
             action => DispatcherQueue.TryEnqueue(() => action()));
+        Sending = new RoomSend(
+            services.Files,
+            deviceId => ViewModel.Tiles.FirstOrDefault(t => t.DeviceId == deviceId),
+            () => DateTimeOffset.Now,
+            action => DispatcherQueue.TryEnqueue(() => action()));
 
         InitializeComponent();
 
         _timer = DispatcherQueue.CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(1);
-        _timer.Tick += (_, _) => ViewModel.Tick();
+        _timer.Tick += (_, _) =>
+        {
+            ViewModel.Tick();
+            Sending.Tick();
+        };
 
         var fade = new DoubleAnimation { From = 1, To = 0.3, Duration = new Duration(TimeSpan.FromMilliseconds(900)) };
         Storyboard.SetTarget(fade, Pulse);
@@ -54,6 +64,8 @@ public sealed partial class RoomPage : Page
     }
 
     public RoomWallViewModel ViewModel { get; }
+
+    public RoomSend Sending { get; }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -80,6 +92,16 @@ public sealed partial class RoomPage : Page
         WallMessageKind.Warning => InfoBarSeverity.Warning,
         _ => InfoBarSeverity.Informational,
     };
+
+    public InfoBarSeverity StripSeverity(SendStripKind kind) => kind switch
+    {
+        SendStripKind.SomeMissed => InfoBarSeverity.Warning,
+        SendStripKind.AllSent => InfoBarSeverity.Success,
+        SendStripKind.SourceFailed => InfoBarSeverity.Error,
+        _ => InfoBarSeverity.Informational,
+    };
+
+    public bool CanSendFiles(bool sending, bool emptyRoom) => !sending && !emptyRoom;
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -122,6 +144,21 @@ public sealed partial class RoomPage : Page
     private void SelectAll_Click(object sender, RoutedEventArgs e) => ViewModel.SelectAll();
 
     private void Clear_Click(object sender, RoutedEventArgs e) => ViewModel.ClearSelection();
+
+    // The send: the window, then the strip's button and X.
+
+    private async void SendFiles_Click(object sender, RoutedEventArgs e) => await Guarded(async () =>
+    {
+        var dialog = new SendFilesDialog(ViewModel.SendTargets()) { XamlRoot = XamlRoot };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary && dialog.Package is { } package)
+        {
+            Sending.Start(package, dialog.Model.OpenOnArrival, dialog.Model.Chosen);
+        }
+    });
+
+    private void StripAction_Click(object sender, RoutedEventArgs e) => Sending.StripAction();
+
+    private void SendStrip_CloseButtonClick(InfoBar sender, object args) => Sending.CloseStrip();
 
     // The picker: the two groups show the view model's choice when it opens and hand a change back.
 

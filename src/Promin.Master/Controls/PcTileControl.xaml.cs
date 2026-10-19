@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Promin.Master.Core;
+using Promin.Master.Core.Sending;
 using Promin.Master.Core.Wall;
 using Promin.MediaPipeline.Pictures;
 using Microsoft.UI.Xaml;
@@ -75,6 +76,14 @@ public sealed partial class PcTileControl : UserControl
 
     public string FramesText(int dropped, int offered) =>
         Phrase.Format(Strings.Tile_FramesOf, ("dropped", dropped.ToString("N0")), ("offered", offered.ToString("N0")));
+
+    public Visibility SendingVisibility(TileSendMark mark) => mark == TileSendMark.Sending ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility DoneVisibility(TileSendMark mark) => mark == TileSendMark.Done ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility NotSentVisibility(TileSendMark mark) => mark == TileSendMark.NotSent ? Visibility.Visible : Visibility.Collapsed;
+
+    public string PercentText(int percent) => $"{percent}%";
 
     private static Timeline Animate(DependencyObject target, string property, double from, double to)
     {
