@@ -13,8 +13,8 @@ internal interface ISignedInPerson
     string? Name { get; }
 
     /// <summary>
-    /// Their Desktop and LocalAppData as Windows reports them; null when nobody is signed in. Throws when Windows
-    /// cannot give them.
+    /// Their Desktop and LocalAppData as Windows reports them, which may not exist yet; null when nobody is signed
+    /// in. Throws when Windows cannot give them.
     /// </summary>
     PersonFolders? Folders();
 

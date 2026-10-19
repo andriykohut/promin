@@ -211,6 +211,9 @@ internal static class NativeMethods
     public static readonly Guid FOLDERID_Desktop = new("B4BFCC3A-DB2C-424C-B029-7FE99A87C641");
     public static readonly Guid FOLDERID_LocalAppData = new("F1B32785-6FBA-4FCF-9D55-7B8E7F157091");
 
+    /// <summary>SHGetKnownFolderPath returns the path without checking that the folder exists, so it touches nothing on disk.</summary>
+    public const uint KF_FLAG_DONT_VERIFY = 0x00004000;
+
     // The access a primary token needs to launch a process with CreateProcessAsUser, and to be retargeted to another
     // session: TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID.
     public const uint TOKEN_FOR_PRIMARY = 0x0001 | 0x0002 | 0x0008 | 0x0080 | 0x0100;

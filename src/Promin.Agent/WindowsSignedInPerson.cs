@@ -48,8 +48,8 @@ internal sealed class WindowsSignedInPerson(string executablePath) : ISignedInPe
         {
             var user = token?.DangerousGetHandle() ?? nint.Zero; // zero asks for this process's own user's folders
             return new PersonFolders(
-                SHGetKnownFolderPath(FOLDERID_Desktop, 0, user),
-                SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, user));
+                SHGetKnownFolderPath(FOLDERID_Desktop, KF_FLAG_DONT_VERIFY, user),
+                SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DONT_VERIFY, user));
         }
     }
 
