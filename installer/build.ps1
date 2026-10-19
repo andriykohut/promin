@@ -2,11 +2,12 @@
 # Publishes the Promin apps into artifacts\publish and builds their setups into artifacts\setup, for copying to a
 # USB stick. Needs the .NET SDK and Inno Setup 6.
 
+# The release workflow passes the version from the tag.
+param([string]$Version = '0.1.0')
+
 $ErrorActionPreference = 'Stop'
 # A native command that exits non-zero stops the script too, the same as a failing cmdlet.
 $PSNativeCommandUseErrorActionPreference = $true
-
-$Version = '0.1.0'
 
 $root = Split-Path $PSScriptRoot -Parent
 $publish = Join-Path $root 'artifacts\publish'

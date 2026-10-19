@@ -1,0 +1,23 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    # The image has Inno Setup 6, which build.ps1 needs.
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - run: ./installer/build.ps1 -Version $env:GITHUB_REF_NAME.TrimStart('v')
+        shell: pwsh
+      - run: gh release create $env:GITHUB_REF_NAME (Get-Item 'artifacts/setup/*.exe') --generate-notes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
