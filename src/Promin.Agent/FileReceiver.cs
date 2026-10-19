@@ -12,11 +12,14 @@ namespace Promin.Agent;
 /// <param name="log">Called as the agent itself, never inside the person's identity.</param>
 internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> log)
 {
+    /// <summary>How long a send waits for its helper to end before logging it as still running.</summary>
+    private static readonly TimeSpan HelperWait = TimeSpan.FromSeconds(10);
+
     /// <summary>
-    /// Runs until the connection ends or <paramref name="ct"/> is cancelled, then waits for the sends under way. A
-    /// send that arrives while another is being received is refused <see cref="SendOutcome.Busy"/>; one whose
-    /// files are all in place, and is only starting the helper, does not hold the next. Throws nothing for what the
-    /// connection or the console PC does.
+    /// Runs until the connection ends or <paramref name="ct"/> is cancelled, then waits for the sends under way,
+    /// each for up to <see cref="HelperWait"/> more while its helper runs. A send that arrives while another is
+    /// being received is refused <see cref="SendOutcome.Busy"/>; one whose files are all in place, and is only
+    /// waiting for the helper, does not hold the next. Throws nothing for what the connection or the console PC does.
     /// </summary>
     public async Task RunAsync(IAgentConnection connection, CancellationToken ct)
     {
@@ -54,7 +57,8 @@ internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> 
 
     /// <summary>
     /// Receives one send and starts the helper for it, completing <paramref name="exchanged"/> as soon as the send
-    /// no longer uses the staging folder. Throws nothing.
+    /// no longer uses the staging folder. Logs a helper that cannot start, fails, or is still running after
+    /// <see cref="HelperWait"/>. Throws nothing.
     /// </summary>
     private async Task ReceiveAsync(IIncomingSend send, TaskCompletionSource exchanged, CancellationToken ct)
     {
@@ -91,20 +95,32 @@ internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> 
                     return;
                 }
 
+                int? helper;
                 try
                 {
-                    await signedIn.RunHelperAsync(
+                    helper = await signedIn.RunHelperAsync(
                         [
                             "--received",
                             target.TopLevel.Count.ToString(CultureInfo.InvariantCulture),
                             promin,
                             .. OpenPlan.For(target.TopLevel, send.Header.Open, promin),
                         ],
-                        TimeSpan.Zero).ConfigureAwait(false);
+                        HelperWait).ConfigureAwait(false);
                 }
                 catch (Exception e)
                 {
                     log($"The helper that opens what was sent could not be started: {e.Message}");
+                    return;
+                }
+
+                // The helper prints nothing, so its exit code is all there is to log.
+                if (helper is null)
+                {
+                    log($"The helper that opens what was sent or shows the notice was still running after {HelperWait.TotalSeconds:0} seconds.");
+                }
+                else if (helper != ExitCodes.Success)
+                {
+                    log($"The helper that opens what was sent or shows the notice failed with code {helper}.");
                 }
             }
             catch (Exception e) when (!exchanging)

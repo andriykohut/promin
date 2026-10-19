@@ -72,7 +72,7 @@ public class FileReceiverTests
                 _helpers.Add(arguments);
             }
 
-            return HelperFailure is { } failure ? Task.FromException<int?>(failure) : HelperStarting ?? Task.FromResult<int?>(null);
+            return HelperFailure is { } failure ? Task.FromException<int?>(failure) : HelperStarting ?? Task.FromResult<int?>(ExitCodes.Success);
         }
     }
 
@@ -437,6 +437,29 @@ public class FileReceiverTests
         Assert.Contains(rig.Log, line => line.Contains("The system cannot find the file specified."));
         Assert.Null(next.Refused);
         Assert.Equal(2, rig.Person.Helpers.Length);
+    }
+
+    [Fact]
+    public async Task AHelperThatFails_IsLogged_AsTheAgent_WithItsCode()
+    {
+        await using var rig = new Rig();
+        rig.Person.HelperStarting = Task.FromResult<int?>(ExitCodes.Unexpected);
+
+        await rig.ReceiveAsync(rig.Send(open: true, "a.txt"));
+
+        Assert.Contains(rig.Log, line => line.Contains("helper") && line.Contains("failed with code 1"));
+        Assert.Equal(0, rig.LinesLoggedAsPerson);
+    }
+
+    [Fact]
+    public async Task AHelperStillRunningAfterTheWait_IsLogged()
+    {
+        await using var rig = new Rig();
+        rig.Person.HelperStarting = Task.FromResult<int?>(null);
+
+        await rig.ReceiveAsync(rig.Send(open: true, "a.txt"));
+
+        Assert.Contains(rig.Log, line => line.Contains("helper") && line.Contains("still running after 10 seconds"));
     }
 
     [Fact]
