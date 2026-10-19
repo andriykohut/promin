@@ -116,11 +116,10 @@ public sealed partial class SetupPage : Page
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => ViewModel.Cancel();
 
-    // Row actions. Each button sits inside the row's template, so its DataContext is the row;
-    // the flyout items carry the row in their Tag because a flyout is not in the row's tree.
+    // Row actions. Each button and flyout item carries its row in its Tag: the ItemsRepeater
+    // leaves the template's DataContext unset, and a flyout is not in the row's tree anyway.
 
-    private static SetupRow? RowOf(object sender) =>
-        (sender as FrameworkElement)?.DataContext as SetupRow ?? (sender as FrameworkElement)?.Tag as SetupRow;
+    private static SetupRow? RowOf(object sender) => (sender as FrameworkElement)?.Tag as SetupRow;
 
     /// <summary>Pair, and Try again: the row with the main field's code.</summary>
     private async void Pair_Click(object sender, RoutedEventArgs e)
