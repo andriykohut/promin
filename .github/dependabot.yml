@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # The Vortice packages share one core library, so they move together.
+      vortice:
+        patterns: ['Vortice.*']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
