@@ -499,7 +499,7 @@
     <value>надсилання зупинено</value>
   </data>
   <data name="SendStrip_NotSent" xml:space="preserve">
-    <value>{what} не надіслано.</value>
+    <value>{items, plural, other {{what} не надіслано.}}</value>
   </data>
   <data name="Send_Items" xml:space="preserve">
     <value>{count, plural, one {# елемент} few {# елементи} many {# елементів} other {# елемента}}</value>

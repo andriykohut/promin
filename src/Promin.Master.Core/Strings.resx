@@ -515,7 +515,7 @@
     <value>the send was stopped</value>
   </data>
   <data name="SendStrip_NotSent" xml:space="preserve">
-    <value>{what} was not sent.</value>
+    <value>{what} {items, plural, one {was} other {were}} not sent.</value>
   </data>
   <data name="Send_Items" xml:space="preserve">
     <value>{count} items</value>

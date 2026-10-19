@@ -58,7 +58,7 @@ public sealed class RoomSend(IFileSender sender, Func<string, PcTile?> tileOf, F
     public string StripTitle => _package is null ? string.Empty : StripKind switch
     {
         SendStripKind.Sending => Phrase.Format(Strings.SendStrip_Sending, ("what", What)),
-        SendStripKind.SomeMissed when Have == 0 => Phrase.Format(Strings.SendStrip_NotSent, ("what", What)),
+        SendStripKind.SomeMissed when Have == 0 => Phrase.Format(Strings.SendStrip_NotSent, ("what", What), ("items", Items)),
         SendStripKind.SomeMissed => SentTo,
 
         // "Sent to all 1 PCs" would read wrong.

@@ -69,6 +69,12 @@ public sealed class StringsTests
     public void UkrainianSendCount_AgreesWithThePcsAndTheItems(int have, int count, int items, string expected) =>
         Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.SendStrip_Have, ("have", have), ("count", count), ("items", items))));
 
+    [Theory]
+    [InlineData(1, "quiz-chapter-3.html не надіслано.")]
+    [InlineData(3, "3 елементи не надіслано.")]
+    public void UkrainianNotSent_ReadsTheSameForAnyCount(int items, string expected) =>
+        Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.SendStrip_NotSent, ("what", items == 1 ? "quiz-chapter-3.html" : "3 елементи"), ("items", items))));
+
     [Fact]
     public void ANameWithBracesOrAnApostrophe_IsShownAsTyped() =>
         Assert.Equal("{PC}'s is back.", WallMessage.IsBack("{PC}'s").Title);

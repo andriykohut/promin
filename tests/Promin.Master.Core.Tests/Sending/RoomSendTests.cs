@@ -274,6 +274,17 @@ public sealed class RoomSendTests
     }
 
     [Fact]
+    public void NoPcGotSeveralItems_SaysTheyWereNotSent()
+    {
+        _send.Start(FakeFileSender.Package(("a.txt", 10), ("b.txt", 10), ("c.txt", 10)), open: false, NineWithSevenOffline());
+
+        _send.StripAction();
+
+        Assert.Equal("3 items were not sent.", _send.StripTitle);
+        Assert.Equal("9 PCs did not get them.", _send.StripText);
+    }
+
+    [Fact]
     public void SomeMissed_ByMoreThanOnePc_CountsThem()
     {
         _send.Start(Quiz, open: false, NineWithSevenOffline());
