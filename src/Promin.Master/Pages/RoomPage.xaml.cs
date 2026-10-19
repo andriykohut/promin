@@ -86,6 +86,9 @@ public sealed partial class RoomPage : Page
 
     public Visibility SelectionLinksVisibility(bool onAir, bool emptyRoom) => onAir || emptyRoom ? Visibility.Collapsed : Visibility.Visible;
 
+    public Visibility SeparatorVisibility(bool onAir, bool emptyRoom, int line2Length) =>
+        line2Length > 0 ? SelectionLinksVisibility(onAir, emptyRoom) : Visibility.Collapsed;
+
     public InfoBarSeverity SeverityOf(WallMessageKind kind) => kind switch
     {
         WallMessageKind.Error => InfoBarSeverity.Error,
