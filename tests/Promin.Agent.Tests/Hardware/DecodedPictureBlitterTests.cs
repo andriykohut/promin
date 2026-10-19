@@ -2,7 +2,6 @@ using Promin.MediaPipeline.Capture;
 using Promin.MediaPipeline.Decoding;
 using Promin.MediaPipeline.Encoding;
 using Promin.Protocol.Video;
-using Xunit.Abstractions;
 using static Promin.Agent.Tests.Hardware.GpuPictures;
 
 namespace Promin.Agent.Tests.Hardware;

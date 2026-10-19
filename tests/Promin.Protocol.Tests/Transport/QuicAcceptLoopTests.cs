@@ -9,7 +9,6 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Promin.Protocol.Messages;
 using Promin.Protocol.Transport;
-using Xunit.Abstractions;
 
 namespace Promin.Protocol.Tests.Transport;
 
@@ -35,7 +34,7 @@ public class QuicAcceptLoopTests(ITestOutputHelper output)
     [Fact(Timeout = 60000)]
     public async Task StartAsync_Throws_WhenTheCertificateHasNoPrivateKey()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(30);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 30);
         using var whole = SelfSignedCertificateFactory.Create("agent-broken");
         using var publicOnly = X509CertificateLoader.LoadCertificate(whole.RawData);
         Assert.False(publicOnly.HasPrivateKey);
@@ -50,7 +49,7 @@ public class QuicAcceptLoopTests(ITestOutputHelper output)
     [Fact(Timeout = 60000)]
     public async Task StartAsync_Throws_WhenTheCertificateHasAnEphemeralKey()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(30);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 30);
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest("CN=agent-ephemeral", key, HashAlgorithmName.SHA256);
         using var inMemory = request.CreateSelfSigned(
@@ -95,7 +94,7 @@ public class QuicAcceptLoopTests(ITestOutputHelper output)
     [Fact(Timeout = 120000)]
     public async Task AcceptLoop_KeepsServing_WhateverAPeerDoesToIt()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(90);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 90);
         var seen = new ConcurrentQueue<Exception>();
         await using var harness = await QuicLoopbackHarness.StartAsync(
             deadline.Token, connectionRejected: seen.Enqueue);
@@ -177,7 +176,7 @@ public class QuicAcceptLoopTests(ITestOutputHelper output)
     [Fact(Timeout = 30000)]
     public async Task AcceptLoop_Survives_ARejectionCallbackThatThrows()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         var reported = 0;
         await using var harness = await QuicLoopbackHarness.StartAsync(
             deadline.Token,
@@ -220,7 +219,7 @@ public class QuicAcceptLoopTests(ITestOutputHelper output)
     public async Task AFloodOfRefusedDials_DoesNotDelayALegitimateMaster()
     {
         const int refusedDials = 50;
-        using var deadline = QuicLoopbackHarness.Deadline(90);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 90);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         using var stranger = SelfSignedCertificateFactory.Create("master-stranger");
 
@@ -265,7 +264,7 @@ public class QuicAcceptLoopTests(ITestOutputHelper output)
     [Fact(Timeout = 60000)]
     public async Task AcceptLoop_KeepsServing_AfterManyConsecutiveRejections()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(40);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 40);
         var reported = 0;
         await using var harness = await QuicLoopbackHarness.StartAsync(
             deadline.Token, connectionRejected: _ => Interlocked.Increment(ref reported));
@@ -317,7 +316,8 @@ public class QuicAcceptLoopTests(ITestOutputHelper output)
             deliver: (_, _) => ValueTask.CompletedTask,
             acceptFailed: _ => Interlocked.Increment(ref reported));
 
-        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        stop.CancelAfter(TimeSpan.FromSeconds(1));
         await pump.RunAsync(stop.Token);
 
         output.WriteLine($"{attempts} accept attempts in one second");
@@ -360,7 +360,7 @@ public class QuicAcceptLoopTests(ITestOutputHelper output)
 
         using var stop = new CancellationTokenSource();
         var running = pump.RunAsync(stop.Token);
-        await parked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await parked.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         output.WriteLine($"{burst} failures consumed in {started.Elapsed.TotalMilliseconds:0.0} ms");
         Assert.True(burst < QuicAcceptPump.MaxFailuresPerInterval);
@@ -415,7 +415,7 @@ public class QuicAcceptLoopTests(ITestOutputHelper output)
         using var stop = new CancellationTokenSource();
         var running = pump.RunAsync(stop.Token);
 
-        await parked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await parked.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         Assert.False(running.IsCompleted, "the pump stopped on one of the exceptions");
         Assert.Equal(anything, reported.ToArray());
 
@@ -449,7 +449,7 @@ public class QuicAcceptLoopTests(ITestOutputHelper output)
         using var stop = new CancellationTokenSource();
         var running = pump.RunAsync(stop.Token);
 
-        await parked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await parked.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         Assert.False(running.IsCompleted, "the pump died on a throwing callback");
 
         await stop.CancelAsync();

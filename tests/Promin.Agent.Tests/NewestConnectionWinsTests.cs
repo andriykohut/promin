@@ -30,7 +30,7 @@ public class NewestConnectionWinsTests
             return Task.CompletedTask;
         }, CancellationToken.None);
 
-        await Task.Delay(100);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
         Assert.DoesNotContain("newer started", events); // the older one has not finished yet
 
         olderStopping.SetResult();
@@ -53,7 +53,7 @@ public class NewestConnectionWinsTests
             return Task.CompletedTask;
         }, CancellationToken.None);
 
-        await ran.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await ran.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -105,6 +105,6 @@ public class NewestConnectionWinsTests
 
         await shutdown.CancelAsync();
 
-        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }
 }

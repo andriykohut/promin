@@ -295,7 +295,7 @@ public class FileReceiverTests
         Assert.Contains(rig.Log, line => line.Contains("Busy"));
 
         first.LetGo();
-        await first.Done.WaitAsync(TimeSpan.FromSeconds(10));
+        await first.Done.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         Assert.Null(first.Refused);
         Assert.Single(rig.Person.Helpers);
     }
@@ -409,7 +409,7 @@ public class FileReceiverTests
 
         Assert.Null(next.Refused);
         helper.SetResult(null);
-        await next.Done.WaitAsync(TimeSpan.FromSeconds(10));
+        await next.Done.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -469,7 +469,7 @@ public class FileReceiverTests
 
         rig.Connection.Lose();
 
-        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5));
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.True(rig.Running.IsCompletedSuccessfully);
     }
 
@@ -482,11 +482,11 @@ public class FileReceiverTests
         rig.Connection.Offer(send);
 
         rig.Connection.Lose();
-        await Task.Delay(100);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
         Assert.False(rig.Running.IsCompleted);
 
         send.LetGo();
-        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5));
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.True(send.Done.IsCompleted);
     }
 }

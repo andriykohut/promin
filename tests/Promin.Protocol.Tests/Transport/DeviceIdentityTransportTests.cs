@@ -61,7 +61,7 @@ public sealed class DeviceIdentityTransportTests : IDisposable
     [Fact(Timeout = 60000)]
     public async Task KeyStoreBackedCertificates_PairAndConnect_OverRealQuic_OnBothSides()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(30);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 30);
         X509Certificate2? agentCertificate = null;
         X509Certificate2? masterCertificate = null;
 

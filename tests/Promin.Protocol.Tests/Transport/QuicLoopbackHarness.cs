@@ -66,10 +66,15 @@ internal sealed class QuicLoopbackHarness : IAsyncDisposable
 
     /// <summary>
     /// Deadline applied to every await in these tests: a transport regression must fail loudly
-    /// rather than hang a CI run forever.
+    /// rather than hang a CI run forever. It also ends when <paramref name="test"/> is cancelled,
+    /// which xunit does once the test's Timeout has passed.
     /// </summary>
-    public static CancellationTokenSource Deadline(int seconds = 15) =>
-        new(TimeSpan.FromSeconds(seconds));
+    public static CancellationTokenSource Deadline(CancellationToken test, int seconds = 15)
+    {
+        var deadline = CancellationTokenSource.CreateLinkedTokenSource(test);
+        deadline.CancelAfter(TimeSpan.FromSeconds(seconds));
+        return deadline;
+    }
 
     public static async Task<QuicLoopbackHarness> StartAsync(
         CancellationToken ct,

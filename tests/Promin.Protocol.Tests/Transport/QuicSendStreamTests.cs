@@ -18,7 +18,7 @@ public class QuicSendStreamTests
     [Fact(Timeout = 30000)]
     public async Task BytesFollowAMessage_AndAMessageFollowsTheBytes()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
         var (masterControl, agentPending) =
@@ -34,7 +34,7 @@ public class QuicSendStreamTests
             await masterControl.SendAsync(item, deadline.Token);
             await masterControl.SendBytesAsync(sent, deadline.Token);
             await masterControl.SendAsync(new SendEnd(), deadline.Token);
-        });
+        }, TestContext.Current.CancellationToken);
 
         await using var agentControl = await agentPending;
         Assert.Equal(item, await agentControl.ReceiveAsync(deadline.Token));
@@ -53,7 +53,7 @@ public class QuicSendStreamTests
     [Fact(Timeout = 30000)]
     public async Task ReceiveBytes_WhenTheStreamEndsEarly_Throws()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
         var (masterControl, agentPending) =
@@ -75,7 +75,7 @@ public class QuicSendStreamTests
     [Fact(Timeout = 30000)]
     public async Task StopReceiving_FailsThePeersWrites_ButTheReplyStillArrives()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
         var (masterControl, agentPending) =

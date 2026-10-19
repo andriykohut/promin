@@ -199,14 +199,14 @@ public class AgentHostTests
         var running = rig.RunAsync();
         for (var i = 0; i < 400 && !rig.LogText.Contains("Announcing"); i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
         Assert.Contains("Listening on", rig.LogText);
         Assert.False(running.IsCompleted); // it runs until it is told to stop
 
         await rig.Stop.CancelAsync();
-        var exitCode = await running.WaitAsync(TimeSpan.FromSeconds(5));
+        var exitCode = await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Equal(0, exitCode);
         Assert.True(rig.Listener.Disposed);
@@ -237,11 +237,11 @@ public class AgentHostTests
         var running = rig.RunAsync();
         for (var i = 0; i < 400 && order.Count < 2; i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
         await rig.Stop.CancelAsync();
-        await running.WaitAsync(TimeSpan.FromSeconds(5));
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Equal(["listener started", "beacon started"], order);
     }

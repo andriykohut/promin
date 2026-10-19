@@ -2,7 +2,6 @@ using Promin.MediaPipeline.Capture;
 using Promin.MediaPipeline.Encoding;
 using Promin.Protocol.Messages;
 using Promin.Protocol.Video;
-using Xunit.Abstractions;
 using static Promin.Agent.Tests.Hardware.GpuPictures;
 
 namespace Promin.Agent.Tests.Hardware;
@@ -154,20 +153,20 @@ public class BroadcastDisplayTests(ITestOutputHelper output)
                 await display.SubmitFrameAsync(payload, CancellationToken.None); // never faults, whatever the display is doing
                 await Task.Delay(20);
             }
-        });
+        }, TestContext.Current.CancellationToken);
 
         for (var i = 0; i < 500 && !Logged("The first picture is on screen") && !Logged("failed"); i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
         Assert.True(Logged("The first picture is on screen"), "no picture was ever shown, so there was nothing to remove");
         Assert.True(display.IsOpen);
 
-        var stopped = Task.Run(display.Dispose);
+        var stopped = Task.Run(display.Dispose, TestContext.Current.CancellationToken);
 
-        await stopped.WaitAsync(TimeSpan.FromSeconds(15));
-        await feeding.WaitAsync(TimeSpan.FromSeconds(15));
+        await stopped.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        await feeding.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
         Assert.False(display.IsOpen);
         Assert.False(Logged("failed"), "the display failed");
         Assert.True(Summary.Parse(log.Single(line => line.Contains("The display ended."))).Shown >= 1);
@@ -195,7 +194,7 @@ public class BroadcastDisplayTests(ITestOutputHelper output)
                 await display.SubmitFrameAsync(payload, CancellationToken.None);
             }
 
-            await Task.Delay(500);
+            await Task.Delay(500, TestContext.Current.CancellationToken);
         }
         finally
         {

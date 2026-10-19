@@ -2,7 +2,6 @@ using System.Runtime.InteropServices;
 using Promin.MediaPipeline.Capture;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
-using Xunit.Abstractions;
 
 namespace Promin.MediaPipeline.Tests.Capture;
 

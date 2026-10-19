@@ -48,7 +48,7 @@ public class LanDiscoveryLoopbackTests
 
         scanner.Start();
         beacon.Start();
-        var (announcement, from) = await discovered.Task.WaitAsync(Patience);
+        var (announcement, from) = await discovered.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
 
         Assert.Equal(new DiscoveryAnnouncement(DeviceId, "PC-04", 17843, Thumbprint), announcement);
         Assert.Equal(IPAddress.Loopback, from);
@@ -70,10 +70,10 @@ public class LanDiscoveryLoopbackTests
         };
 
         beacon.Start();
-        await Task.Delay(150);          // the first announcements go to a socket nobody is reading yet
+        await Task.Delay(150, TestContext.Current.CancellationToken);          // the first announcements go to a socket nobody is reading yet
         scanner.Start();
 
-        await three.Task.WaitAsync(Patience);
+        await three.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -106,7 +106,7 @@ public class LanDiscoveryLoopbackTests
             new DiscoveryAnnouncement(DeviceId, "PC-04", 17843, "not-a-thumbprint").Encode());
         SendRaw(scanner.LocalPort,
             new DiscoveryAnnouncement(DeviceId, "PC-04", 17843, Thumbprint).Encode());   // the one good one
-        await good.Task.WaitAsync(Patience);
+        await good.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
 
         // Datagrams from one socket to one socket arrive in order on loopback, so everything
         // sent before the good one has been looked at by now.
@@ -138,7 +138,7 @@ public class LanDiscoveryLoopbackTests
         SendRaw(scanner.LocalPort, datagram);
         SendRaw(scanner.LocalPort, datagram);
 
-        await second.Task.WaitAsync(Patience);
+        await second.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -153,7 +153,7 @@ public class LanDiscoveryLoopbackTests
             "{\"Magic\":\"PROMIN-ANNOUNCE-V1\",\"DeviceId\":\"" + DeviceId + "\"," +
             "\"DisplayName\":\"  PC-04\\u0007\\n \",\"QuicPort\":17843,\"CertificateThumbprint\":\"" + Thumbprint + "\"}"));
 
-        Assert.Equal("PC-04", (await discovered.Task.WaitAsync(Patience)).DisplayName);
+        Assert.Equal("PC-04", (await discovered.Task.WaitAsync(Patience, TestContext.Current.CancellationToken)).DisplayName);
     }
 
     [Fact]
@@ -171,13 +171,13 @@ public class LanDiscoveryLoopbackTests
         scanner.Start();
         var datagram = new DiscoveryAnnouncement(DeviceId, "PC-04", 17843, Thumbprint).Encode();
         SendRaw(port, datagram);
-        await first.Task.WaitAsync(Patience);
+        await first.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
 
         scanner.Dispose();
         scanner.Dispose();      // twice is fine
         var before = Volatile.Read(ref count);
         SendRaw(port, datagram);
-        await Task.Delay(200);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
 
         Assert.Equal(before, Volatile.Read(ref count));
         Assert.Throws<ObjectDisposedException>(() => scanner.Start());
@@ -202,7 +202,7 @@ public class LanDiscoveryLoopbackTests
 
         SendRaw(scanner.LocalPort, new DiscoveryAnnouncement(DeviceId, "PC-04", 17843, Thumbprint).Encode());
 
-        Assert.True(await elapsed.Task.WaitAsync(Patience) < TimeSpan.FromMilliseconds(500));
+        Assert.True(await elapsed.Task.WaitAsync(Patience, TestContext.Current.CancellationToken) < TimeSpan.FromMilliseconds(500));
     }
 
     [Fact]
@@ -229,17 +229,17 @@ public class LanDiscoveryLoopbackTests
         var port = ((IPEndPoint)listener.Client.LocalEndPoint!).Port;
         var beacon = BeaconAt(port, intervalMs: 20);
         beacon.Start();
-        await listener.ReceiveAsync().WaitAsync(Patience);   // it is sending
+        await listener.ReceiveAsync(TestContext.Current.CancellationToken).AsTask().WaitAsync(Patience, TestContext.Current.CancellationToken);   // it is sending
 
         beacon.Dispose();
         beacon.Dispose();       // twice is fine
-        await Task.Delay(100);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
         while (listener.Available > 0)
         {
-            await listener.ReceiveAsync();      // drain what was already in flight
+            await listener.ReceiveAsync(TestContext.Current.CancellationToken);      // drain what was already in flight
         }
 
-        await Task.Delay(200);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
         Assert.Equal(0, listener.Available);
     }
 

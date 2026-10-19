@@ -46,9 +46,9 @@ public class DisplayMailboxTests
     public async Task ThreeFramesWaiting_AreDecodedInOrder_AndTheNewestIsShownOnce()
     {
         var (mailbox, session, presenter, _) = Create();
-        await mailbox.SubmitAsync(Frame(0, true), default);
-        await mailbox.SubmitAsync(Frame(1, false), default);
-        await mailbox.SubmitAsync(Frame(2, false), default);
+        await mailbox.SubmitAsync(Frame(0, true), TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(1, false), TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(2, false), TestContext.Current.CancellationToken);
 
         mailbox.Drain(session);
 
@@ -61,9 +61,9 @@ public class DisplayMailboxTests
     public async Task AFrameThatArrivesAloneIsShown()
     {
         var (mailbox, session, presenter, _) = Create();
-        await mailbox.SubmitAsync(Frame(0, true), default);
+        await mailbox.SubmitAsync(Frame(0, true), TestContext.Current.CancellationToken);
         mailbox.Drain(session);
-        await mailbox.SubmitAsync(Frame(1, false), default);
+        await mailbox.SubmitAsync(Frame(1, false), TestContext.Current.CancellationToken);
         mailbox.Drain(session);
 
         Assert.Equal([0u, 1u], presenter.Presented);
@@ -74,11 +74,11 @@ public class DisplayMailboxTests
     public async Task TheRestartMarker_ReachesTheSession_BetweenTheFramesAroundIt()
     {
         var (mailbox, session, presenter, _) = Create();
-        await mailbox.SubmitAsync(Frame(500, true), default);
-        await mailbox.SubmitAsync(Frame(501, false), default);
-        await mailbox.RestartAsync(default);
-        await mailbox.SubmitAsync(Frame(0, true), default);
-        await mailbox.SubmitAsync(Frame(1, false), default);
+        await mailbox.SubmitAsync(Frame(500, true), TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(501, false), TestContext.Current.CancellationToken);
+        await mailbox.RestartAsync(TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(0, true), TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(1, false), TestContext.Current.CancellationToken);
 
         mailbox.Drain(session);
 
@@ -92,12 +92,12 @@ public class DisplayMailboxTests
     public async Task ARestartMarker_MakesTheSessionWaitForTheNewStreamsKeyframe()
     {
         var (mailbox, session, presenter, _) = Create();
-        await mailbox.SubmitAsync(Frame(0, true), default);
+        await mailbox.SubmitAsync(Frame(0, true), TestContext.Current.CancellationToken);
         mailbox.Drain(session);
 
-        await mailbox.RestartAsync(default);
-        await mailbox.SubmitAsync(Frame(0, false), default);
-        await mailbox.SubmitAsync(Frame(1, true), default);
+        await mailbox.RestartAsync(TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(0, false), TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(1, true), TestContext.Current.CancellationToken);
         mailbox.Drain(session);
 
         Assert.Equal([0u, 1u], presenter.Decoded);
@@ -109,13 +109,13 @@ public class DisplayMailboxTests
     {
         var (mailbox, session, _, wakes) = Create();
 
-        await mailbox.SubmitAsync(Frame(0, true), default);
-        await mailbox.SubmitAsync(Frame(1, false), default);
-        await mailbox.SubmitAsync(Frame(2, false), default);
+        await mailbox.SubmitAsync(Frame(0, true), TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(1, false), TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(2, false), TestContext.Current.CancellationToken);
         Assert.Equal(1, wakes());
 
         mailbox.Drain(session);
-        await mailbox.SubmitAsync(Frame(3, false), default);
+        await mailbox.SubmitAsync(Frame(3, false), TestContext.Current.CancellationToken);
 
         Assert.Equal(2, wakes());
     }
@@ -124,15 +124,15 @@ public class DisplayMailboxTests
     public async Task WhenItIsFull_ASubmitWaits_UntilTheDisplayHasDrained()
     {
         var (mailbox, session, presenter, _) = Create(capacity: 2);
-        await mailbox.SubmitAsync(Frame(0, true), default);
-        await mailbox.SubmitAsync(Frame(1, false), default);
+        await mailbox.SubmitAsync(Frame(0, true), TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(1, false), TestContext.Current.CancellationToken);
 
-        var third = mailbox.SubmitAsync(Frame(2, false), default).AsTask();
-        await Task.Delay(100);
+        var third = mailbox.SubmitAsync(Frame(2, false), TestContext.Current.CancellationToken).AsTask();
+        await Task.Delay(100, TestContext.Current.CancellationToken);
         Assert.False(third.IsCompleted); // backpressure: the frame stays in the transport's queue
 
         mailbox.Drain(session);
-        await third.WaitAsync(TimeSpan.FromSeconds(5));
+        await third.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         mailbox.Drain(session);
 
         Assert.Equal([0u, 1u, 2u], presenter.Decoded);
@@ -142,15 +142,15 @@ public class DisplayMailboxTests
     public async Task OnceCompleted_SubmitsDoNothing_AndAWaitingSubmitIsReleased()
     {
         var (mailbox, session, presenter, wakes) = Create(capacity: 1);
-        await mailbox.SubmitAsync(Frame(0, true), default);
-        var waiting = mailbox.SubmitAsync(Frame(1, false), default).AsTask();
-        await Task.Delay(50);
+        await mailbox.SubmitAsync(Frame(0, true), TestContext.Current.CancellationToken);
+        var waiting = mailbox.SubmitAsync(Frame(1, false), TestContext.Current.CancellationToken).AsTask();
+        await Task.Delay(50, TestContext.Current.CancellationToken);
 
         mailbox.Complete();
 
-        await waiting.WaitAsync(TimeSpan.FromSeconds(5));
-        await mailbox.SubmitAsync(Frame(2, false), default);
-        await mailbox.RestartAsync(default);
+        await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await mailbox.SubmitAsync(Frame(2, false), TestContext.Current.CancellationToken);
+        await mailbox.RestartAsync(TestContext.Current.CancellationToken);
         mailbox.Drain(session);
         Assert.Equal([0u], presenter.Decoded); // what was queued before the end is still handed over
         Assert.Equal(1, wakes());

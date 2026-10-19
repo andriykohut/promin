@@ -24,7 +24,7 @@ public class QuicPairingAdmissionTests
     [Fact(Timeout = 30000)]
     public async Task PinnedPeersOnly_RefusesAStranger_WithoutSpendingAGuess()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var agentBefore = QuicLoopbackHarness.PersistedBytes(harness.AgentTrust);
 
@@ -56,7 +56,7 @@ public class QuicPairingAdmissionTests
     [Fact(Timeout = 30000)]
     public async Task PinnedPeersOnly_LetsThePinnedMasterPairAgain()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
 
         var agentPairing = harness.Listener.AcceptPairingAsync(
@@ -77,7 +77,7 @@ public class QuicPairingAdmissionTests
     [Fact(Timeout = 30000)]
     public async Task Anyone_IsTheDefault_AndAdmitsAMasterItHasNotPinned()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(
             deadline.Token, pinMasterOnAgent: false, pinAgentOnMaster: false);
 

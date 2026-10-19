@@ -60,11 +60,11 @@ public class ConsoleControlTests
         var (console, agent) = InMemoryControlChannel.CreatePair();
         await using var control = new ConsoleControl(console);
 
-        var start = control.StartAsync(Start, CancellationToken.None);
-        Assert.IsType<StartBroadcast>(await agent.ReceiveAsync(CancellationToken.None));
+        var start = control.StartAsync(Start, TestContext.Current.CancellationToken);
+        Assert.IsType<StartBroadcast>(await agent.ReceiveAsync(TestContext.Current.CancellationToken));
         Assert.False(start.IsCompleted);
 
-        await agent.SendAsync(new BroadcastReady(), CancellationToken.None);
+        await agent.SendAsync(new BroadcastReady(), TestContext.Current.CancellationToken);
         await start;
     }
 
@@ -76,15 +76,15 @@ public class ConsoleControlTests
         await using var control = new ConsoleControl(counting);
 
         // The answer to a start re-sent after the display changed size.
-        await agent.SendAsync(new BroadcastReady(), CancellationToken.None);
+        await agent.SendAsync(new BroadcastReady(), TestContext.Current.CancellationToken);
         await Eventually(() => counting.Received == 1, "the stale answer read");
 
-        var start = control.StartAsync(Start, CancellationToken.None);
-        await agent.ReceiveAsync(CancellationToken.None);
-        await Task.Delay(50);
+        var start = control.StartAsync(Start, TestContext.Current.CancellationToken);
+        await agent.ReceiveAsync(TestContext.Current.CancellationToken);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
         Assert.False(start.IsCompleted);
 
-        await agent.SendAsync(new BroadcastReady(), CancellationToken.None);
+        await agent.SendAsync(new BroadcastReady(), TestContext.Current.CancellationToken);
         await start;
     }
 
@@ -94,11 +94,11 @@ public class ConsoleControlTests
         var ending = new Ending();
         await using var control = new ConsoleControl(ending);
 
-        var start = control.StartAsync(Start, CancellationToken.None);
+        var start = control.StartAsync(Start, TestContext.Current.CancellationToken);
         ending.End.SetResult();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => start);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => control.StartAsync(Start, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => control.StartAsync(Start, TestContext.Current.CancellationToken));
     }
 
     [Fact(Timeout = 10000)]
@@ -107,8 +107,8 @@ public class ConsoleControlTests
         var (console, agent) = InMemoryControlChannel.CreatePair();
         await using var control = new ConsoleControl(console);
 
-        await control.SendAsync(new StopBroadcast(), CancellationToken.None);
+        await control.SendAsync(new StopBroadcast(), TestContext.Current.CancellationToken);
 
-        Assert.IsType<StopBroadcast>(await agent.ReceiveAsync(CancellationToken.None));
+        Assert.IsType<StopBroadcast>(await agent.ReceiveAsync(TestContext.Current.CancellationToken));
     }
 }

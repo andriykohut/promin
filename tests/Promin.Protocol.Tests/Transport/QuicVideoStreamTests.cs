@@ -22,7 +22,7 @@ public class QuicVideoStreamTests
     [Fact(Timeout = 30000)]
     public async Task VideoFrame_RoundTripsWhole_OnItsOwnStream()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -44,7 +44,7 @@ public class QuicVideoStreamTests
     [Fact(Timeout = 60000)]
     public async Task LargeFrame_ArrivesIntact_AcrossManyPackets()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(30);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 30);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -64,7 +64,7 @@ public class QuicVideoStreamTests
     [Fact(Timeout = 60000)]
     public async Task ManyFrames_AllArrive_EachOnItsOwnStream()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(30);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 30);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -110,7 +110,7 @@ public class QuicVideoStreamTests
     [Fact(Timeout = 30000)]
     public async Task CancellingASend_AbandonsThatFrameOnly_AndLaterFramesStillArrive()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -139,7 +139,7 @@ public class QuicVideoStreamTests
     [Fact(Timeout = 120000)]
     public async Task OversizedFrame_IsDropped_AndTheConnectionKeepsDeliveringFrames()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(60);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 60);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -168,7 +168,7 @@ public class QuicVideoStreamTests
     [Fact(Timeout = 30000)]
     public async Task VideoAndControl_ShareOneConnection_WithoutMixing()
     {
-        using var deadline = QuicLoopbackHarness.Deadline();
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
         var (master, agent) = await harness.ConnectAsync(deadline.Token);
 
@@ -194,7 +194,7 @@ public class QuicVideoStreamTests
     [Fact(Timeout = 60000)]
     public async Task InboundVideoDrains_AreBoundedInConcurrency()
     {
-        using var deadline = QuicLoopbackHarness.Deadline(30);
+        using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken, 30);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
 
         var acceptTask = harness.Listener.AcceptAsync(deadline.Token);
