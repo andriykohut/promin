@@ -59,12 +59,14 @@ public class EncoderPipelineTests
         var mft = new FakeMft(asynchronous: true)
         {
             AsksForInputOnlyAfterOutputIsTaken = true,
-            DelayFor = i => i == 0 ? TimeSpan.FromMilliseconds(150) : TimeSpan.Zero,
+            HeldBack = i => i == 0,
         };
-        var pipeline = Pipeline(mft);
+        // A long input wait, so sitting it out cannot pass for a slow test machine.
+        var pipeline = Pipeline(mft, new EncoderTimeouts(Input: TimeSpan.FromSeconds(5), Output: Short.Output));
 
         // The first picture takes longer than the call waits for it.
         Assert.False(pipeline.TryEncode(0, forceKeyframe: true, out _));
+        mft.Release();
 
         var clock = Stopwatch.StartNew();
         var gotOne = pipeline.TryEncode(1, forceKeyframe: false, out var encoded);
@@ -73,7 +75,7 @@ public class EncoderPipelineTests
         Assert.True(gotOne, "the finished first picture was withheld");
         Assert.Equal(0, FakeMft.IndexOf(encoded.Data));
         Assert.True(encoded.IsKeyframe);
-        Assert.True(clock.ElapsedMilliseconds < 300, $"the call waited {clock.ElapsedMilliseconds} ms: it sat out the input timeout instead of taking the finished picture");
+        Assert.True(clock.ElapsedMilliseconds < 1000, $"the call waited {clock.ElapsedMilliseconds} ms: it sat out the input timeout instead of taking the finished picture");
     }
 
     [Fact]
@@ -82,12 +84,12 @@ public class EncoderPipelineTests
         var mft = new FakeMft(asynchronous: true)
         {
             NeverAsksForMoreInput = true,
-            DelayFor = _ => TimeSpan.FromMilliseconds(100),
+            HeldBack = _ => true,
         };
         var pipeline = Pipeline(mft, new EncoderTimeouts(Input: TimeSpan.FromMilliseconds(20), Output: TimeSpan.FromMilliseconds(20)));
 
         Assert.False(pipeline.TryEncode(0, forceKeyframe: true, out _)); // fed, not finished within 20 ms
-        Thread.Sleep(150);
+        mft.Release();
 
         // This input is refused (the encoder never asks again), but picture 0 is finished.
         Assert.True(pipeline.TryEncode(1, forceKeyframe: false, out var encoded));
@@ -100,12 +102,12 @@ public class EncoderPipelineTests
         var mft = new FakeMft(asynchronous: false)
         {
             RefusesInputWhileOutputWaits = true,
-            DelayFor = i => i == 0 ? TimeSpan.FromMilliseconds(80) : TimeSpan.Zero,
+            HeldBack = i => i == 0,
         };
         var pipeline = Pipeline(mft);
 
         Assert.False(pipeline.TryEncode(0, forceKeyframe: true, out _)); // not ready yet
-        Thread.Sleep(120);
+        mft.Release();
 
         Assert.True(pipeline.TryEncode(1, forceKeyframe: false, out var first));
         Assert.Equal(0, FakeMft.IndexOf(first.Data));
@@ -118,11 +120,11 @@ public class EncoderPipelineTests
     [Fact]
     public void TryTakePending_ReturnsTheHeldPicture_AfterOneLateOutput()
     {
-        var mft = new FakeMft(asynchronous: true) { DelayFor = i => i == 0 ? TimeSpan.FromMilliseconds(120) : TimeSpan.Zero };
+        var mft = new FakeMft(asynchronous: true) { HeldBack = i => i == 0 };
         var pipeline = Pipeline(mft);
 
         Assert.False(pipeline.TryEncode(0, forceKeyframe: true, out _));
-        Thread.Sleep(160);
+        mft.Release();
 
         Assert.True(pipeline.TryTakePending(out var held));
         Assert.Equal(0, FakeMft.IndexOf(held.Data));
@@ -135,7 +137,8 @@ public class EncoderPipelineTests
     {
         foreach (var asynchronous in new[] { false, true })
         {
-            var pipeline = Pipeline(new FakeMft(asynchronous));
+            // A long output wait, so sitting it out cannot pass for a slow test machine.
+            var pipeline = Pipeline(new FakeMft(asynchronous), new EncoderTimeouts(Input: Short.Input, Output: TimeSpan.FromSeconds(5)));
             Assert.True(pipeline.TryEncode(0, forceKeyframe: true, out _));
 
             var clock = Stopwatch.StartNew();
@@ -143,19 +146,19 @@ public class EncoderPipelineTests
             clock.Stop();
 
             Assert.False(got);
-            Assert.True(clock.ElapsedMilliseconds < 30, $"asking for a held picture waited {clock.ElapsedMilliseconds} ms");
+            Assert.True(clock.ElapsedMilliseconds < 1000, $"asking for a held picture waited {clock.ElapsedMilliseconds} ms");
         }
     }
 
     [Fact]
     public void AForcedKeyframeThatCameOutLate_IsReportedAsAKeyframeWhenItIsHandedOut()
     {
-        var mft = new FakeMft(asynchronous: true) { DelayFor = i => i == 1 ? TimeSpan.FromMilliseconds(120) : TimeSpan.Zero };
+        var mft = new FakeMft(asynchronous: true) { HeldBack = i => i == 1 };
         var pipeline = Pipeline(mft);
         Assert.True(pipeline.TryEncode(0, forceKeyframe: true, out _));
 
         Assert.False(pipeline.TryEncode(1, forceKeyframe: true, out _)); // the forced keyframe is late
-        Thread.Sleep(160);
+        mft.Release();
 
         Assert.True(pipeline.TryTakePending(out var held));
         Assert.Equal(1, FakeMft.IndexOf(held.Data));
@@ -166,12 +169,12 @@ public class EncoderPipelineTests
     [Fact]
     public void AfterALatePicture_TheBacklogDrainsThroughTryTakePending_AndIdsStayContiguousInOrder()
     {
-        var mft = new FakeMft(asynchronous: true) { DelayFor = i => i == 0 ? TimeSpan.FromMilliseconds(120) : TimeSpan.Zero };
+        var mft = new FakeMft(asynchronous: true) { HeldBack = i => i == 0 };
         var pipeline = Pipeline(mft);
         var handedOut = new List<EncodedFrame>();
 
         Assert.False(pipeline.TryEncode(0, forceKeyframe: true, out _));
-        Thread.Sleep(160);
+        mft.Release();
         Assert.True(pipeline.TryEncode(1, forceKeyframe: false, out var encoded));
         handedOut.Add(encoded);
         while (pipeline.TryTakePending(out var more))
