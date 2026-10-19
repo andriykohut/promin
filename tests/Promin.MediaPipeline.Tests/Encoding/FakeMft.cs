@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Promin.MediaPipeline.Encoding;
 
 namespace Promin.MediaPipeline.Tests.Encoding;
@@ -18,7 +17,6 @@ internal sealed class FakeMft : IEncoderMft<int>
     internal static readonly byte[] Sps = [0x67, 0x42, 0x00, 0x1F];
     internal static readonly byte[] Pps = [0x68, 0xCE, 0x3C, 0x80];
 
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly Queue<InFlight> _inFlight = new();
     private int _needInputToDeliver;
     private int _tokens;           // asynchronous: NeedInput events delivered and not yet used
@@ -26,11 +24,11 @@ internal sealed class FakeMft : IEncoderMft<int>
     private bool _keyframeRequested;
     private bool _firstKeyframeEmitted;
 
-    private sealed class InFlight(int index, bool keyframe, long readyAtMs)
+    private sealed class InFlight(int index, bool keyframe, bool held)
     {
         public int Index { get; } = index;
         public bool Keyframe { get; } = keyframe;
-        public long ReadyAtMs { get; } = readyAtMs;
+        public bool Held { get; set; } = held;
         public bool Announced { get; set; }
     }
 
@@ -43,8 +41,15 @@ internal sealed class FakeMft : IEncoderMft<int>
 
     public bool IsAsynchronous { get; }
 
-    /// <summary>How long after its input a picture takes to be ready, by input index.</summary>
-    public Func<int, TimeSpan> DelayFor { get; set; } = _ => TimeSpan.Zero;
+    /// <summary>Which pictures, by input index, stay unfinished until <see cref="Release"/> is called.</summary>
+    public Func<int, bool> HeldBack { get; set; } = _ => false;
+
+    /// <summary>Finishes every picture handed in so far that <see cref="HeldBack"/> kept back.</summary>
+    public void Release()
+    {
+        foreach (var picture in _inFlight)
+            picture.Held = false;
+    }
 
     /// <summary>Asynchronous: ask for the next picture only once a finished one has been collected (a depth-one encoder).</summary>
     public bool AsksForInputOnlyAfterOutputIsTaken { get; set; }
@@ -90,7 +95,7 @@ internal sealed class FakeMft : IEncoderMft<int>
 
         var keyframe = _keyframeRequested || input == 0;
         _keyframeRequested = false;
-        _inFlight.Enqueue(new InFlight(input, keyframe, _clock.ElapsedMilliseconds + (long)DelayFor(input).TotalMilliseconds));
+        _inFlight.Enqueue(new InFlight(input, keyframe, HeldBack(input)));
 
         if (IsAsynchronous && !AsksForInputOnlyAfterOutputIsTaken && !NeverAsksForMoreInput)
             _needInputToDeliver++;
@@ -108,7 +113,7 @@ internal sealed class FakeMft : IEncoderMft<int>
                 throw new InvalidOperationException("E_UNEXPECTED: ProcessOutput was called without a have-output event.");
             _announced--;
         }
-        else if (_inFlight.Count == 0 || _inFlight.Peek().ReadyAtMs > _clock.ElapsedMilliseconds)
+        else if (_inFlight.Count == 0 || _inFlight.Peek().Held)
         {
             return OutputResult.NeedMoreInput;
         }
@@ -146,7 +151,7 @@ internal sealed class FakeMft : IEncoderMft<int>
         if (_inFlight.Count > 0)
         {
             var head = _inFlight.Peek();
-            if (!head.Announced && head.ReadyAtMs <= _clock.ElapsedMilliseconds)
+            if (!head.Announced && !head.Held)
             {
                 head.Announced = true;
                 _announced++;
