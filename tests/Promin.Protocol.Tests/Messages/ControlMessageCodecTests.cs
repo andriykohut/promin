@@ -289,24 +289,20 @@ public class ControlMessageCodecTests
     }
 
     [Fact]
-    public void TryDecode_AcceptsFrameJustUnderMaxFrameSize()
+    public void TryDecode_AcceptsPayloadOfExactlyMaxFrameSize()
     {
-        // Verify that a frame just under MaxFrameSize is accepted, not rejected off-by-one.
-        // Create a large nonce that leaves room for JSON overhead (base64 encoding).
-        // A 40 KB nonce + JSON overhead fits within 64 KB MaxFrameSize.
-        var largeNonce = new byte[40 * 1024];
-        var message = new PairChallengeRequest(MasterNonce: largeNonce);
+        // JSON allows trailing whitespace, so padding a real message reaches the limit to the byte.
+        var json = ControlMessageCodec.Encode(new StopBroadcast()).AsSpan(4);
+        var frame = new byte[4 + ControlMessageCodec.MaxFrameSize];
+        BinaryPrimitives.WriteInt32BigEndian(frame, ControlMessageCodec.MaxFrameSize);
+        frame.AsSpan(4).Fill((byte)' ');
+        json.CopyTo(frame.AsSpan(4));
 
-        var encoded = ControlMessageCodec.Encode(message);
-        Assert.True(encoded.Length <= ControlMessageCodec.MaxFrameSize,
-            $"Encoded message size {encoded.Length} exceeds MaxFrameSize {ControlMessageCodec.MaxFrameSize}");
-
-        var buffer = new ReadOnlySequence<byte>(encoded);
-        var decoded = ControlMessageCodec.TryDecode(buffer, out var result, out _);
+        var decoded = ControlMessageCodec.TryDecode(new ReadOnlySequence<byte>(frame), out var result, out var consumed);
 
         Assert.True(decoded);
-        Assert.NotNull(result);
-        Assert.IsType<PairChallengeRequest>(result);
+        Assert.IsType<StopBroadcast>(result);
+        Assert.Equal(frame.Length, consumed);
     }
 
     [Fact]
