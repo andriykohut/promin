@@ -49,7 +49,7 @@ Every PC needs Windows 11 with Smart App Control off. The setups are not signed,
 pwsh installer/build.ps1
 ```
 
-`Promin Console Setup.exe` and `Promin Agent Setup.exe` appear in `artifacts/setup/`. Copy them to a USB stick.
+`Promin Console Setup.exe` and `Promin Agent Setup.exe` appear in `artifacts/setup/`. Copy them to a USB stick. Pushing a tag such as `v0.2.0` builds the same two setups with that version and attaches them to a GitHub Release.
 
 **On the console PC**, run `Promin Console Setup.exe`, then open **Promin** from the Start menu. The setup installs the console to `C:\Program Files\Promin\Console` and adds a Windows Firewall rule named `Promin console` (UDP 17844, for the console's program only).
 
