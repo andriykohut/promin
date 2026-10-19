@@ -1,4 +1,5 @@
 using System.Globalization;
+using Promin.Master.Core.Sending;
 using Promin.Protocol.Video;
 
 namespace Promin.Master.Core.Wall;
@@ -78,13 +79,18 @@ public static class WallText
             ? $"{(int)elapsed.TotalHours}:{elapsed.Minutes:00}:{elapsed.Seconds:00}"
             : $"{(int)elapsed.TotalMinutes}:{elapsed.Seconds:00}";
 
-    public static string DetailSentence(PcTileState state) => state switch
+    /// <summary>The state's sentence, when it is not healthy, then <paramref name="sendDetail"/>; either may be empty.</summary>
+    public static string DetailSentence(PcTileState state, string sendDetail)
     {
-        PcTileState.DroppingFrames => Strings.Detail_Dropping,
-        PcTileState.Reconnecting => Strings.Detail_Reconnecting,
-        PcTileState.Offline => Strings.Detail_Offline,
-        _ => string.Empty,
-    };
+        var sentence = state switch
+        {
+            PcTileState.DroppingFrames => Strings.Detail_Dropping,
+            PcTileState.Reconnecting => Strings.Detail_Reconnecting,
+            PcTileState.Offline => Strings.Detail_Offline,
+            _ => string.Empty,
+        };
+        return sentence.Length == 0 || sendDetail.Length == 0 ? sentence + sendDetail : $"{sentence} {sendDetail}";
+    }
 
     public static string SharpnessText(Sharpness sharpness, int bitsPerSecond, CultureInfo culture) =>
         Phrase.Format(Strings.Wall_WithRate, ("label", Name(sharpness)), ("rate", Mbit(bitsPerSecond, culture)));
@@ -114,7 +120,13 @@ public static class WallText
 
     public static string DetailsButtonName(string pcName) => Phrase.Format(Strings.Wall_DetailsName, ("name", pcName));
 
-    public static string TileName(string pcName, string statusText) => $"{pcName}, {statusText}";
+    public static string TileName(string pcName, string statusText, TileSendMark sendMark, int sendPercent) => sendMark switch
+    {
+        TileSendMark.Sending => $"{pcName}, {statusText}, {Phrase.Format(Strings.TileSend_Sending, ("percent", sendPercent))}",
+        TileSendMark.Done => $"{pcName}, {statusText}, {Strings.TileSend_Done}",
+        TileSendMark.NotSent => $"{pcName}, {statusText}, {Strings.TileSend_NotSent}",
+        _ => $"{pcName}, {statusText}",
+    };
 
     public static string QualityPickerName(string qualityButtonText) => $"{Strings.Quality}, {qualityButtonText}";
 

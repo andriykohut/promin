@@ -1,5 +1,6 @@
 using System.Globalization;
 using Promin.Master.Core.Rooms;
+using Promin.Master.Core.Sending;
 using Promin.Master.Core.Tests.TestDoubles;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Video;
@@ -799,6 +800,29 @@ public sealed class RoomWallViewModelTests
         Assert.Equal("PC-07, Reconnecting", Tile(vm, 7).TileName);
     }
 
+    [Fact]
+    public void ATilesNameAndDetails_CarryItsSendState_AndANotSentMarkOutlivesItsComingBack()
+    {
+        var vm = TenWithSevenOffline();
+        var sender = new FakeFileSender();
+        var send = new RoomSend(sender, id => vm.Tiles.FirstOrDefault(t => t.DeviceId == id), () => _now, a => a());
+        send.Start(FakeFileSender.Package(("quiz-chapter-3.html", 1000)), open: false, vm.SendTargets().All);
+
+        sender.To(Id(3)).Written(640);
+        vm.Tick();
+
+        Assert.Equal("PC-03, Ready, sending, 64%", Tile(vm, 3).TileName);
+        Assert.Equal("PC-07, Offline, did not get the files", Tile(vm, 7).TileName);
+        Assert.Equal("It is switched off or not on this network. Not sent: offline.", Tile(vm, 7).DetailSentence);
+        Assert.Equal("Offline", Tile(vm, 7).StatusText);
+
+        See(7);
+        vm.Tick();
+
+        Assert.Equal("PC-07, Ready, did not get the files", Tile(vm, 7).TileName);
+        Assert.Equal("Not sent: offline.", Tile(vm, 7).DetailSentence);
+    }
+
     // ---- activate again (back from Set up devices) ---------------------------------------------
 
     [Fact]
@@ -1104,5 +1128,63 @@ public sealed class RoomWallViewModelTests
         vm.Remove(Tile(vm, 3));
 
         Assert.Equal([Id(3)], _connections.Dropped);
+    }
+
+    [Fact]
+    public void SendTargets_OffAir_SelectedAreTheTickedOnlinePcs_AllIsEveryPc()
+    {
+        var vm = TenWithSevenOffline();
+        vm.ToggleSelected(Tile(vm, 1));
+
+        var targets = vm.SendTargets();
+
+        Assert.Equal([2, 3, 4, 5, 6, 8, 9, 10], targets.Selected.Select(t => int.Parse(t.Member.DeviceId[^2..])));
+        Assert.All(targets.Selected, t => Assert.True(t.Online));
+        Assert.Equal(10, targets.All.Count);
+        Assert.Equal(Enumerable.Range(1, 10).Select(n => $"PC-{n:00}"), targets.All.Select(t => t.Name));
+        Assert.Equal(Enumerable.Range(1, 10).Select(n => n != 7), targets.All.Select(t => t.Online));
+    }
+
+    [Fact]
+    public void SendTargets_CarryTheAddressEachPcLastAnnouncedFrom()
+    {
+        var vm = TenWithSevenOffline();
+        _discovery.Raise(new AgentPc(Id(2), "PC-02", "10.0.0.2", 17900));
+
+        var targets = vm.SendTargets();
+
+        Assert.Equal(("10.0.0.2", 17900), (targets.Selected[1].Member.LastAddress, targets.Selected[1].Member.Port));
+        Assert.Equal("10.0.0.2", targets.All[1].Member.LastAddress);
+        Assert.Equal("192.168.1.21", targets.All[0].Member.LastAddress);
+        Assert.Equal("192.168.1.22", Stored(_store, 2).LastAddress);
+    }
+
+    [Fact]
+    public async Task SendTargets_OnAir_SelectedAreThePcsBeingSentTo()
+    {
+        var vm = await OnAir();
+        vm.StopSendingTo(Tile(vm, 3));
+        _broadcast.RaiseLost(Id(4));
+
+        var targets = vm.SendTargets();
+
+        Assert.Equal([1, 2, 5, 6, 8, 9, 10], targets.Selected.Select(t => int.Parse(t.Member.DeviceId[^2..])));
+        Assert.Equal(10, targets.All.Count);
+        Assert.False(targets.All.Single(t => t.Name == "PC-07").Online);
+    }
+
+    [Fact]
+    public async Task SendTargets_OnAir_APcBeingSentToIsOnline_WhateverPresenceSays()
+    {
+        var vm = await OnAir();
+        vm.StopSendingTo(Tile(vm, 3));
+
+        _now += RoomWallViewModel.PresenceTimeout + TimeSpan.FromSeconds(1);
+        var targets = vm.SendTargets();
+
+        Assert.All(targets.Selected, t => Assert.True(t.Online));
+        Assert.True(targets.All.Single(t => t.Name == "PC-04").Online);
+        Assert.False(targets.All.Single(t => t.Name == "PC-03").Online);
+        Assert.False(targets.All.Single(t => t.Name == "PC-07").Online);
     }
 }

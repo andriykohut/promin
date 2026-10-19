@@ -20,6 +20,10 @@ namespace Promin.Protocol.Transport;
 ///
 /// Sends are serialised; concurrent senders would otherwise interleave two frames' bytes on
 /// the wire. Receives are single-consumer and also serialised.
+///
+/// A file send reuses a stream as one long exchange: messages interleaved with raw file bytes
+/// that the receiver reads with <see cref="ReceiveBytesAsync"/>. The raw bytes are unframed, so
+/// the messages around them say how many to expect.
 /// </remarks>
 public sealed class QuicControlChannel : IControlChannel, IAsyncDisposable
 {
@@ -28,6 +32,9 @@ public sealed class QuicControlChannel : IControlChannel, IAsyncDisposable
 
     /// <summary>Application error code used when this stream is abandoned after a failed pairing.</summary>
     public const long PairingFailedErrorCode = 0x3;
+
+    /// <summary>Application error code used when a receiver refuses the bytes a sender is still writing.</summary>
+    public const long RefusedErrorCode = 0x4;
 
     private readonly QuicStream _stream;
     private readonly PipeReader _reader;
@@ -45,12 +52,19 @@ public sealed class QuicControlChannel : IControlChannel, IAsyncDisposable
     public async Task SendAsync(ControlMessage message, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(message);
-        var encoded = ControlMessageCodec.Encode(message);
+        await SendBytesAsync(ControlMessageCodec.Encode(message), ct).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// Writes raw bytes onto the stream, between whole messages. Serialised with
+    /// <see cref="SendAsync"/>, so the bytes never land inside a frame.
+    /// </summary>
+    public async Task SendBytesAsync(ReadOnlyMemory<byte> bytes, CancellationToken ct)
+    {
         await _sendGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await _stream.WriteAsync(encoded, ct).ConfigureAwait(false);
+            await _stream.WriteAsync(bytes, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -117,6 +131,77 @@ public sealed class QuicControlChannel : IControlChannel, IAsyncDisposable
         finally
         {
             _receiveGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Copies exactly <paramref name="count"/> raw bytes into <paramref name="destination"/>,
+    /// starting with any already buffered behind the last message. Whatever follows them stays
+    /// buffered for the next <see cref="ReceiveAsync"/>.
+    /// </summary>
+    /// <exception cref="ControlChannelClosedException">
+    /// The peer closed the stream cleanly before <paramref name="count"/> bytes arrived.
+    /// </exception>
+    public async Task ReceiveBytesAsync(Stream destination, long count, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+
+        await _receiveGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            while (count > 0)
+            {
+                var result = await _reader.ReadAsync(ct).ConfigureAwait(false);
+                var buffer = result.Buffer;
+
+                if (buffer.IsEmpty && result.IsCompleted)
+                {
+                    _reader.AdvanceTo(buffer.Start);
+                    throw new ControlChannelClosedException(
+                        $"QUIC control stream closed with {count} bytes still to come.");
+                }
+
+                var taken = buffer.Slice(0, Math.Min(buffer.Length, count));
+                try
+                {
+                    foreach (var segment in taken)
+                    {
+                        await destination.WriteAsync(segment, ct).ConfigureAwait(false);
+                    }
+                }
+                catch
+                {
+                    _reader.AdvanceTo(buffer.Start);
+                    throw;
+                }
+
+                count -= taken.Length;
+                _reader.AdvanceTo(taken.End);
+            }
+        }
+        finally
+        {
+            _receiveGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Tells the peer to stop sending on this stream: its pending and later writes fail with
+    /// <see cref="RefusedErrorCode"/>. This side can still send, so a refusal can be explained.
+    /// Safe to call on a stream that is already gone.
+    /// </summary>
+    public void StopReceiving()
+    {
+        try
+        {
+            _stream.Abort(QuicAbortDirection.Read, RefusedErrorCode);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (QuicException)
+        {
         }
     }
 

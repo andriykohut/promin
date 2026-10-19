@@ -160,16 +160,19 @@
                             Click="Pair_Click"
                             Content="{x:Bind core:Strings.Pair}"
                             IsEnabled="{x:Bind CanPairNow, Mode=OneWay}"
+                            Tag="{x:Bind}"
                             Visibility="{x:Bind ShowsPair, Mode=OneWay}" />
                         <Button
                             Click="EnterCode_Click"
                             Content="{x:Bind core:Strings.Setup_EnterItsCode}"
                             IsEnabled="{x:Bind CanAct, Mode=OneWay}"
+                            Tag="{x:Bind}"
                             Visibility="{x:Bind ShowsEnterCode, Mode=OneWay}" />
                         <Button
                             Click="Pair_Click"
                             Content="{x:Bind core:Strings.TryAgain}"
                             IsEnabled="{x:Bind CanPairNow, Mode=OneWay}"
+                            Tag="{x:Bind}"
                             Visibility="{x:Bind ShowsTryAgain, Mode=OneWay}" />
                         <Button
                             AutomationProperties.Name="{x:Bind core:Strings.More}"

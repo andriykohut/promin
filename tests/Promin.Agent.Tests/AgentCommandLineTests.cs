@@ -65,6 +65,45 @@ public class AgentCommandLineTests
         Assert.Equal(AgentMode.Invalid, AgentCommandLine.Parse(args).Mode);
     }
 
+    [Fact]
+    public void Received_ParsesCountFolderAndPaths()
+    {
+        var command = AgentCommandLine.Parse(
+            ["--received", "2", @"C:\Users\p\Desktop\Promin", @"C:\Users\p\Desktop\Promin\quiz.html"]);
+
+        Assert.Equal(AgentMode.Received, command.Mode);
+        Assert.Equal(2, command.ReceivedCount);
+        Assert.Equal(@"C:\Users\p\Desktop\Promin", command.ProminFolder);
+        Assert.Equal([@"C:\Users\p\Desktop\Promin\quiz.html"], command.OpenPaths);
+    }
+
+    [Fact]
+    public void Received_WithNoPathsToOpen_IsValid()
+    {
+        var command = AgentCommandLine.Parse(["--RECEIVED", "1", @"C:\x"]);
+
+        Assert.Equal(AgentMode.Received, command.Mode);
+        Assert.Empty(command.OpenPaths!);
+    }
+
+    [Theory]
+    [InlineData("--received", "0", @"C:\x")]
+    [InlineData("--received", "x", @"C:\x")]
+    [InlineData("--received", "1")]
+    public void Received_WithACountBelowOne_OrNoFolder_IsInvalid(params string[] args)
+    {
+        var command = AgentCommandLine.Parse(args);
+
+        Assert.Equal(AgentMode.Invalid, command.Mode);
+        Assert.False(string.IsNullOrWhiteSpace(command.Problem));
+    }
+
+    [Fact]
+    public void HelperCheck_Parses()
+    {
+        Assert.Equal(AgentMode.HelperCheck, AgentCommandLine.Parse(["--helper-check"]).Mode);
+    }
+
     [Theory]
     [InlineData("--set-room-code")]
     [InlineData("--set-room-code", "123456", "extra")]

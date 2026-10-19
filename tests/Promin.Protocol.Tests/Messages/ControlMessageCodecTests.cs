@@ -117,6 +117,28 @@ public class ControlMessageCodecTests
         }
     }
 
+    /// <summary>
+    /// The four messages of a file send survive the wire, including a Cyrillic path and a
+    /// folder with no length. Fails a message added without its type discriminator.
+    /// </summary>
+    [Fact]
+    public void SendMessages_RoundTrip()
+    {
+        ControlMessage[] messages =
+        [
+            new SendFiles(312_000_000, true),
+            new SendItem("Тест 1/звіт.docx", 48_000, false),
+            new SendItem("quiz_files", 0, true),
+            new SendEnd(),
+            new SendDone(SendOutcome.InUse),
+        ];
+
+        foreach (var message in messages)
+        {
+            Assert.Equal(message, RoundTrip(message));
+        }
+    }
+
     [Fact]
     public void TryDecode_ReturnsFalse_WhenBufferHasIncompleteFrame()
     {

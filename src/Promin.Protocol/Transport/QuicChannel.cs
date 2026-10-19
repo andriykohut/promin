@@ -144,10 +144,15 @@ public sealed class QuicChannel : IAsyncDisposable
         return new QuicControlChannel(stream);
     }
 
+    /// <summary>
+    /// The next bidirectional stream the peer opened. On an agent's connection from a console
+    /// PC that is the control stream or a file send; only the stream's first message tells which.
+    /// </summary>
     /// <remarks>
     /// An outbound QUIC stream is invisible to the peer until its opener writes to it, so the
     /// side that accepts here must be the side that waits to receive first in the exchange that
-    /// follows. The master opens the control stream and speaks first; the agent accepts.
+    /// follows. The master opens the control stream and each send and speaks first on them; the
+    /// agent accepts.
     /// </remarks>
     public async Task<QuicControlChannel> AcceptControlChannelAsync(CancellationToken ct) =>
         new(await _inboundControlStreams.Reader.ReadAsync(ct).ConfigureAwait(false));

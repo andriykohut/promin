@@ -82,9 +82,10 @@ public static class QuicTransportSettings
 
     /// <summary>
     /// Bidirectional credit the <b>agent</b> grants the master, which is the side that opens the
-    /// control stream. Control messages need exactly one bidirectional stream. Four leaves room for a
-    /// reconnect whose replacement control stream overlaps the old one briefly
-    /// without ever granting enough credit for a peer to open control streams as a DoS.
+    /// control stream and every file send. Control messages need exactly one bidirectional stream,
+    /// and a send uses one more for as long as it lasts. Four leaves room for a reconnect whose
+    /// replacement control stream overlaps the old one briefly, or a second send while the agent
+    /// refuses it, without ever granting enough credit for a peer to open streams as a DoS.
     /// </summary>
     public const int MaxInboundBidirectionalStreams = 4;
 

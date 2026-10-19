@@ -16,6 +16,8 @@ public class BroadcastConnectionTests
 
         public Task<ControlMessage> ReceiveControlAsync(CancellationToken ct) => _control.Reader.ReadAsync(ct).AsTask();
 
+        public Task<IIncomingSend> AcceptSendAsync(CancellationToken ct) => new TaskCompletionSource<IIncomingSend>().Task.WaitAsync(ct);
+
         public ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct) => _video.Reader.ReadAsync(ct);
 
         public List<ControlMessage> Sent { get; } = [];
@@ -311,6 +313,8 @@ public class BroadcastConnectionTests
         public Channel<byte[]> Video { get; } = Channel.CreateUnbounded<byte[]>();
 
         public Task<ControlMessage> ReceiveControlAsync(CancellationToken ct) => Control.Reader.ReadAsync(ct).AsTask();
+
+        public Task<IIncomingSend> AcceptSendAsync(CancellationToken ct) => new TaskCompletionSource<IIncomingSend>().Task.WaitAsync(ct);
 
         public ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct) => Video.Reader.ReadAsync(ct);
 

@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using Promin.Master.Core.Rooms;
+using Promin.Master.Core.Sending;
 using Promin.Master.Core.Setup;
 using Promin.Protocol.Video;
 
@@ -339,6 +340,22 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         SetFlags([member], !member.Selected);
+    }
+
+    /// <summary>
+    /// The PCs a send can go to. Off air, <see cref="SendTargets.Selected"/> is the selected PCs that are online; on air, the
+    /// PCs the broadcast is going to. <see cref="SendTargets.All"/> is every PC in the room. A PC is online when it was seen
+    /// recently or, on air, is being sent to, as its tile reads. Each carries the address it last announced from, as a
+    /// broadcast start does.
+    /// </summary>
+    public SendTargets SendTargets()
+    {
+        var now = _now();
+        var all = _members
+            .Select(m => new SendTarget(AsDialled(m), m.DisplayName, _sendingTo.Contains(m.DeviceId) || _presence.IsOnline(m.DeviceId, now)))
+            .ToList();
+        var selected = all.Where(t => _onAir ? _sendingTo.Contains(t.Member.DeviceId) : t.Member.Selected && t.Online).ToList();
+        return new SendTargets(selected, all);
     }
 
     /// <summary>Selects every online PC; offline ones keep their flag.</summary>
@@ -854,14 +871,14 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             }
 
             tile.StatusText = WallText.Status(state, tile.FramesDropped);
-            tile.DetailSentence = WallText.DetailSentence(state);
+            tile.DetailSentence = WallText.DetailSentence(state, tile.SendDetail);
             tile.CanSelect = selectable && online;
             tile.IsSelected = tile.CanSelect && member.Selected;
             tile.IsOnAir = _onAir;
             tile.ReceivingForText = _onAir ? WallText.Elapsed(now - _startedAt) : string.Empty;
             tile.SelectBoxName = WallText.SelectBoxName(tile.Name);
             tile.DetailsButtonName = WallText.DetailsButtonName(tile.Name);
-            tile.TileName = WallText.TileName(tile.Name, tile.StatusText);
+            tile.TileName = WallText.TileName(tile.Name, tile.StatusText, tile.SendMark, tile.SendPercent);
 
             if (member.Selected && online)
             {

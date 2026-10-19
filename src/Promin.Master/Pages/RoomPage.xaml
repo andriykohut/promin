@@ -69,6 +69,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- 1. Header: "This room", the count pills 12 px after it and 8 px apart, and Set up devices at the right. -->
@@ -186,9 +187,32 @@
             </StackPanel>
         </Grid>
 
-        <!-- 4. Action bar: the status, the quality picker, the button. -->
-        <Grid
+        <!-- 4. The send strip: what is going out and how far, then the outcome; the bar below stays usable throughout. -->
+        <InfoBar
             Grid.Row="3"
+            Margin="24,0,24,12"
+            CloseButtonClick="SendStrip_CloseButtonClick"
+            IsClosable="{x:Bind Sending.IsStripClosable, Mode=OneWay}"
+            IsOpen="{x:Bind Sending.IsStripOpen, Mode=OneWay}"
+            Message="{x:Bind Sending.StripText, Mode=OneWay}"
+            Severity="{x:Bind StripSeverity(Sending.StripKind), Mode=OneWay}"
+            Title="{x:Bind Sending.StripTitle, Mode=OneWay}"
+            Visibility="{x:Bind Sending.IsStripOpen, Mode=OneWay}">
+            <InfoBar.ActionButton>
+                <Button
+                    Click="StripAction_Click"
+                    Content="{x:Bind Sending.StripActionLabel, Mode=OneWay}"
+                    Visibility="{x:Bind Sending.HasStripAction, Mode=OneWay}" />
+            </InfoBar.ActionButton>
+            <ProgressBar
+                Margin="0,0,0,4"
+                Visibility="{x:Bind Sending.IsRunning, Mode=OneWay}"
+                Value="{x:Bind Sending.Progress, Mode=OneWay}" />
+        </InfoBar>
+
+        <!-- 5. Action bar: the status, the quality picker, the buttons. -->
+        <Grid
+            Grid.Row="4"
             Padding="24,12"
             Background="{ThemeResource LayerFillColorDefaultBrush}"
             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -196,6 +220,7 @@
             ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
@@ -218,6 +243,12 @@
                         Style="{StaticResource BodyStrongTextBlockStyle}"
                         Text="{x:Bind ViewModel.ElapsedText, Mode=OneWay}"
                         Visibility="{x:Bind ViewModel.IsOnAir, Mode=OneWay}" />
+                </StackPanel>
+                <!-- The selection links sit on the second line so the first fits beside the buttons. -->
+                <StackPanel
+                    Margin="0,1,0,0"
+                    Orientation="Horizontal"
+                    Spacing="12">
                     <HyperlinkButton
                         Padding="0"
                         VerticalAlignment="Center"
@@ -230,12 +261,18 @@
                         Click="Clear_Click"
                         Content="{x:Bind core:Strings.Room_ClearSelection}"
                         Visibility="{x:Bind SelectionLinksVisibility(ViewModel.IsOnAir, ViewModel.IsEmptyRoom), Mode=OneWay}" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="12.5"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="·"
+                        Visibility="{x:Bind SeparatorVisibility(ViewModel.IsOnAir, ViewModel.IsEmptyRoom, ViewModel.BarLine2.Length), Mode=OneWay}" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="12.5"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{x:Bind ViewModel.BarLine2, Mode=OneWay}" />
                 </StackPanel>
-                <TextBlock
-                    Margin="0,1,0,0"
-                    FontSize="12.5"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="{x:Bind ViewModel.BarLine2, Mode=OneWay}" />
             </StackPanel>
 
             <!-- The quality picker off air; the same words as plain text on air. -->
@@ -286,8 +323,21 @@
                     Visibility="{x:Bind ViewModel.IsOnAir, Mode=OneWay}" />
             </StackPanel>
 
+            <!-- One send at a time: the button waits while one runs. -->
             <Button
                 Grid.Column="2"
+                Padding="24,10"
+                FontSize="15"
+                FontWeight="SemiBold"
+                Click="SendFiles_Click"
+                IsEnabled="{x:Bind CanSendFiles(Sending.IsRunning, ViewModel.IsEmptyRoom), Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="9">
+                    <FontIcon FontSize="14" Glyph="&#xE8A5;" />
+                    <TextBlock Text="{x:Bind core:Strings.Send_Title}" />
+                </StackPanel>
+            </Button>
+            <Button
+                Grid.Column="3"
                 Padding="24,10"
                 FontSize="15"
                 FontWeight="SemiBold"
@@ -301,7 +351,7 @@
                 </StackPanel>
             </Button>
             <Button
-                Grid.Column="2"
+                Grid.Column="3"
                 Padding="24,10"
                 FontSize="15"
                 FontWeight="SemiBold"

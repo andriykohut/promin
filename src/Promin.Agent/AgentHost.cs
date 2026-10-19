@@ -38,14 +38,16 @@ internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAg
 /// <summary>
 /// The parts of start-up that touch this machine (QUIC, the Windows key store, the network), as functions, so
 /// that every way the agent can fail to start, and the exit code and log line for it, can be reached from a test.
-/// <c>OpenScreenPictures</c> is null in tests, which then take no pictures.
+/// <c>OpenScreenPictures</c> is null in tests, which then take no pictures; <c>Person</c> is null in tests, which then
+/// never act as the signed-in person.
 /// </summary>
 internal sealed record AgentServices(
     Action EnsureQuicSupported,
     Func<string, DeviceIdentity> LoadIdentity,
     Func<DeviceIdentity, PeerCertificateStore, Action<Exception>, IAgentListener> CreateListener,
     Func<DeviceIdentity, IDisposable> StartBeacon,
-    Func<IScreenPictures>? OpenScreenPictures = null)
+    Func<IScreenPictures>? OpenScreenPictures = null,
+    Func<ISignedInPerson>? Person = null)
 {
     public static AgentServices ForThisMachine() => new(
         QuicTransportSettings.EnsureSupported,
@@ -65,12 +67,13 @@ internal sealed record AgentServices(
             beacon.Start();
             return beacon;
         },
-        () => new ScreenPictures());
+        () => new ScreenPictures(),
+        () => new WindowsSignedInPerson(Environment.ProcessPath!));
 }
 
 /// <summary>
 /// The agent when it runs: its identity, the listener, the beacon that announces it, and the two loops side by
-/// side over one listener (console PCs that are paired, each with its broadcast and its screen pictures, and pairing windows). It returns the process's exit code
+/// side over one listener (console PCs that are paired, each with its broadcast, its screen pictures and its file sends, and pairing windows). It returns the process's exit code
 /// and says why in the log; nothing here ends the process itself. There is deliberately no <c>ProcessExit</c>
 /// handler: it runs after <c>Main</c> has returned and everything it could cancel is already disposed. The agent
 /// is ended by <c>Stop-Process</c> or, in a test, by the token.
@@ -180,6 +183,14 @@ internal static class AgentHost
                 _ = Task.Run(() => log.Write(ScreenPictureProbe.Describe(openPictures)), CancellationToken.None);
             }
 
+            if (services.Person is { } person)
+            {
+                // Off the start-up path: the helper it starts is given up to ten seconds to report.
+                _ = Task.Run(
+                    async () => log.Write(await SignedInPersonProbe.DescribeAsync(person()).ConfigureAwait(false)),
+                    CancellationToken.None);
+            }
+
             var pairing = new AgentPairingLoop(
                 masters,
                 new AgentSettings(paths.RoomCodeFile).Lookup,
@@ -193,7 +204,8 @@ internal static class AgentHost
             var displays = new BroadcastDisplayFactory(command.Windowed, log.Write);
 
             var pairingLoop = pairing.RunAsync(shutdown.Token);
-            var acceptLoop = AcceptConsolePcsAsync(listener, connections, displays, services.OpenScreenPictures, log, shutdown.Token);
+            var acceptLoop = AcceptConsolePcsAsync(
+                listener, connections, displays, services.OpenScreenPictures, services.Person, log, shutdown.Token);
 
             // Neither loop ends by itself; one that does has failed.
             var ended = await Task.WhenAny(pairingLoop, acceptLoop).ConfigureAwait(false);
@@ -215,6 +227,7 @@ internal static class AgentHost
         NewestConnectionWins connections,
         IBroadcastDisplayFactory displays,
         Func<IScreenPictures>? openScreenPictures,
+        Func<ISignedInPerson>? person,
         AgentLog log,
         CancellationToken ct)
     {
@@ -247,6 +260,10 @@ internal static class AgentHost
                                 log.Write,
                                 TimeProvider.System).RunAsync(stopPictures.Token),
                             CancellationToken.None);
+                    using var stopFiles = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    var files = person is null
+                        ? Task.CompletedTask
+                        : new FileReceiver(person, log.Write).RunAsync(connection, stopFiles.Token);
                     try
                     {
                         await new BroadcastConnection(displays, log.Write).RunAsync(connection, token).ConfigureAwait(false);
@@ -256,6 +273,10 @@ internal static class AgentHost
                         // The capture is let go before the next connection's sender makes its own: two at once are refused.
                         await stopPictures.CancelAsync().ConfigureAwait(false);
                         await pictures.ConfigureAwait(false);
+
+                        // The send under way ends before the next connection's receiver can start one: staging is one folder.
+                        await stopFiles.CancelAsync().ConfigureAwait(false);
+                        await files.ConfigureAwait(false);
                         await connection.DisposeAsync().ConfigureAwait(false);
                         log.Write($"The connection from console PC {consolePc} is closed.");
                     }

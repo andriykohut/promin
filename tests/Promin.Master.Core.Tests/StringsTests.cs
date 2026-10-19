@@ -47,6 +47,34 @@ public sealed class StringsTests
     public void UkrainianPillWords_AgreeWithTheCount(int ready, string expected) =>
         Assert.Equal(expected, In(Ukrainian, () => WallText.PillsOffAir(ready, 0).Single().Word));
 
+    [Theory]
+    [InlineData(1, "1 елемент · 3 MB")]
+    [InlineData(3, "3 елементи · 3 MB")]
+    [InlineData(5, "5 елементів · 3 MB")]
+    [InlineData(21, "21 елемент · 3 MB")]
+    public void UkrainianSendSummary_TakesTheFormTheNumberNeeds(int items, string expected) =>
+        Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.Send_Summary, ("count", items), ("size", "3 MB"))));
+
+    [Theory]
+    [InlineData(1, "Вибраний ПК")]
+    [InlineData(21, "Вибрані 21 ПК")]
+    public void UkrainianSendChoices_NameOnlyASinglePc_ForExactlyOne(int pcs, string expected) =>
+        Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.Send_Selected, ("count", pcs))));
+
+    [Theory]
+    [InlineData(1, 9, 1, "1 з 9 ПК уже його отримав.")]
+    [InlineData(5, 9, 3, "5 з 9 ПК уже їх отримали.")]
+    [InlineData(21, 30, 1, "21 з 30 ПК уже його отримав.")]
+    [InlineData(5, 9, 21, "5 з 9 ПК уже їх отримали.")]
+    public void UkrainianSendCount_AgreesWithThePcsAndTheItems(int have, int count, int items, string expected) =>
+        Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.SendStrip_Have, ("have", have), ("count", count), ("items", items))));
+
+    [Theory]
+    [InlineData(1, "quiz-chapter-3.html не надіслано.")]
+    [InlineData(3, "3 елементи не надіслано.")]
+    public void UkrainianNotSent_ReadsTheSameForAnyCount(int items, string expected) =>
+        Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.SendStrip_NotSent, ("what", items == 1 ? "quiz-chapter-3.html" : "3 елементи"), ("items", items))));
+
     [Fact]
     public void ANameWithBracesOrAnApostrophe_IsShownAsTyped() =>
         Assert.Equal("{PC}'s is back.", WallMessage.IsBack("{PC}'s").Title);

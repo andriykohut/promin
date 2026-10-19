@@ -390,4 +390,148 @@
   <data name="Message_BackText" xml:space="preserve">
     <value>Він автоматично приєднався до трансляції.</value>
   </data>
+  <data name="Send_Title" xml:space="preserve">
+    <value>Надіслати файли</value>
+  </data>
+  <data name="Send_What" xml:space="preserve">
+    <value>Що</value>
+  </data>
+  <data name="Send_To" xml:space="preserve">
+    <value>Кому</value>
+  </data>
+  <data name="Send_Add" xml:space="preserve">
+    <value>Додати</value>
+  </data>
+  <data name="Send_AddFiles" xml:space="preserve">
+    <value>Файли…</value>
+  </data>
+  <data name="Send_AddFolder" xml:space="preserve">
+    <value>Папка…</value>
+  </data>
+  <data name="Send_Empty" xml:space="preserve">
+    <value>Ще нічого не додано. Додайте файли або папку.</value>
+  </data>
+  <data name="Send_Where" xml:space="preserve">
+    <value>Вони потраплять до папки Promin на робочому столі кожного ПК.</value>
+  </data>
+  <data name="Send_Selected" xml:space="preserve">
+    <value>{count, plural, =1 {Вибраний ПК} other {Вибрані {count} ПК}}</value>
+  </data>
+  <data name="Send_All" xml:space="preserve">
+    <value>{count, plural, =1 {Єдиний ПК} other {Усі {count} ПК}}</value>
+  </data>
+  <data name="Send_OfflineOne" xml:space="preserve">
+    <value>{name} не в мережі й не отримає їх. Надіслати знову можна пізніше.</value>
+  </data>
+  <data name="Send_OfflineMany" xml:space="preserve">
+    <value>{count} ПК не в мережі й не отримають їх. Надіслати знову можна пізніше.</value>
+  </data>
+  <data name="Send_Open" xml:space="preserve">
+    <value>Відкрити на кожному ПК одразу після отримання</value>
+  </data>
+  <data name="Send_OpenHelp" xml:space="preserve">
+    <value>Файли відкриваються у звичній для них програмі; програми ніколи не запускаються. Папка відкривається лише тоді, коли це єдине, що ви надсилаєте; її вміст не відкривається.</value>
+  </data>
+  <data name="Send_Summary" xml:space="preserve">
+    <value>{count, plural, one {# елемент} few {# елементи} many {# елементів} other {# елемента}} · {size}</value>
+  </data>
+  <data name="Send_Send" xml:space="preserve">
+    <value>Надіслати</value>
+  </data>
+  <data name="Send_RemoveName" xml:space="preserve">
+    <value>Вилучити {name}</value>
+  </data>
+  <data name="Size_KB" xml:space="preserve">
+    <value>{size} КБ</value>
+  </data>
+  <data name="Size_MB" xml:space="preserve">
+    <value>{size} МБ</value>
+  </data>
+  <data name="Size_GB" xml:space="preserve">
+    <value>{size} ГБ</value>
+  </data>
+  <data name="SendStrip_Sending" xml:space="preserve">
+    <value>Надсилання: {what}</value>
+  </data>
+  <data name="SendStrip_Have" xml:space="preserve">
+    <value>{have} з {count} ПК уже {items, plural, =1 {його} other {їх}} {have, plural, one {отримав} other {отримали}}.</value>
+  </data>
+  <data name="SendStrip_Stop" xml:space="preserve">
+    <value>Зупинити надсилання</value>
+  </data>
+  <data name="SendStrip_SentTo" xml:space="preserve">
+    <value>{what} надіслано на {count} ПК.</value>
+  </data>
+  <data name="SendStrip_MissedOne" xml:space="preserve">
+    <value>{name} {items, plural, =1 {його} other {їх}} не отримав.</value>
+  </data>
+  <data name="SendStrip_MissedMany" xml:space="preserve">
+    <value>{count} ПК {items, plural, =1 {його} other {їх}} не {count, plural, one {отримав} other {отримали}}.</value>
+  </data>
+  <data name="SendStrip_AgainOne" xml:space="preserve">
+    <value>Надіслати знову на {name}</value>
+  </data>
+  <data name="SendStrip_AgainMany" xml:space="preserve">
+    <value>Надіслати знову на {count} ПК</value>
+  </data>
+  <data name="SendStrip_AllSent" xml:space="preserve">
+    <value>{what} надіслано на всі {count} ПК.</value>
+  </data>
+  <data name="SendStrip_SourceTitle" xml:space="preserve">
+    <value>Надсилання зупинено</value>
+  </data>
+  <data name="SendStrip_SourceText" xml:space="preserve">
+    <value>Не вдалося прочитати {file}.</value>
+  </data>
+  <data name="SendStrip_MissedOneWhy" xml:space="preserve">
+    <value>{name} {items, plural, =1 {його} other {їх}} не отримав: {reason}.</value>
+  </data>
+  <data name="SendStrip_WhyOffline" xml:space="preserve">
+    <value>він не в мережі</value>
+  </data>
+  <data name="SendStrip_WhyConnectionLost" xml:space="preserve">
+    <value>зв’язок втрачено</value>
+  </data>
+  <data name="SendStrip_WhyNotEnoughSpace" xml:space="preserve">
+    <value>недостатньо місця</value>
+  </data>
+  <data name="SendStrip_WhyInUse" xml:space="preserve">
+    <value>стара копія використовується</value>
+  </data>
+  <data name="SendStrip_WhyStopped" xml:space="preserve">
+    <value>надсилання зупинено</value>
+  </data>
+  <data name="SendStrip_NotSent" xml:space="preserve">
+    <value>{items, plural, other {{what} не надіслано.}}</value>
+  </data>
+  <data name="Send_Items" xml:space="preserve">
+    <value>{count, plural, one {# елемент} few {# елементи} many {# елементів} other {# елемента}}</value>
+  </data>
+  <data name="NotSent_Offline" xml:space="preserve">
+    <value>Не надіслано: не в мережі.</value>
+  </data>
+  <data name="NotSent_ConnectionLost" xml:space="preserve">
+    <value>Не надіслано: зв’язок втрачено.</value>
+  </data>
+  <data name="NotSent_NotEnoughSpace" xml:space="preserve">
+    <value>Не надіслано: недостатньо місця.</value>
+  </data>
+  <data name="NotSent_InUse" xml:space="preserve">
+    <value>Не надіслано: стара копія використовується.</value>
+  </data>
+  <data name="NotSent_Stopped" xml:space="preserve">
+    <value>Не надіслано: зупинено.</value>
+  </data>
+  <data name="NotSent_Other" xml:space="preserve">
+    <value>Не надіслано.</value>
+  </data>
+  <data name="TileSend_Sending" xml:space="preserve">
+    <value>надсилання, {percent}%</value>
+  </data>
+  <data name="TileSend_Done" xml:space="preserve">
+    <value>файли отримано</value>
+  </data>
+  <data name="TileSend_NotSent" xml:space="preserve">
+    <value>файли не отримано</value>
+  </data>
 </root>
