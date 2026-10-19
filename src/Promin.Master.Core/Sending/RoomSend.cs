@@ -37,7 +37,7 @@ public sealed class RoomSend(IFileSender sender, Func<string, PcTile?> tileOf, F
     private bool _running;
     private bool _stripOpen;
 
-    // The path, within the send, of a file this PC could not read; set when that stopped the send.
+    // The path, within the send, of a file the console could not read; set when that stopped the send.
     private string? _unreadable;
 
     // When the last PC finished; null while running, and once its ticks are cleared.
@@ -58,6 +58,7 @@ public sealed class RoomSend(IFileSender sender, Func<string, PcTile?> tileOf, F
     public string StripTitle => _package is null ? string.Empty : StripKind switch
     {
         SendStripKind.Sending => Phrase.Format(Strings.SendStrip_Sending, ("what", What)),
+        SendStripKind.SomeMissed when Have == 0 => Phrase.Format(Strings.SendStrip_NotSent, ("what", What)),
         SendStripKind.SomeMissed => SentTo,
 
         // "Sent to all 1 PCs" would read wrong.
@@ -69,9 +70,13 @@ public sealed class RoomSend(IFileSender sender, Func<string, PcTile?> tileOf, F
     public string StripText => _package is null ? string.Empty : StripKind switch
     {
         SendStripKind.Sending => Phrase.Format(Strings.SendStrip_Have, ("have", Have), ("count", _pcs.Count), ("items", Items)),
-        SendStripKind.SomeMissed => Missed is [var one]
-            ? Phrase.Format(Strings.SendStrip_MissedOne, ("name", one.Target.Name), ("items", Items))
-            : Phrase.Format(Strings.SendStrip_MissedMany, ("count", Missed.Count), ("items", Items)),
+        SendStripKind.SomeMissed => Missed switch
+        {
+            [var one] when SendText.Why(one.Reason) is { } why =>
+                Phrase.Format(Strings.SendStrip_MissedOneWhy, ("name", one.Target.Name), ("items", Items), ("reason", why)),
+            [var one] => Phrase.Format(Strings.SendStrip_MissedOne, ("name", one.Target.Name), ("items", Items)),
+            var several => Phrase.Format(Strings.SendStrip_MissedMany, ("count", several.Count), ("items", Items)),
+        },
         SendStripKind.SourceFailed => Phrase.Format(Strings.SendStrip_SourceText, ("file", _unreadable!)),
         _ => string.Empty,
     };
@@ -181,7 +186,7 @@ public sealed class RoomSend(IFileSender sender, Func<string, PcTile?> tileOf, F
         }
     }
 
-    /// <summary>Ignored while sending.</summary>
+    /// <summary>Closes the strip. Ignored while sending.</summary>
     public void CloseStrip()
     {
         if (!_running)
@@ -237,7 +242,7 @@ public sealed class RoomSend(IFileSender sender, Func<string, PcTile?> tileOf, F
         }
         catch (SendSourceException e)
         {
-            // What this PC cannot read, no PC gets.
+            // What the console cannot read, no PC gets.
             _unreadable ??= e.Path;
             stop.Cancel();
             reason = NotSentReason.Stopped;

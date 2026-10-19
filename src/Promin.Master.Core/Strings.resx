@@ -496,6 +496,27 @@
   <data name="SendStrip_SourceText" xml:space="preserve">
     <value>{file} could not be read.</value>
   </data>
+  <data name="SendStrip_MissedOneWhy" xml:space="preserve">
+    <value>{name} did not get {items, plural, one {it} other {them}}: {reason}.</value>
+  </data>
+  <data name="SendStrip_WhyOffline" xml:space="preserve">
+    <value>it is offline</value>
+  </data>
+  <data name="SendStrip_WhyConnectionLost" xml:space="preserve">
+    <value>the connection was lost</value>
+  </data>
+  <data name="SendStrip_WhyNotEnoughSpace" xml:space="preserve">
+    <value>there is not enough space</value>
+  </data>
+  <data name="SendStrip_WhyInUse" xml:space="preserve">
+    <value>the old copy is in use</value>
+  </data>
+  <data name="SendStrip_WhyStopped" xml:space="preserve">
+    <value>the send was stopped</value>
+  </data>
+  <data name="SendStrip_NotSent" xml:space="preserve">
+    <value>{what} was not sent.</value>
+  </data>
   <data name="Send_Items" xml:space="preserve">
     <value>{count} items</value>
   </data>

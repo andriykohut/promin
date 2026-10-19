@@ -65,6 +65,7 @@ public sealed class StringsTests
     [InlineData(1, 9, 1, "1 з 9 ПК уже його отримав.")]
     [InlineData(5, 9, 3, "5 з 9 ПК уже їх отримали.")]
     [InlineData(21, 30, 1, "21 з 30 ПК уже його отримав.")]
+    [InlineData(5, 9, 21, "5 з 9 ПК уже їх отримали.")]
     public void UkrainianSendCount_AgreesWithThePcsAndTheItems(int have, int count, int items, string expected) =>
         Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.SendStrip_Have, ("have", have), ("count", count), ("items", items))));
 

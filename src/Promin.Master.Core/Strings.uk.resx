@@ -451,7 +451,7 @@
     <value>Надсилання: {what}</value>
   </data>
   <data name="SendStrip_Have" xml:space="preserve">
-    <value>{have} з {count} ПК уже {items, plural, one {його} other {їх}} {have, plural, one {отримав} other {отримали}}.</value>
+    <value>{have} з {count} ПК уже {items, plural, =1 {його} other {їх}} {have, plural, one {отримав} other {отримали}}.</value>
   </data>
   <data name="SendStrip_Stop" xml:space="preserve">
     <value>Зупинити надсилання</value>
@@ -460,10 +460,10 @@
     <value>{what} надіслано на {count} ПК.</value>
   </data>
   <data name="SendStrip_MissedOne" xml:space="preserve">
-    <value>{name} {items, plural, one {його} other {їх}} не отримав.</value>
+    <value>{name} {items, plural, =1 {його} other {їх}} не отримав.</value>
   </data>
   <data name="SendStrip_MissedMany" xml:space="preserve">
-    <value>{count} ПК {items, plural, one {його} other {їх}} не {count, plural, one {отримав} other {отримали}}.</value>
+    <value>{count} ПК {items, plural, =1 {його} other {їх}} не {count, plural, one {отримав} other {отримали}}.</value>
   </data>
   <data name="SendStrip_AgainOne" xml:space="preserve">
     <value>Надіслати знову на {name}</value>
@@ -479,6 +479,27 @@
   </data>
   <data name="SendStrip_SourceText" xml:space="preserve">
     <value>Не вдалося прочитати {file}.</value>
+  </data>
+  <data name="SendStrip_MissedOneWhy" xml:space="preserve">
+    <value>{name} {items, plural, =1 {його} other {їх}} не отримав: {reason}.</value>
+  </data>
+  <data name="SendStrip_WhyOffline" xml:space="preserve">
+    <value>він не в мережі</value>
+  </data>
+  <data name="SendStrip_WhyConnectionLost" xml:space="preserve">
+    <value>зв’язок втрачено</value>
+  </data>
+  <data name="SendStrip_WhyNotEnoughSpace" xml:space="preserve">
+    <value>недостатньо місця</value>
+  </data>
+  <data name="SendStrip_WhyInUse" xml:space="preserve">
+    <value>стара копія використовується</value>
+  </data>
+  <data name="SendStrip_WhyStopped" xml:space="preserve">
+    <value>надсилання зупинено</value>
+  </data>
+  <data name="SendStrip_NotSent" xml:space="preserve">
+    <value>{what} не надіслано.</value>
   </data>
   <data name="Send_Items" xml:space="preserve">
     <value>{count, plural, one {# елемент} few {# елементи} many {# елементів} other {# елемента}}</value>

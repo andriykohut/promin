@@ -36,5 +36,19 @@ public static class SendText
         _ => Strings.NotSent_Other,
     };
 
+    /// <summary>
+    /// Why one PC did not get the send, as the end of the strip's sentence about it; null for
+    /// <see cref="NotSentReason.Other"/>, which the strip gives no reason for.
+    /// </summary>
+    public static string? Why(NotSentReason reason) => reason switch
+    {
+        NotSentReason.Offline => Strings.SendStrip_WhyOffline,
+        NotSentReason.ConnectionLost => Strings.SendStrip_WhyConnectionLost,
+        NotSentReason.NotEnoughSpace => Strings.SendStrip_WhyNotEnoughSpace,
+        NotSentReason.InUse => Strings.SendStrip_WhyInUse,
+        NotSentReason.Stopped => Strings.SendStrip_WhyStopped,
+        _ => null,
+    };
+
     private static string Unit(string text, string number) => Phrase.Format(text, ("size", number));
 }

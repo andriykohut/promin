@@ -29,7 +29,7 @@ public enum NotSentReason
     /// <summary>An older copy of an item is open on the PC and could not be replaced.</summary>
     InUse,
 
-    /// <summary>Stop sending was pressed, or a file could not be read on this PC.</summary>
+    /// <summary>Stop sending was pressed, or a file could not be read on the console.</summary>
     Stopped,
 
     /// <summary>The PC refused the send or could not write it; its log has the details.</summary>
@@ -46,6 +46,6 @@ public enum SendStripKind
 
     AllSent,
 
-    /// <summary>A file could not be read on this PC, so the send stopped for every PC.</summary>
+    /// <summary>A file could not be read on the console, so the send stopped for every PC.</summary>
     SourceFailed,
 }

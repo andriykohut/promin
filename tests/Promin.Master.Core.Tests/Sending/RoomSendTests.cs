@@ -100,6 +100,26 @@ public sealed class RoomSendTests
     }
 
     [Fact]
+    public void ACountQueuedBehindItsPcsAnswer_DoesNotBringBackAClearedTick()
+    {
+        var queue = new Queue<Action>();
+        var send = Build(queue.Enqueue);
+        send.Start(Quiz, open: false, [Pc(3)]);
+
+        SendTo(3).Written(640);
+        Answer(SendOutcome.Sent, 3);
+        _now += TimeSpan.FromSeconds(10);
+        send.Tick();
+        while (queue.TryDequeue(out var action))
+        {
+            action();
+        }
+
+        Assert.Equal(TileSendMark.None, Tile(3).SendMark);
+        Assert.Equal(100, send.Progress);
+    }
+
+    [Fact]
     public void AFinishedPc_CountsInFull_TowardsTheBar()
     {
         _send.Start(Quiz, open: false, EightOnline());
@@ -192,7 +212,7 @@ public sealed class RoomSendTests
 
         Assert.Equal(SendStripKind.SomeMissed, _send.StripKind);
         Assert.Equal("quiz-chapter-3.html sent to 8 PCs.", _send.StripTitle);
-        Assert.Equal("PC-07 did not get it.", _send.StripText);
+        Assert.Equal("PC-07 did not get it: it is offline.", _send.StripText);
         Assert.Equal("Send again to PC-07", _send.StripActionLabel);
         Assert.True(_send.HasStripAction);
         Assert.True(_send.IsStripClosable);
@@ -205,6 +225,52 @@ public sealed class RoomSendTests
         _send.CloseStrip();
 
         Assert.False(_send.IsStripOpen);
+    }
+
+    [Theory]
+    [InlineData(NotSentReason.Offline, "PC-03 did not get it: it is offline.")]
+    [InlineData(NotSentReason.ConnectionLost, "PC-03 did not get it: the connection was lost.")]
+    [InlineData(NotSentReason.NotEnoughSpace, "PC-03 did not get it: there is not enough space.")]
+    [InlineData(NotSentReason.InUse, "PC-03 did not get it: the old copy is in use.")]
+    [InlineData(NotSentReason.Stopped, "PC-03 did not get it: the send was stopped.")]
+    [InlineData(NotSentReason.Other, "PC-03 did not get it.")]
+    public void OneMissedPc_IsNamed_WithWhyItMissed(NotSentReason reason, string expected)
+    {
+        _send.Start(Quiz, open: false, [.. EightOnline().Select(t => t.Name == "PC-03" ? t with { Online = reason != NotSentReason.Offline } : t)]);
+        Answer(SendOutcome.Sent, 1, 2, 4, 5, 6, 7, 8);
+
+        switch (reason)
+        {
+            case NotSentReason.ConnectionLost:
+                SendTo(3).Answer.SetException(new IOException("gone"));
+                break;
+            case NotSentReason.NotEnoughSpace:
+                Answer(SendOutcome.NotEnoughSpace, 3);
+                break;
+            case NotSentReason.InUse:
+                Answer(SendOutcome.InUse, 3);
+                break;
+            case NotSentReason.Stopped:
+                _send.StripAction();
+                break;
+            case NotSentReason.Other:
+                Answer(SendOutcome.Failed, 3);
+                break;
+        }
+
+        Assert.Equal(SendStripKind.SomeMissed, _send.StripKind);
+        Assert.Equal(expected, _send.StripText);
+    }
+
+    [Fact]
+    public void NoPcGotIt_SaysItWasNotSent()
+    {
+        _send.Start(Quiz, open: false, NineWithSevenOffline());
+
+        _send.StripAction();
+
+        Assert.Equal("quiz-chapter-3.html was not sent.", _send.StripTitle);
+        Assert.Equal("9 PCs did not get it.", _send.StripText);
     }
 
     [Fact]
