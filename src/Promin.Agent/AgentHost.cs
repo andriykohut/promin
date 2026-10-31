@@ -80,9 +80,11 @@ internal sealed record AgentServices(
 /// The agent when it runs: a lock the PC holds, restored before anything else, then its identity, the listener, the
 /// beacon that announces it, and the two loops side by side over one listener (console PCs that are paired, each with
 /// its broadcast, its screen pictures, its file sends and its lock stream, and pairing windows). A <c>--windowed</c>
-/// agent has no lock. It returns the process's exit code and says why in the log; nothing here ends the process
-/// itself. There is deliberately no <c>ProcessExit</c> handler: it runs after <c>Main</c> has returned and everything
-/// it could cancel is already disposed. The agent is ended by <c>Stop-Process</c> or, in a test, by the token.
+/// agent has no lock. It returns the process's exit code and says why in the log, with one exception: a lock window or
+/// input block that will not go ends the process there and then (<see cref="LockScreenWindow.Hide"/>,
+/// <see cref="InputBlock.Release"/>), which an unlock or the lock's disposal can reach. There is deliberately no
+/// <c>ProcessExit</c> handler: it runs after <c>Main</c> has returned and everything it could cancel is already
+/// disposed. The agent is ended by <c>Stop-Process</c> or, in a test, by the token.
 /// </summary>
 internal static class AgentHost
 {
