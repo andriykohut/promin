@@ -2,10 +2,14 @@ using System.Runtime.InteropServices;
 
 namespace Promin.Agent;
 
-/// <summary>The Win32 calls the render window and the console output need.</summary>
+/// <summary>The Win32 calls the render window, the lock screen, the input block and the console output need.</summary>
 internal static class NativeMethods
 {
     public delegate nint WindowProcedure(nint hwnd, uint message, nint wParam, nint lParam);
+
+    public delegate nint HookProcedure(int code, nint wParam, nint lParam);
+
+    public delegate bool MonitorProcedure(nint monitor, nint dc, nint bounds, nint data);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct WindowClass
@@ -46,6 +50,22 @@ internal static class NativeMethods
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct MonitorInfo
+    {
+        public uint Size;
+        public Rect Bounds;
+        public Rect WorkArea;
+        public uint Flags;
+    }
+
+    /// <summary>PAINTSTRUCT on 64-bit Windows. Nothing here reads it: <c>BeginPaint</c> fills it and <c>EndPaint</c> takes it back.</summary>
+    [StructLayout(LayoutKind.Sequential, Size = 72)]
+    public struct PaintStruct
+    {
+        public nint Dc;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct MouseInput
     {
         public int Dx;
@@ -81,12 +101,32 @@ internal static class NativeMethods
     public const uint WM_SIZE = 0x0005;
     public const uint WM_PAINT = 0x000F;
     public const uint WM_CLOSE = 0x0010;
+    public const uint WM_QUIT = 0x0012;
     public const uint WM_ERASEBKGND = 0x0014;
     public const uint WM_SETCURSOR = 0x0020;
     public const uint WM_DISPLAYCHANGE = 0x007E;
     public const uint WM_NCCREATE = 0x0081;
     public const uint WM_NCDESTROY = 0x0082;
+    public const uint WM_TIMER = 0x0113;
     public const uint WM_APP = 0x8000;
+
+    public const int WH_KEYBOARD_LL = 13;
+    public const int WH_MOUSE_LL = 14;
+    public const uint PM_NOREMOVE = 0;
+    public const uint MONITORINFOF_PRIMARY = 1;
+
+    public const uint DT_CENTER = 0x0001;
+    public const uint DT_VCENTER = 0x0004;
+    public const uint DT_WORDBREAK = 0x0010;
+    public const uint DT_SINGLELINE = 0x0020;
+    public const uint DT_CALCRECT = 0x0400;
+    public const uint DT_NOPREFIX = 0x0800;
+    public const uint DT_EDITCONTROL = 0x2000;
+    public const int TRANSPARENT = 1;
+    public const int FW_NORMAL = 400;
+    public const int FW_SEMIBOLD = 600;
+    public const uint DEFAULT_CHARSET = 1;
+    public const uint CLEARTYPE_QUALITY = 5;
 
     public const int SIZE_MINIMIZED = 1;
     public const int HTCLIENT = 1;
@@ -144,6 +184,10 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PeekMessageW(out Message message, nint hwnd, uint filterMin, uint filterMax, uint remove);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool TranslateMessage(ref Message message);
 
     [DllImport("user32.dll")]
@@ -152,6 +196,45 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool PostMessageW(nint hwnd, uint message, nint wParam, nint lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostThreadMessageW(uint threadId, uint message, nint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
+    public static extern nuint SetTimer(nint hwnd, nuint id, uint milliseconds, nint callback);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern nint SetWindowsHookExW(int id, HookProcedure procedure, nint module, uint threadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool UnhookWindowsHookEx(nint hook);
+
+    [DllImport("user32.dll")]
+    public static extern nint CallNextHookEx(nint hook, int code, nint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumDisplayMonitors(nint dc, nint clip, MonitorProcedure procedure, nint data);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetMonitorInfoW(nint monitor, ref MonitorInfo info);
+
+    [DllImport("user32.dll")]
+    public static extern nint BeginPaint(nint hwnd, out PaintStruct paint);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EndPaint(nint hwnd, ref PaintStruct paint);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool UpdateWindow(nint hwnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int DrawTextW(nint dc, string text, int length, ref Rect rect, uint format);
 
     [DllImport("user32.dll")]
     public static extern void PostQuitMessage(int exitCode);
@@ -175,12 +258,36 @@ internal static class NativeMethods
     [DllImport("gdi32.dll")]
     public static extern nint GetStockObject(int index);
 
+    [DllImport("gdi32.dll")]
+    public static extern nint CreateSolidBrush(uint colour);
+
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern nint CreateFontW(
+        int height, int width, int escapement, int orientation, int weight, uint italic, uint underline, uint strikeOut,
+        uint charset, uint outputPrecision, uint clipPrecision, uint quality, uint pitchAndFamily, string face);
+
+    [DllImport("gdi32.dll")]
+    public static extern nint SelectObject(nint dc, nint gdiObject);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DeleteObject(nint gdiObject);
+
+    [DllImport("gdi32.dll")]
+    public static extern uint SetTextColor(nint dc, uint colour);
+
+    [DllImport("gdi32.dll")]
+    public static extern int SetBkMode(nint dc, int mode);
+
     /// <summary>Sets the calling thread's request and returns its previous one; 0 when it failed.</summary>
     [DllImport("kernel32.dll")]
     public static extern uint SetThreadExecutionState(uint flags);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     public static extern nint GetModuleHandleW(string? moduleName);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
 
     [DllImport("kernel32.dll")]
     public static extern nint GetStdHandle(int standardHandle);

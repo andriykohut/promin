@@ -12,6 +12,8 @@ internal sealed class FakeScreen(List<string> calls) : ILockScreen
     /// <summary>Runs when <see cref="Hide"/> is called.</summary>
     public Action? OnHide { get; set; }
 
+    public bool Disposed { get; private set; }
+
     public bool Show(string message)
     {
         calls.Add($"show:{message}");
@@ -27,15 +29,15 @@ internal sealed class FakeScreen(List<string> calls) : ILockScreen
 
     public void Yield(bool toPicture) => calls.Add($"yield:{toPicture}");
 
-    public void Dispose()
-    {
-    }
+    public void Dispose() => Disposed = true;
 }
 
 /// <summary>An input block that records its calls in the list it shares with <see cref="FakeScreen"/>.</summary>
 internal sealed class FakeInput(List<string> calls) : IInputBlock
 {
     public bool Held { get; private set; }
+
+    public bool Disposed { get; private set; }
 
     public void Hold()
     {
@@ -49,7 +51,5 @@ internal sealed class FakeInput(List<string> calls) : IInputBlock
         Held = false;
     }
 
-    public void Dispose()
-    {
-    }
+    public void Dispose() => Disposed = true;
 }

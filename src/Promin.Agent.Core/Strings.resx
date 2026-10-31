@@ -66,4 +66,7 @@
   <data name="Notice_OpenFolder" xml:space="preserve">
     <value>Open folder</value>
   </data>
+  <data name="LockScreen_Locked" xml:space="preserve">
+    <value>This PC is locked</value>
+  </data>
 </root>

@@ -232,4 +232,15 @@ public class ScreenLockTests
         Assert.Equal("Break", rig.File.Read());
         Assert.Equal(["show:Break", "hold", "hide", "release"], rig.Calls);
     }
+
+    [Fact]
+    public void Dispose_DisposesTheScreenAndTheInput()
+    {
+        using var rig = new Rig();
+
+        rig.Lock.Dispose();
+
+        Assert.True(rig.Screen.Disposed);
+        Assert.True(rig.Input.Disposed);
+    }
 }

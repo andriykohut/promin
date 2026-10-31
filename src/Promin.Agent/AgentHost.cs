@@ -39,7 +39,7 @@ internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAg
 /// The parts of start-up that touch this machine (QUIC, the Windows key store, the network), as functions, so
 /// that every way the agent can fail to start, and the exit code and log line for it, can be reached from a test.
 /// <c>OpenScreenPictures</c> is null in tests, which then take no pictures; <c>Person</c> is null in tests, which then
-/// never act as the signed-in person.
+/// never act as the signed-in person; <c>OpenScreenLock</c> is null in tests, which then never lock.
 /// </summary>
 internal sealed record AgentServices(
     Action EnsureQuicSupported,
@@ -47,7 +47,8 @@ internal sealed record AgentServices(
     Func<DeviceIdentity, PeerCertificateStore, Action<Exception>, IAgentListener> CreateListener,
     Func<DeviceIdentity, IDisposable> StartBeacon,
     Func<IScreenPictures>? OpenScreenPictures = null,
-    Func<ISignedInPerson>? Person = null)
+    Func<ISignedInPerson>? Person = null,
+    Func<AgentPaths, AgentLog, ScreenLock>? OpenScreenLock = null)
 {
     public static AgentServices ForThisMachine() => new(
         QuicTransportSettings.EnsureSupported,
@@ -68,15 +69,18 @@ internal sealed record AgentServices(
             return beacon;
         },
         () => new ScreenPictures(),
-        () => new WindowsSignedInPerson(Environment.ProcessPath!));
+        () => new WindowsSignedInPerson(Environment.ProcessPath!),
+        (paths, log) => new ScreenLock(
+            new LockFile(paths.LockFile, log.Write), new LockScreenWindow(log.Write), new InputBlock(log.Write), log.Write));
 }
 
 /// <summary>
-/// The agent when it runs: its identity, the listener, the beacon that announces it, and the two loops side by
-/// side over one listener (console PCs that are paired, each with its broadcast, its screen pictures and its file sends, and pairing windows). It returns the process's exit code
-/// and says why in the log; nothing here ends the process itself. There is deliberately no <c>ProcessExit</c>
-/// handler: it runs after <c>Main</c> has returned and everything it could cancel is already disposed. The agent
-/// is ended by <c>Stop-Process</c> or, in a test, by the token.
+/// The agent when it runs: a lock the PC holds, restored before anything else, then its identity, the listener, the
+/// beacon that announces it, and the two loops side by side over one listener (console PCs that are paired, each with
+/// its broadcast, its screen pictures, its file sends and its lock stream, and pairing windows). A <c>--windowed</c>
+/// agent has no lock. It returns the process's exit code and says why in the log; nothing here ends the process
+/// itself. There is deliberately no <c>ProcessExit</c> handler: it runs after <c>Main</c> has returned and everything
+/// it could cancel is already disposed. The agent is ended by <c>Stop-Process</c> or, in a test, by the token.
 /// </summary>
 internal static class AgentHost
 {
@@ -113,6 +117,9 @@ internal static class AgentHost
     private static async Task<int> RunCoreAsync(
         AgentCommandLine command, AgentPaths paths, AgentLog log, AgentServices services, CancellationToken stop)
     {
+        using var screenLock = command.Windowed ? null : services.OpenScreenLock?.Invoke(paths, log);
+        screenLock?.Restore();
+
         try
         {
             services.EnsureQuicSupported();
@@ -205,7 +212,7 @@ internal static class AgentHost
 
             var pairingLoop = pairing.RunAsync(shutdown.Token);
             var acceptLoop = AcceptConsolePcsAsync(
-                listener, connections, displays, services.OpenScreenPictures, services.Person, log, shutdown.Token);
+                listener, connections, displays, services.OpenScreenPictures, services.Person, screenLock, log, shutdown.Token);
 
             // Neither loop ends by itself; one that does has failed.
             var ended = await Task.WhenAny(pairingLoop, acceptLoop).ConfigureAwait(false);
@@ -228,6 +235,7 @@ internal static class AgentHost
         IBroadcastDisplayFactory displays,
         Func<IScreenPictures>? openScreenPictures,
         Func<ISignedInPerson>? person,
+        ScreenLock? screenLock,
         AgentLog log,
         CancellationToken ct)
     {
@@ -245,6 +253,7 @@ internal static class AgentHost
 
             var consolePc = channel.PinnedDeviceId;
             log.Write($"Console PC {consolePc} connected from {channel.RemoteEndPoint.Address}.");
+            var onThisPc = ConsoleOnThisPc.Is(channel.RemoteEndPoint.Address, ConsoleOnThisPc.OwnAddresses());
 
             await connections.StartAsync(
                 async token =>
@@ -263,7 +272,11 @@ internal static class AgentHost
                     using var stopFiles = CancellationTokenSource.CreateLinkedTokenSource(token);
                     var files = person is null
                         ? Task.CompletedTask
-                        : new FileReceiver(person, log.Write).RunAsync(connection, stopFiles.Token);
+                        : new FileReceiver(person, log.Write, () => screenLock?.IsLocked == true).RunAsync(connection, stopFiles.Token);
+                    using var stopLockLink = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    var lockLink = screenLock is null
+                        ? Task.CompletedTask
+                        : new LockLink(screenLock, mayLock: !onThisPc, log.Write).RunAsync(connection, stopLockLink.Token);
                     try
                     {
                         await new BroadcastConnection(displays, log.Write).RunAsync(connection, token).ConfigureAwait(false);
@@ -277,6 +290,9 @@ internal static class AgentHost
                         // The send under way ends before the next connection's receiver can start one: staging is one folder.
                         await stopFiles.CancelAsync().ConfigureAwait(false);
                         await files.ConfigureAwait(false);
+
+                        await stopLockLink.CancelAsync().ConfigureAwait(false);
+                        await lockLink.ConfigureAwait(false);
                         await connection.DisposeAsync().ConfigureAwait(false);
                         log.Write($"The connection from console PC {consolePc} is closed.");
                     }

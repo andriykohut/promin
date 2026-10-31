@@ -70,8 +70,8 @@ public class AgentHostTests
 
         public string LogText => File.Exists(Paths.LogFile) ? File.ReadAllText(Paths.LogFile) : "";
 
-        public Task<int> RunAsync() =>
-            AgentHost.RunAsync(AgentCommandLine.Parse([]), Paths, Log, Services, _stop.Token);
+        public Task<int> RunAsync(params string[] args) =>
+            AgentHost.RunAsync(AgentCommandLine.Parse(args), Paths, Log, Services, _stop.Token);
 
         public void Dispose()
         {
@@ -244,5 +244,47 @@ public class AgentHostTests
         await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Equal(["listener started", "beacon started"], order);
+    }
+
+    [Fact]
+    public async Task TheLockIsRestored_BeforeAnythingElse()
+    {
+        using var rig = new Rig();
+        new LockFile(rig.Paths.LockFile, _ => { }).Write("Break");
+        var calls = new List<string>();
+        rig.Services = rig.Services with
+        {
+            EnsureQuicSupported = () =>
+            {
+                calls.Add("quic check");
+                throw new PlatformNotSupportedException("no msquic");
+            },
+            OpenScreenLock = (paths, log) => new ScreenLock(
+                new LockFile(paths.LockFile, log.Write), new FakeScreen(calls), new FakeInput(calls), log.Write),
+        };
+
+        await rig.RunAsync();
+
+        Assert.Equal(["show:Break", "hold", "quic check", "hide", "release"], calls);
+    }
+
+    [Fact]
+    public async Task AWindowedAgent_OpensNoLock()
+    {
+        using var rig = new Rig();
+        var opened = false;
+        rig.Services = rig.Services with
+        {
+            EnsureQuicSupported = () => throw new PlatformNotSupportedException("no msquic"),
+            OpenScreenLock = (paths, log) =>
+            {
+                opened = true;
+                return new ScreenLock(new LockFile(paths.LockFile, log.Write), new FakeScreen([]), new FakeInput([]), log.Write);
+            },
+        };
+
+        await rig.RunAsync("--windowed");
+
+        Assert.False(opened);
     }
 }

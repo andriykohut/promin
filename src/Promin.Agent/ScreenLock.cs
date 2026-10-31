@@ -135,7 +135,10 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
         }
     }
 
-    /// <summary>Takes the window down and releases input, leaving the file, so the PC locks again at the next start.</summary>
+    /// <summary>
+    /// Takes the window down and releases input, leaving the file, so the PC locks again at the next start, then
+    /// disposes the screen and the input, which nothing else holds.
+    /// </summary>
     public void Dispose()
     {
         lock (gate)
@@ -148,6 +151,8 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
 
             pictureUp = false;
             Sync();
+            screen.Dispose();
+            input.Dispose();
         }
     }
 

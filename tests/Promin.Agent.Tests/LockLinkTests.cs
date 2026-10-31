@@ -135,7 +135,7 @@ public class LockLinkTests
         await rig.NextStateAsync();
 
         rig.Channel.FromConsole.Writer.Complete(new IOException("the stream ended"));
-        await rig.Running.WaitAsync(TimeSpan.FromSeconds(10));
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         Assert.True(rig.Screen.IsLocked);
     }
@@ -146,8 +146,8 @@ public class LockLinkTests
         using var rig = new Rig(onShow: () => throw new InvalidOperationException("window failed"));
         await rig.NextStateAsync();
 
-        await rig.Channel.FromConsole.Writer.WriteAsync(new LockPc("secret words"));
-        await rig.Running.WaitAsync(TimeSpan.FromSeconds(10));
+        await rig.Channel.FromConsole.Writer.WriteAsync(new LockPc("secret words"), TestContext.Current.CancellationToken);
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         Assert.Contains(rig.Log, line => line.Contains("InvalidOperationException"));
         Assert.DoesNotContain(rig.Log, line => line.Contains("secret words"));
