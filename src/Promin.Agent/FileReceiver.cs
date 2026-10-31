@@ -10,7 +10,8 @@ namespace Promin.Agent;
 /// </summary>
 /// <param name="person">The signed-in person, asked afresh for each send.</param>
 /// <param name="log">Called as the agent itself, never inside the person's identity.</param>
-internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> log)
+/// <param name="isLocked">Whether this PC is locked; a send to a locked PC arrives but opens nothing and shows no notice.</param>
+internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> log, Func<bool>? isLocked = null)
 {
     /// <summary>How long a send waits for its helper to end before logging it as still running.</summary>
     private static readonly TimeSpan HelperWait = TimeSpan.FromSeconds(10);
@@ -92,6 +93,12 @@ internal sealed class FileReceiver(Func<ISignedInPerson> person, Action<string> 
                 log($"A send ended: {outcome}, {target.TopLevel.Count} items, {send.Header.TotalBytes} bytes.{why}");
                 if (outcome != SendOutcome.Sent)
                 {
+                    return;
+                }
+
+                if (isLocked?.Invoke() == true)
+                {
+                    log("This PC is locked, so what was sent was not opened and no notice was shown.");
                     return;
                 }
 

@@ -193,10 +193,15 @@ public class FileReceiverTests
                         _log.Add(line);
                         _linesLoggedAsPerson += Person.Acting ? 1 : 0;
                     }
-                }).RunAsync(Connection, _stop.Token);
+                },
+                () => Locked).RunAsync(Connection, _stop.Token);
         }
 
         public FakeConnection Connection { get; } = new();
+
+        /// <summary>What the receiver is told about the PC being locked.</summary>
+        public bool Locked { get; set; }
+
         public FakePerson Person { get; }
         public Task Running { get; }
         public string Promin => Path.Combine(_home.Path, "Desktop", "Promin");
@@ -250,6 +255,18 @@ public class FileReceiverTests
             _stop.Dispose();
             _home.Dispose();
         }
+    }
+
+    [Fact]
+    public async Task ASendToALockedPc_Arrives_ButStartsNoHelper()
+    {
+        await using var rig = new Rig { Locked = true };
+
+        await rig.ReceiveAsync(rig.Send(open: true, "quiz.html"));
+        await Rig.UntilAsync(() => rig.Log.Any(line => line.Contains("locked")), "the locked line");
+
+        Assert.True(File.Exists(Path.Combine(rig.Promin, "quiz.html")));
+        Assert.Empty(rig.Person.Helpers);
     }
 
     [Fact]
