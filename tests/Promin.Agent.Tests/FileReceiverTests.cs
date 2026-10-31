@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Threading.Channels;
 using Promin.Protocol.Messages;
+using Promin.Protocol.Pairing;
 using Promin.Protocol.Sending;
 
 namespace Promin.Agent.Tests;
@@ -16,6 +17,8 @@ public class FileReceiverTests
         private readonly Channel<IIncomingSend> _sends = Channel.CreateUnbounded<IIncomingSend>();
 
         public Task<IIncomingSend> AcceptSendAsync(CancellationToken ct) => _sends.Reader.ReadAsync(ct).AsTask();
+
+        public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
 
         public Task<ControlMessage> ReceiveControlAsync(CancellationToken ct) => throw new NotSupportedException();
 

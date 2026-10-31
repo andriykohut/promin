@@ -16,6 +16,10 @@ namespace Promin.Protocol.Messages;
 [JsonDerivedType(typeof(SendItem), "sendItem")]
 [JsonDerivedType(typeof(SendEnd), "sendEnd")]
 [JsonDerivedType(typeof(SendDone), "sendDone")]
+[JsonDerivedType(typeof(WatchLock), "watchLock")]
+[JsonDerivedType(typeof(LockPc), "lockPc")]
+[JsonDerivedType(typeof(UnlockPc), "unlockPc")]
+[JsonDerivedType(typeof(LockState), "lockState")]
 public abstract record ControlMessage;
 
 /// <summary>
@@ -116,3 +120,15 @@ public sealed record SendEnd : ControlMessage;
 
 /// <summary>The receiver's one answer on a send stream.</summary>
 public sealed record SendDone(SendOutcome Outcome) : ControlMessage;
+
+/// <summary>The console PC's first message on the lock stream: from here the agent PC reports its lock state on it.</summary>
+public sealed record WatchLock : ControlMessage;
+
+/// <summary>Locks the agent PC's screen and input, showing <paramref name="Message"/> (see <see cref="LockLimits.Clean"/>).</summary>
+public sealed record LockPc(string Message) : ControlMessage;
+
+/// <summary>Lifts the lock.</summary>
+public sealed record UnlockPc : ControlMessage;
+
+/// <summary>The agent PC's report on the lock stream: whether it is locked now.</summary>
+public sealed record LockState(bool Locked) : ControlMessage;
