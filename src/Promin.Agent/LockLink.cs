@@ -1,3 +1,5 @@
+using System.Net.Quic;
+using System.Threading.Channels;
 using Promin.Protocol.Messages;
 
 namespace Promin.Agent;
@@ -10,7 +12,7 @@ namespace Promin.Agent;
 /// <param name="log">Gets a line for each refused message, never its text.</param>
 internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Action<string> log)
 {
-    /// <summary>Runs until the stream or the connection ends or <paramref name="ct"/> is cancelled. Throws nothing for any of them.</summary>
+    /// <summary>Runs until the stream or the connection ends or <paramref name="ct"/> is cancelled. Throws nothing; a failure that is not the end of the stream or connection is logged.</summary>
     public async Task RunAsync(IAgentConnection connection, CancellationToken ct)
     {
         try
@@ -37,9 +39,14 @@ internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Action<strin
                 await stream.SendAsync(new LockState(screenLock.IsLocked), ct).ConfigureAwait(false);
             }
         }
-        catch (Exception)
+        catch (Exception e) when (e is OperationCanceledException or IOException or ChannelClosedException or QuicException)
         {
             // The stream or the connection ended, or ct was cancelled; the connection's handler logs which.
+        }
+        catch (Exception e)
+        {
+            // The type only: a message could carry the text a person typed.
+            log($"The lock stream ended after a failure: {e.GetType().Name}.");
         }
     }
 }

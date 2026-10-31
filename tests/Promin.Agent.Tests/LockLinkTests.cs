@@ -37,9 +37,9 @@ public class LockLinkTests
         private readonly List<string> _calls = [];
         private readonly List<string> _log = [];
 
-        public Rig(bool mayLock = true, bool locked = false)
+        public Rig(bool mayLock = true, bool locked = false, Action? onShow = null)
         {
-            Screen = new ScreenLock(new LockFile(Path.Combine(_dir.Path, "lock"), _log.Add), new FakeScreen(_calls), new FakeInput(_calls), _log.Add);
+            Screen = new ScreenLock(new LockFile(Path.Combine(_dir.Path, "lock"), _log.Add), new FakeScreen(_calls) { OnShow = onShow }, new FakeInput(_calls), _log.Add);
             if (locked)
             {
                 Screen.Lock("x");
@@ -138,5 +138,18 @@ public class LockLinkTests
         await rig.Running.WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.True(rig.Screen.IsLocked);
+    }
+
+    [Fact]
+    public async Task AnUnexpectedFailure_IsLogged_WithoutTheMessage()
+    {
+        using var rig = new Rig(onShow: () => throw new InvalidOperationException("window failed"));
+        await rig.NextStateAsync();
+
+        await rig.Channel.FromConsole.Writer.WriteAsync(new LockPc("secret words"));
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Contains(rig.Log, line => line.Contains("InvalidOperationException"));
+        Assert.DoesNotContain(rig.Log, line => line.Contains("secret words"));
     }
 }
