@@ -35,14 +35,18 @@ internal sealed class FakeScreen(List<string> calls) : ILockScreen
 /// <summary>An input block that records its calls in the list it shares with <see cref="FakeScreen"/>.</summary>
 internal sealed class FakeInput(List<string> calls) : IInputBlock
 {
+    /// <summary>What <see cref="Hold"/> returns.</summary>
+    public bool CanHold { get; set; } = true;
+
     public bool Held { get; private set; }
 
     public bool Disposed { get; private set; }
 
-    public void Hold()
+    public bool Hold()
     {
         calls.Add("hold");
-        Held = true;
+        Held = CanHold;
+        return CanHold;
     }
 
     public void Release()

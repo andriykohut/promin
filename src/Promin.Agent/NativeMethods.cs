@@ -107,7 +107,13 @@ internal static class NativeMethods
     public const uint WM_DISPLAYCHANGE = 0x007E;
     public const uint WM_NCCREATE = 0x0081;
     public const uint WM_NCDESTROY = 0x0082;
+    public const uint WM_KEYUP = 0x0101;
+    public const uint WM_SYSKEYUP = 0x0105;
     public const uint WM_TIMER = 0x0113;
+    public const uint WM_LBUTTONUP = 0x0202;
+    public const uint WM_RBUTTONUP = 0x0205;
+    public const uint WM_MBUTTONUP = 0x0208;
+    public const uint WM_XBUTTONUP = 0x020C;
     public const uint WM_APP = 0x8000;
 
     public const int WH_KEYBOARD_LL = 13;
@@ -163,6 +169,12 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(nint hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(nint hwnd, out uint processId);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

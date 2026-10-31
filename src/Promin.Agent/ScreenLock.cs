@@ -15,7 +15,8 @@ internal interface ILockScreen : IDisposable
 /// <summary>The block on the keyboard and mouse of an agent PC.</summary>
 internal interface IInputBlock : IDisposable
 {
-    void Hold();
+    /// <summary>Blocks keyboard and mouse. False when it could not, with the reason logged: neither is blocked then.</summary>
+    bool Hold();
 
     void Release();
 }
@@ -52,8 +53,8 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
 
     /// <summary>
     /// Locks the PC. Does nothing when it is already locked (the first message stays). When the file cannot be
-    /// written there is no lock; when no window can be made the file stays so the next start tries again, and
-    /// input is not blocked.
+    /// written there is no lock. When no window can be made, or input cannot be blocked, the PC is not locked and the
+    /// window is not left up, and the file stays so the next start tries again.
     /// </summary>
     public void Lock(string message)
     {
@@ -106,7 +107,10 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
         }
     }
 
-    /// <summary>A broadcast picture is on screen: blocks input, and lets the picture sit above a lock window.</summary>
+    /// <summary>
+    /// A broadcast picture is on screen: blocks input, and lets the picture sit above a lock window. Input that cannot
+    /// be blocked is logged, and the picture stays.
+    /// </summary>
     public void PictureShown()
     {
         lock (gate)
@@ -118,6 +122,10 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
             }
 
             Sync();
+            if (!held)
+            {
+                log("Keyboard and mouse could not be blocked, so the picture shows with them free.");
+            }
         }
     }
 
@@ -166,6 +174,14 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
 
         locked = true;
         Sync();
+        if (!held)
+        {
+            screen.Hide();
+            locked = false;
+            log("Keyboard and mouse could not be blocked, so the PC is not locked.");
+            return;
+        }
+
         log($"The PC is locked ({how}).");
     }
 
@@ -174,13 +190,12 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
         var want = locked || pictureUp;
         if (want && !held)
         {
-            input.Hold();
+            held = input.Hold();
         }
         else if (!want && held)
         {
             input.Release();
+            held = false;
         }
-
-        held = want;
     }
 }

@@ -39,7 +39,8 @@ internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAg
 /// The parts of start-up that touch this machine (QUIC, the Windows key store, the network), as functions, so
 /// that every way the agent can fail to start, and the exit code and log line for it, can be reached from a test.
 /// <c>OpenScreenPictures</c> is null in tests, which then take no pictures; <c>Person</c> is null in tests, which then
-/// never act as the signed-in person; <c>OpenScreenLock</c> is null in tests, which then never lock.
+/// never act as the signed-in person; <c>OpenScreenLock</c> is null in tests, which then never lock. <c>Time</c> is set
+/// in tests, which then move the clock themselves, and null on a PC, which uses the system clock.
 /// </summary>
 internal sealed record AgentServices(
     Action EnsureQuicSupported,
@@ -48,7 +49,8 @@ internal sealed record AgentServices(
     Func<DeviceIdentity, IDisposable> StartBeacon,
     Func<IScreenPictures>? OpenScreenPictures = null,
     Func<ISignedInPerson>? Person = null,
-    Func<AgentPaths, AgentLog, ScreenLock>? OpenScreenLock = null)
+    Func<AgentPaths, AgentLog, ScreenLock>? OpenScreenLock = null,
+    TimeProvider? Time = null)
 {
     public static AgentServices ForThisMachine() => new(
         QuicTransportSettings.EnsureSupported,
@@ -97,29 +99,42 @@ internal static class AgentHost
 
     /// <summary>
     /// Runs until <paramref name="stop"/> is cancelled (a process normally runs until it is killed) and returns 0, or
-    /// returns an <see cref="ExitCodes"/> value as soon as it cannot start or something fails.
+    /// returns an <see cref="ExitCodes"/> value as soon as it cannot start or something fails. On a locked PC such a
+    /// failure first holds the lock for <see cref="RestartBackoff.Longest"/>, or until <paramref name="stop"/>.
     /// </summary>
     public static async Task<int> RunAsync(
         AgentCommandLine command, AgentPaths paths, AgentLog log, AgentServices services, CancellationToken stop)
     {
         log.Write($"Promin agent started ({(command.Windowed ? "windowed" : "full screen")}), process {Environment.ProcessId}.");
+        using var screenLock = command.Windowed ? null : services.OpenScreenLock?.Invoke(paths, log);
+        screenLock?.Restore();
+
+        int exitCode;
         try
         {
-            return await RunCoreAsync(command, paths, log, services, stop).ConfigureAwait(false);
+            exitCode = await RunCoreAsync(command, paths, log, services, screenLock, stop).ConfigureAwait(false);
         }
         catch (Exception failure)
         {
             log.Write($"The agent stopped because of an unexpected error: {failure}");
-            return ExitCodes.Unexpected;
+            exitCode = ExitCodes.Unexpected;
         }
+
+        if (exitCode != ExitCodes.Success && screenLock?.IsLocked == true)
+        {
+            // Exiting now would leave the PC free for the whole backoff, every time. A run this long counts as healthy, so
+            // the service starts the agent again in 2 s: locked but for that, and a passing failure heals by itself.
+            log.Write($"The agent failed on a locked PC, so it keeps the lock for {RestartBackoff.Longest.TotalSeconds:F0} seconds before it exits.");
+            await Task.Delay(RestartBackoff.Longest, services.Time ?? TimeProvider.System, stop)
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+
+        return exitCode;
     }
 
     private static async Task<int> RunCoreAsync(
-        AgentCommandLine command, AgentPaths paths, AgentLog log, AgentServices services, CancellationToken stop)
+        AgentCommandLine command, AgentPaths paths, AgentLog log, AgentServices services, ScreenLock? screenLock, CancellationToken stop)
     {
-        using var screenLock = command.Windowed ? null : services.OpenScreenLock?.Invoke(paths, log);
-        screenLock?.Restore();
-
         try
         {
             services.EnsureQuicSupported();

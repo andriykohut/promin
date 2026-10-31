@@ -115,6 +115,62 @@ public class ScreenLockTests
     }
 
     [Fact]
+    public void Lock_WhenInputCannotBeHeld_TakesTheWindowDown_AndKeepsTheFile()
+    {
+        using var rig = new Rig();
+        rig.Input.CanHold = false;
+
+        rig.Lock.Lock("Break");
+
+        Assert.False(rig.Lock.IsLocked);
+        Assert.Equal(["show:Break", "hold", "hide"], rig.Calls);
+        Assert.Equal("Break", rig.File.Read());
+        Assert.Contains(rig.Log, line => line.Contains("not locked"));
+    }
+
+    [Fact]
+    public void Restore_WhenInputCannotBeHeld_TakesTheWindowDown_AndKeepsTheFile()
+    {
+        using var rig = new Rig();
+        rig.File.Write("Break");
+        rig.Input.CanHold = false;
+
+        rig.Lock.Restore();
+
+        Assert.False(rig.Lock.IsLocked);
+        Assert.Equal(["show:Break", "hold", "hide"], rig.Calls);
+        Assert.Equal("Break", rig.File.Read());
+    }
+
+    [Fact]
+    public void PictureShown_WhenInputCannotBeHeld_SaysSo_AndReleasesNothingAfterwards()
+    {
+        using var rig = new Rig();
+        rig.Input.CanHold = false;
+
+        rig.Lock.PictureShown();
+        rig.Lock.PictureGone();
+
+        Assert.Equal(["hold"], rig.Calls);
+        Assert.Contains(rig.Log, line => line.Contains("could not be blocked"));
+    }
+
+    [Fact]
+    public void AHoldThatFailed_IsTriedAgain_WhenTheLockComes()
+    {
+        using var rig = new Rig();
+        rig.Input.CanHold = false;
+        rig.Lock.PictureShown();
+        rig.Input.CanHold = true;
+
+        rig.Lock.Lock("Break");
+
+        Assert.True(rig.Lock.IsLocked);
+        Assert.True(rig.Input.Held);
+        Assert.Equal(["hold", "show:Break", "hold"], rig.Calls);
+    }
+
+    [Fact]
     public void Lock_WhenAlreadyLocked_KeepsTheFirstMessage()
     {
         using var rig = new Rig();

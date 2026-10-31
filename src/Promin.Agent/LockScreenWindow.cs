@@ -19,9 +19,9 @@ namespace Promin.Agent;
 /// message only brings the comparison forward: a change it does not report is still caught within a second.
 /// </para>
 /// <para>
-/// <b>Failing.</b> Nothing catches a failure once the windows are up. It ends the process, which takes the windows
-/// and the input block with it, the service starts the agent again, and the agent locks the PC or logs why it cannot.
-/// Windows gone and input still held is the one outcome that must not happen, so this thread never ends by itself.
+/// <b>Failing.</b> Nothing catches a failure once <see cref="Show"/> has returned. It ends the process, which takes the
+/// windows and the input block with it, the service starts the agent again, and the agent locks the PC or logs why it
+/// cannot. Windows gone and input still held is the one outcome that must not happen, so this thread never ends by itself.
 /// </para>
 /// </remarks>
 internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
@@ -66,6 +66,7 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
     private Thread? _thread;
     private uint _threadId;
     private volatile bool _yielded;
+    private bool? _inFront;
 
     /// <summary>
     /// Covers every screen, and returns once the windows are up and drawn. False when they were not within five
@@ -97,7 +98,11 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
         return shown;
     }
 
-    /// <summary>Takes the windows down. Does nothing when none are up. Throws nothing; windows that do not go in time are logged.</summary>
+    /// <summary>
+    /// Takes the windows down. Does nothing when none are up. Throws nothing, and does not return when they will not go:
+    /// it logs that and ends the process, which takes them with it, and the service starts the agent again. A lock being
+    /// lifted then comes back, since the file goes after this, so the console can unlock again.
+    /// </summary>
     public void Hide()
     {
         if (_thread is not { } thread)
@@ -106,10 +111,11 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
         }
 
         _thread = null;
-        PostThreadMessageW(_threadId, WM_QUIT, 0, 0);
-        if (!thread.Join(HideLimit))
+        if (!PostThreadMessageW(_threadId, WM_QUIT, 0, 0) || !thread.Join(HideLimit))
         {
-            log($"The lock window did not close within {HideLimit.TotalSeconds:F0} seconds. It is left to finish by itself.");
+            const string Why = "The lock window did not close, so the agent ends itself, which closes it.";
+            log(Why);
+            Environment.FailFast(Why);
         }
     }
 
@@ -121,14 +127,26 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
 
     public void Dispose() => Hide();
 
+    /// <summary>
+    /// The log line for the lock reaching or losing the front, or null when that has not changed. The first look has no
+    /// <paramref name="wasInFront"/>, and always gets a line, so that a lock that never reached the front says so.
+    /// </summary>
+    /// <param name="frontProcess">The process of the window at the front. 0: none, as while Ctrl+Alt+Del is up.</param>
+    internal static string? FrontLine(bool? wasInFront, bool inFront, uint frontProcess) =>
+        inFront == wasInFront ? null
+        : inFront ? "The lock window is at the front."
+        : $"The lock window is not at the front: process {frontProcess} is.";
+
     private void Run(string message, TaskCompletionSource<bool> up)
     {
         t_message = message;
         _threadId = GetCurrentThreadId();
+        _inFront = null;
         try
         {
             RegisterClassOnce();
             _covers = MakeCovers(Screens());
+            Raise();
         }
         catch (InvalidOperationException e)
         {
@@ -138,7 +156,6 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
             return;
         }
 
-        Raise();
         if (up.TrySetResult(true))
         {
             SetTimer(0, 0, 1000, 0);
@@ -186,6 +203,16 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
                 SetForegroundWindow(window); // allowed or not as Windows sees fit; refused while Ctrl+Alt+Del is up
             }
         }
+
+        var front = GetForegroundWindow();
+        var inFront = _covers.Any(cover => cover.Window == front);
+        GetWindowThreadProcessId(front, out var process);
+        if (FrontLine(_inFront, inFront, process) is { } line)
+        {
+            log(line);
+        }
+
+        _inFront = inFront;
     }
 
     private static List<Screen> Screens()

@@ -57,18 +57,38 @@ public class AgentHostTests
                 {
                     BeaconStarted = true;
                     return Beacon;
-                });
+                },
+                Time: Time);
         }
 
         public AgentPaths Paths { get; }
         public AgentLog Log { get; }
         public AgentServices Services { get; set; }
+        public ManualTimeProvider Time { get; } = new();
         public FakeListener Listener { get; } = new();
         public FakeBeacon Beacon { get; } = new();
         public bool BeaconStarted { get; private set; }
         public CancellationTokenSource Stop => _stop;
 
         public string LogText => File.Exists(Paths.LogFile) ? File.ReadAllText(Paths.LogFile) : "";
+
+        /// <summary>Gives the agent a lock whose calls go in <paramref name="calls"/>, on a PC locked with <paramref name="message"/>, or not locked when it is null.</summary>
+        public void UseFakeLock(List<string> calls, string? message = "Break")
+        {
+            if (message is not null)
+            {
+                new LockFile(Paths.LockFile, _ => { }).Write(message);
+            }
+
+            Services = Services with
+            {
+                OpenScreenLock = (paths, log) => new ScreenLock(
+                    new LockFile(paths.LockFile, log.Write), new FakeScreen(calls), new FakeInput(calls), log.Write),
+            };
+        }
+
+        public void FailTheStart() =>
+            Services = Services with { EnsureQuicSupported = () => throw new PlatformNotSupportedException("no msquic") };
 
         public Task<int> RunAsync(params string[] args) =>
             AgentHost.RunAsync(AgentCommandLine.Parse(args), Paths, Log, Services, _stop.Token);
@@ -250,8 +270,8 @@ public class AgentHostTests
     public async Task TheLockIsRestored_BeforeAnythingElse()
     {
         using var rig = new Rig();
-        new LockFile(rig.Paths.LockFile, _ => { }).Write("Break");
         var calls = new List<string>();
+        rig.UseFakeLock(calls);
         rig.Services = rig.Services with
         {
             EnsureQuicSupported = () =>
@@ -259,13 +279,113 @@ public class AgentHostTests
                 calls.Add("quic check");
                 throw new PlatformNotSupportedException("no msquic");
             },
-            OpenScreenLock = (paths, log) => new ScreenLock(
-                new LockFile(paths.LockFile, log.Write), new FakeScreen(calls), new FakeInput(calls), log.Write),
         };
 
-        await rig.RunAsync();
+        var running = rig.RunAsync();
+        await WaitForTheHoldAsync(rig);
 
-        Assert.Equal(["show:Break", "hold", "quic check", "hide", "release"], calls);
+        Assert.Equal(["show:Break", "hold", "quic check"], calls);
+        rig.Time.Advance(RestartBackoff.Longest);
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task AFailedStart_OnALockedPc_HoldsTheLockForTheLongestBackoff_ThenReleases()
+    {
+        using var rig = new Rig();
+        var calls = new List<string>();
+        rig.UseFakeLock(calls);
+        rig.FailTheStart();
+
+        var running = rig.RunAsync();
+        await WaitForTheHoldAsync(rig);
+        rig.Time.Advance(RestartBackoff.Longest - TimeSpan.FromSeconds(1));
+
+        Assert.False(running.IsCompleted);
+        Assert.Equal(["show:Break", "hold"], calls);
+        Assert.Contains("keeps the lock", rig.LogText);
+
+        rig.Time.Advance(TimeSpan.FromSeconds(1));
+        var exitCode = await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExitCodes.QuicUnavailable, exitCode);
+        Assert.Equal(["show:Break", "hold", "hide", "release"], calls);
+        Assert.Equal("Break", new LockFile(rig.Paths.LockFile, _ => { }).Read());
+    }
+
+    [Fact]
+    public async Task AnUnexpectedFailure_OnALockedPc_HoldsTheLockToo()
+    {
+        using var rig = new Rig();
+        var calls = new List<string>();
+        rig.UseFakeLock(calls);
+        rig.Services = rig.Services with { LoadIdentity = _ => throw new InvalidOperationException("nobody planned for this") };
+
+        var running = rig.RunAsync();
+        await WaitForTheHoldAsync(rig);
+
+        Assert.False(running.IsCompleted);
+        Assert.Equal(["show:Break", "hold"], calls);
+
+        rig.Time.Advance(RestartBackoff.Longest);
+        Assert.Equal(ExitCodes.Unexpected, await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AFailedStart_OnAnUnlockedPc_ExitsAtOnce()
+    {
+        using var rig = new Rig();
+        var calls = new List<string>();
+        rig.UseFakeLock(calls, message: null);
+        rig.FailTheStart();
+
+        var exitCode = await rig.RunAsync().WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExitCodes.QuicUnavailable, exitCode);
+        Assert.Equal(0, rig.Time.PendingTimers);
+        Assert.DoesNotContain("keeps the lock", rig.LogText);
+    }
+
+    [Fact]
+    public async Task TheNormalExit_OnALockedPc_DoesNotWait()
+    {
+        using var rig = new Rig();
+        rig.UseFakeLock([]);
+        var running = rig.RunAsync();
+        for (var i = 0; i < 400 && !rig.LogText.Contains("Announcing"); i++)
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+
+        await rig.Stop.CancelAsync();
+        var exitCode = await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.DoesNotContain("keeps the lock", rig.LogText);
+    }
+
+    [Fact]
+    public async Task BeingToldToStop_EndsTheHoldAtOnce()
+    {
+        using var rig = new Rig();
+        rig.UseFakeLock([]);
+        rig.FailTheStart();
+        var running = rig.RunAsync();
+        await WaitForTheHoldAsync(rig);
+
+        await rig.Stop.CancelAsync();
+
+        Assert.Equal(
+            ExitCodes.QuicUnavailable,
+            await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+    }
+
+    private static async Task WaitForTheHoldAsync(Rig rig)
+    {
+        for (var i = 0; i < 400 && rig.Time.PendingTimers == 0; i++)
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
     }
 
     [Fact]
