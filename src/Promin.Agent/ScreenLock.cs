@@ -78,19 +78,22 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
         }
     }
 
-    /// <summary>Takes the lock window down, then removes the file. A file that cannot be removed is logged.</summary>
+    /// <summary>
+    /// Takes the lock window down, then removes the file, which is removed even when the PC is not showing a lock.
+    /// A file that cannot be removed is logged.
+    /// </summary>
     public void Unlock()
     {
         lock (gate)
         {
-            if (!locked)
+            // The file can outlive the lock: the window may never have been made, or an earlier removal failed.
+            if (locked)
             {
-                return;
+                screen.Hide();
+                locked = false;
+                Sync();
             }
 
-            screen.Hide();
-            locked = false;
-            Sync();
             try
             {
                 file.Clear();

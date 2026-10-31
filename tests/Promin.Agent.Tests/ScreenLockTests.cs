@@ -143,6 +143,18 @@ public class ScreenLockTests
     }
 
     [Fact]
+    public void Unlock_WhenTheWindowWasNeverMade_StillRemovesTheFile()
+    {
+        using var rig = new Rig();
+        rig.Screen.CanShow = false;
+        rig.Lock.Lock("Break");
+
+        rig.Lock.Unlock();
+
+        Assert.False(System.IO.File.Exists(rig.Paths.LockFile));
+    }
+
+    [Fact]
     public void TheLog_NeverCarriesTheMessage()
     {
         using var rig = new Rig();

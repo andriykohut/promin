@@ -199,7 +199,7 @@ public class AgentCommandsTests
         Assert.Contains("lock could not be cleared", output);
     }
 
-    // ---- Anything else--------------------------------------------------------------------------
+    // ---- Anything else --------------------------------------------------------------------------
 
     [Fact]
     public void BadArguments_SayWhatIsWrongAndTheUsage_AndExitWithCodeTwo()
