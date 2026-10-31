@@ -117,7 +117,7 @@ internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnectio
                         _lockStreams.Writer.TryWrite(stream);
                         break;
 
-                    case { } first when _control is null:
+                    case { } first when first is not WatchLock && _control is null:
                         _control = stream;
                         _firstControlMessage.TrySetResult(first);
                         break;
