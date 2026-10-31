@@ -15,6 +15,9 @@ public sealed record AgentPaths(string AgentDirectory, string RoomCodeFile)
     /// <summary>The pinned console PCs.</summary>
     public string MastersFile => Path.Combine(AgentDirectory, "masters.json");
 
+    /// <summary>Present while the PC is locked; holds the lock message.</summary>
+    public string LockFile => Path.Combine(AgentDirectory, "lock.json");
+
     public string LogFile => Path.Combine(AgentDirectory, "agent.log");
 
     /// <summary><c>%ProgramData%\Promin\Agent</c> (identity, pins, log) and <c>%ProgramData%\Promin\agent.json</c> (room code).</summary>

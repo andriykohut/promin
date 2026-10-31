@@ -44,26 +44,62 @@ internal static class AgentCommands
 
     private static int ResetPairing(AgentPaths paths, TextWriter output)
     {
+        var said = new List<string>();
+        var exitCode = ExitCodes.Success;
+        var deleted = false;
+
         if (!File.Exists(paths.MastersFile))
         {
-            output.WriteLine($"No console PC is paired under this Windows account ({paths.MastersFile} does not exist).");
-            return ExitCodes.Success;
+            said.Add($"No console PC is paired under this Windows account ({paths.MastersFile} does not exist).");
+        }
+        else if (TryDelete(paths.MastersFile, out var problem))
+        {
+            said.Add($"Forgot the paired console PC (deleted {paths.MastersFile}).");
+            deleted = true;
+        }
+        else
+        {
+            said.Add($"The paired console PC could not be forgotten ({paths.MastersFile}): {problem}");
+            exitCode = ExitCodes.FileUnusable;
         }
 
+        // A lock is cleared even when nothing is paired: this is the way out of a lock in Safe Mode.
+        if (File.Exists(paths.LockFile))
+        {
+            if (TryDelete(paths.LockFile, out var problem))
+            {
+                said.Add($"Cleared the lock (deleted {paths.LockFile}).");
+                deleted = true;
+            }
+            else
+            {
+                said.Add($"The lock could not be cleared ({paths.LockFile}): {problem}");
+                exitCode = ExitCodes.FileUnusable;
+            }
+        }
+
+        if (deleted)
+        {
+            said.Add("An agent that is already running keeps them until it is restarted.");
+        }
+
+        output.WriteLine(string.Join(' ', said));
+        return exitCode;
+    }
+
+    private static bool TryDelete(string path, out string? problem)
+    {
         try
         {
-            File.Delete(paths.MastersFile);
+            File.Delete(path);
+            problem = null;
+            return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            output.WriteLine($"The paired console PC could not be forgotten ({paths.MastersFile}): {e.Message}");
-            return ExitCodes.FileUnusable;
+            problem = e.Message;
+            return false;
         }
-
-        output.WriteLine(
-            $"Forgot the paired console PC (deleted {paths.MastersFile}). An agent that is already running " +
-            "keeps it until it is restarted.");
-        return ExitCodes.Success;
     }
 
     private static int Refuse(string? problem, TextWriter output)

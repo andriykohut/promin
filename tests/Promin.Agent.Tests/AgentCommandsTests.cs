@@ -151,7 +151,55 @@ public class AgentCommandsTests
         Assert.Contains("could not be forgotten", output);
     }
 
-    // ---- Anything else --------------------------------------------------------------------------
+    [Fact]
+    public void ResetPairing_ClearsTheLock_AlongWithThePairing()
+    {
+        using var temp = new TempDirectory();
+        var paths = temp.Paths;
+        Directory.CreateDirectory(paths.AgentDirectory);
+        File.WriteAllText(paths.MastersFile, OnePinnedMaster);
+        File.WriteAllText(paths.LockFile, "{\"message\":\"Break\"}");
+
+        var (exitCode, output) = Run(paths, "--reset-pairing");
+
+        Assert.Equal(0, exitCode);
+        Assert.False(File.Exists(paths.MastersFile));
+        Assert.False(File.Exists(paths.LockFile));
+        Assert.Contains("lock", output);
+    }
+
+    [Fact]
+    public void ResetPairing_ClearsTheLock_WhenNothingIsPaired()
+    {
+        using var temp = new TempDirectory();
+        var paths = temp.Paths;
+        Directory.CreateDirectory(paths.AgentDirectory);
+        File.WriteAllText(paths.LockFile, "{\"message\":\"Break\"}");
+
+        var (exitCode, output) = Run(paths, "--reset-pairing");
+
+        Assert.Equal(0, exitCode);
+        Assert.False(File.Exists(paths.LockFile));
+        Assert.Contains("No console PC is paired", output);
+        Assert.Contains("lock", output);
+    }
+
+    [Fact]
+    public void ResetPairing_SaysWhenTheLockCannotBeCleared_WithExitCodeFive()
+    {
+        using var temp = new TempDirectory();
+        var paths = temp.Paths;
+        Directory.CreateDirectory(paths.AgentDirectory);
+        File.WriteAllText(paths.LockFile, "{\"message\":\"Break\"}");
+        using var held = new FileStream(paths.LockFile, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var (exitCode, output) = Run(paths, "--reset-pairing");
+
+        Assert.Equal(5, exitCode);
+        Assert.Contains("lock could not be cleared", output);
+    }
+
+    // ---- Anything else--------------------------------------------------------------------------
 
     [Fact]
     public void BadArguments_SayWhatIsWrongAndTheUsage_AndExitWithCodeTwo()
