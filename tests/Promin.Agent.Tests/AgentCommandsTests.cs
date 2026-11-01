@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Promin.Protocol.Transport;
 
 namespace Promin.Agent.Tests;
@@ -125,15 +127,60 @@ public class AgentCommandsTests
         Assert.Equal("482913", new AgentSettings(paths.RoomCodeFile).Load());
     }
 
-    [Fact]
-    public void ResetPairing_WithNothingPaired_SaysSo_AndExitsZero()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ResetPairing_WithNothingPaired_SaysSo_AndExitsZero(bool folderExists)
     {
         using var temp = new TempDirectory();
+        if (folderExists)
+        {
+            Directory.CreateDirectory(temp.Paths.AgentDirectory);
+        }
 
         var (exitCode, output) = Run(temp.Paths, "--reset-pairing");
 
         Assert.Equal(0, exitCode);
         Assert.Contains("No console PC is paired", output);
+        Assert.DoesNotContain("Windows account", output);
+        Assert.DoesNotContain("lock", output);
+    }
+
+    [Fact]
+    public void ResetPairing_WhenTheFolderIsDenied_SaysSo_WithExitCodeFive()
+    {
+        using var temp = new TempDirectory();
+        var paths = temp.Paths;
+        Directory.CreateDirectory(paths.AgentDirectory);
+        File.WriteAllText(paths.MastersFile, OnePinnedMaster);
+        File.WriteAllText(paths.LockFile, "{\"message\":\"Break\"}");
+        var folder = new DirectoryInfo(paths.AgentDirectory);
+        var security = folder.GetAccessControl();
+        var denied = new FileSystemAccessRule(
+            WindowsIdentity.GetCurrent().User!,
+            FileSystemRights.FullControl,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+            PropagationFlags.None,
+            AccessControlType.Deny);
+        security.AddAccessRule(denied);
+        folder.SetAccessControl(security);
+
+        try
+        {
+            var (exitCode, output) = Run(paths, "--reset-pairing");
+
+            Assert.Equal(5, exitCode);
+            Assert.Contains("could not be forgotten", output);
+            Assert.Contains("lock could not be cleared", output);
+            Assert.DoesNotContain("No console PC is paired", output);
+        }
+        finally
+        {
+            security.RemoveAccessRule(denied);
+            folder.SetAccessControl(security);
+        }
+
+        Assert.True(File.Exists(paths.LockFile));
     }
 
     [Fact]

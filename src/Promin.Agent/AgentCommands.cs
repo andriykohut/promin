@@ -48,34 +48,31 @@ internal static class AgentCommands
         var exitCode = ExitCodes.Success;
         var deleted = false;
 
-        if (!File.Exists(paths.MastersFile))
+        if (!TryDelete(paths.MastersFile, out var found, out var problem))
         {
-            said.Add($"No console PC is paired under this Windows account ({paths.MastersFile} does not exist).");
+            said.Add($"The paired console PC could not be forgotten ({paths.MastersFile}): {problem}");
+            exitCode = ExitCodes.FileUnusable;
         }
-        else if (TryDelete(paths.MastersFile, out var problem))
+        else if (found)
         {
             said.Add($"Forgot the paired console PC (deleted {paths.MastersFile}).");
             deleted = true;
         }
         else
         {
-            said.Add($"The paired console PC could not be forgotten ({paths.MastersFile}): {problem}");
-            exitCode = ExitCodes.FileUnusable;
+            said.Add($"No console PC is paired ({paths.MastersFile} does not exist).");
         }
 
         // A lock is cleared even when nothing is paired: this is the way out of a lock in Safe Mode.
-        if (File.Exists(paths.LockFile))
+        if (!TryDelete(paths.LockFile, out found, out problem))
         {
-            if (TryDelete(paths.LockFile, out var problem))
-            {
-                said.Add($"Cleared the lock (deleted {paths.LockFile}).");
-                deleted = true;
-            }
-            else
-            {
-                said.Add($"The lock could not be cleared ({paths.LockFile}): {problem}");
-                exitCode = ExitCodes.FileUnusable;
-            }
+            said.Add($"The lock could not be cleared ({paths.LockFile}): {problem}");
+            exitCode = ExitCodes.FileUnusable;
+        }
+        else if (found)
+        {
+            said.Add($"Cleared the lock (deleted {paths.LockFile}).");
+            deleted = true;
         }
 
         if (deleted)
@@ -87,12 +84,21 @@ internal static class AgentCommands
         return exitCode;
     }
 
-    private static bool TryDelete(string path, out string? problem)
+    private static bool TryDelete(string path, out bool found, out string? problem)
     {
+        found = false;
+        problem = null;
         try
         {
+            // File.Exists says false for a file this account may not look at, and File.Delete says nothing about a
+            // missing one. This throws in both cases, with a different exception for each.
+            File.GetAttributes(path);
+            found = true;
             File.Delete(path);
-            problem = null;
+            return true;
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
             return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
