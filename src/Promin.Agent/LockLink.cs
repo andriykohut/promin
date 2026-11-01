@@ -1,12 +1,14 @@
 using System.Net.Quic;
 using System.Threading.Channels;
 using Promin.Protocol.Messages;
+using Promin.Protocol.Pairing;
 
 namespace Promin.Agent;
 
 /// <summary>
 /// The lock stream of one console PC's connection: the console PC's lock and unlock messages are applied to this
-/// PC, and the state is sent back after the first connect and after each message. The lock outlives the stream.
+/// PC, and the state is sent back after the first connect, after each message and when a lock comes back by itself
+/// (<see cref="ScreenLock.Restored"/>). The lock outlives the stream.
 /// </summary>
 /// <param name="mayLock">False when the console PC runs on this PC: it can unlock, never lock.</param>
 /// <param name="log">Gets a line for each refused message, never its text.</param>
@@ -18,26 +20,7 @@ internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Action<strin
         try
         {
             var stream = await connection.AcceptLockStreamAsync(ct).ConfigureAwait(false);
-            await stream.SendAsync(new LockState(screenLock.IsLocked), ct).ConfigureAwait(false);
-            while (true)
-            {
-                switch (await stream.ReceiveAsync(ct).ConfigureAwait(false))
-                {
-                    case LockPc { Message: var message } when !mayLock || message.Length > LockLimits.MaxMessageLength:
-                        log(mayLock
-                            ? "A lock message longer than the limit was refused."
-                            : "A lock message from the console PC on this PC was refused.");
-                        break;
-                    case LockPc { Message: var message }:
-                        screenLock.Lock(message);
-                        break;
-                    case UnlockPc:
-                        screenLock.Unlock();
-                        break;
-                }
-
-                await stream.SendAsync(new LockState(screenLock.IsLocked), ct).ConfigureAwait(false);
-            }
+            await ExchangeAsync(stream, ct).ConfigureAwait(false);
         }
         catch (Exception e) when (e is OperationCanceledException or IOException or ChannelClosedException or QuicException)
         {
@@ -47,6 +30,60 @@ internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Action<strin
         {
             // The type only: a message could carry the text a person typed.
             log($"The lock stream ended after a failure: {e.GetType().Name}.");
+        }
+    }
+
+    // One loop does all the sending: a state read by a second sender could land after a newer one and stay on the wall.
+    private async Task ExchangeAsync(IControlChannel stream, CancellationToken ct)
+    {
+        using var ending = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var restored = Channel.CreateUnbounded<bool>();
+        void OnRestored() => restored.Writer.TryWrite(true);
+        screenLock.Restored += OnRestored;
+        var received = stream.ReceiveAsync(ending.Token);
+        var report = restored.Reader.ReadAsync(ending.Token).AsTask();
+        try
+        {
+            while (true)
+            {
+                await stream.SendAsync(new LockState(screenLock.IsLocked), ending.Token).ConfigureAwait(false);
+                if (await Task.WhenAny(received, report).ConfigureAwait(false) == received)
+                {
+                    Obey(await received.ConfigureAwait(false));
+                    received = stream.ReceiveAsync(ending.Token);
+                }
+                else
+                {
+                    await report.ConfigureAwait(false);
+                    report = restored.Reader.ReadAsync(ending.Token).AsTask();
+                }
+            }
+        }
+        finally
+        {
+            screenLock.Restored -= OnRestored;
+
+            // The read under way ends here: the stream is disposed once this has returned.
+            await ending.CancelAsync().ConfigureAwait(false);
+            await ((Task)received).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+    }
+
+    private void Obey(ControlMessage received)
+    {
+        switch (received)
+        {
+            case LockPc { Message: var message } when !mayLock || message.Length > LockLimits.MaxMessageLength:
+                log(mayLock
+                    ? "A lock message longer than the limit was refused."
+                    : "A lock message from the console PC on this PC was refused.");
+                break;
+            case LockPc { Message: var message }:
+                screenLock.Lock(message);
+                break;
+            case UnlockPc:
+                screenLock.Unlock();
+                break;
         }
     }
 }

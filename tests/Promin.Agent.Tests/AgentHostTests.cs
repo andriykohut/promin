@@ -73,7 +73,7 @@ public class AgentHostTests
         public string LogText => File.Exists(Paths.LogFile) ? File.ReadAllText(Paths.LogFile) : "";
 
         /// <summary>Gives the agent a lock whose calls go in <paramref name="calls"/>, on a PC locked with <paramref name="message"/>, or not locked when it is null.</summary>
-        public void UseFakeLock(List<string> calls, string? message = "Break")
+        public void UseFakeLock(List<string> calls, string? message = "Break", FakeScreen? screen = null)
         {
             if (message is not null)
             {
@@ -82,8 +82,11 @@ public class AgentHostTests
 
             Services = Services with
             {
-                OpenScreenLock = (paths, log) => new ScreenLock(
-                    new LockFile(paths.LockFile, log.Write), new FakeScreen(calls), new FakeInput(calls), log.Write),
+                OpenScreenLock = (paths, log) =>
+                {
+                    var lockLog = new LockLog(log.Write);
+                    return new ScreenLock(new LockFile(paths.LockFile, lockLog.Write), screen ?? new FakeScreen(calls), new FakeInput(calls), lockLog);
+                },
             };
         }
 
@@ -389,6 +392,106 @@ public class AgentHostTests
     }
 
     [Fact]
+    public async Task ARestoreThatFailed_IsTriedAgainEveryFiveSeconds_WithoutHoldingUpTheStart()
+    {
+        using var rig = new Rig();
+        var calls = new List<string>();
+        var screen = new FakeScreen(calls) { CanShow = false };
+        rig.UseFakeLock(calls, screen: screen);
+
+        var running = rig.RunAsync();
+        await WaitForAsync(() => rig.LogText.Contains("Announcing") && rig.Time.PendingTimers > 0);
+        Assert.Equal(["show:Break"], calls);
+
+        rig.Time.Advance(TimeSpan.FromSeconds(4));
+        Assert.Equal(["show:Break"], calls);
+
+        rig.Time.Advance(TimeSpan.FromSeconds(1));
+        await WaitForAsync(() => calls.Count == 2 && rig.Time.PendingTimers > 0);
+        Assert.Equal(["show:Break", "show:Break"], calls);
+
+        screen.CanShow = true;
+        rig.Time.Advance(TimeSpan.FromSeconds(5));
+        await WaitForAsync(() => calls.Count == 4);
+        Assert.Equal(["show:Break", "show:Break", "show:Break", "hold"], calls);
+
+        await rig.Stop.CancelAsync();
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task TheRetries_EndWithTheAgent()
+    {
+        using var rig = new Rig();
+        var calls = new List<string>();
+        rig.UseFakeLock(calls, screen: new FakeScreen(calls) { CanShow = false });
+        var running = rig.RunAsync();
+        await WaitForAsync(() => rig.Time.PendingTimers > 0);
+        Assert.Equal(1, rig.Time.PendingTimers);
+
+        await rig.Stop.CancelAsync();
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, rig.Time.PendingTimers);
+    }
+
+    [Fact]
+    public async Task ARetryUnderWay_EndsBeforeTheLockIsDisposed()
+    {
+        using var rig = new Rig();
+        var calls = new List<string>();
+        var screen = new FakeScreen(calls) { CanShow = false };
+        rig.UseFakeLock(calls, screen: screen);
+        var running = rig.RunAsync();
+        await WaitForAsync(() => rig.Time.PendingTimers > 0);
+
+        using var finish = new ManualResetEventSlim();
+        var inShow = new TaskCompletionSource();
+        screen.OnShow = () =>
+        {
+            inShow.TrySetResult();
+            finish.Wait(TimeSpan.FromSeconds(10));
+        };
+
+        // On a thread of its own: the retry can run inside Advance, which would then not come back.
+        _ = Task.Run(() => rig.Time.Advance(TimeSpan.FromSeconds(5)), CancellationToken.None);
+        await inShow.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await rig.Stop.CancelAsync();
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+
+        Assert.False(running.IsCompleted);
+        Assert.False(screen.Disposed);
+
+        finish.Set();
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.True(screen.Disposed);
+    }
+
+    [Fact]
+    public async Task AWindowedAgent_TriesNoRestore()
+    {
+        using var rig = new Rig();
+        rig.UseFakeLock([]);
+        var running = rig.RunAsync("--windowed");
+        await WaitForAsync(() => rig.LogText.Contains("Announcing"));
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, rig.Time.PendingTimers);
+
+        await rig.Stop.CancelAsync();
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        for (var i = 0; i < 400 && !condition(); i++)
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task AWindowedAgent_OpensNoLock()
     {
         using var rig = new Rig();
@@ -399,7 +502,7 @@ public class AgentHostTests
             OpenScreenLock = (paths, log) =>
             {
                 opened = true;
-                return new ScreenLock(new LockFile(paths.LockFile, log.Write), new FakeScreen([]), new FakeInput([]), log.Write);
+                return new ScreenLock(new LockFile(paths.LockFile, log.Write), new FakeScreen([]), new FakeInput([]), new LockLog(log.Write));
             },
         };
 

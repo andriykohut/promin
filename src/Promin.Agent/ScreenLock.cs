@@ -25,36 +25,67 @@ internal interface IInputBlock : IDisposable
 /// Whether an agent PC is locked, and the order things happen in: the lock is written to its file before the
 /// window shows and removed from it after the window goes, so a power cut leaves the PC locked or not, never
 /// half. Input is blocked while the PC is locked or a broadcast picture is up, and stays blocked until both end.
-/// The log gets a line for each lock, unlock and failure, never the message.
+/// The log gets a line for each lock, unlock and failure, never the message; a restore that keeps failing gets its
+/// lines once.
 /// </summary>
-internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock input, Action<string> log) : IDisposable
+internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock input, LockLog log) : IDisposable
 {
     private readonly Lock _gate = new();
     private bool _locked;
     private bool _pictureUp;
     private bool _held;
 
+    /// <summary>
+    /// <see cref="Restore"/> has locked a PC that was not locked. Raised on the thread that called it, with the gate
+    /// free. A handler must not throw. <see cref="Lock"/> does not raise it: its caller knows when to look.
+    /// </summary>
+    public event Action? Restored;
+
     public bool IsLocked
     {
         get { lock (_gate) { return _locked; } }
     }
 
-    /// <summary>Applies the lock the file holds, if any. The file is left as it is, whatever happens.</summary>
+    /// <summary>
+    /// Applies the lock the file holds, if any, and raises <see cref="Restored"/> when that locks the PC. Does nothing
+    /// when the PC is already locked. The file is left as it is, whatever happens. The agent calls this at start and
+    /// every few seconds after that, so a lock that could not be applied takes effect by itself once it can: a
+    /// <see cref="Lock"/> whose window failed locks the PC when the window can be made, and an <see cref="Unlock"/> whose
+    /// file could not be removed locks it again, so the console reads Locked, which is the truth. A
+    /// <see cref="Lock"/> or <see cref="Unlock"/> that arrives meanwhile waits for it, at most the five seconds the window
+    /// is given.
+    /// </summary>
     public void Restore()
     {
+        bool restored;
         lock (_gate)
         {
-            if (file.Read() is { } message)
+            if (_locked)
             {
-                Apply(message, "restored");
+                return;
             }
+
+            log.Quietly(() =>
+            {
+                if (file.Read() is { } message)
+                {
+                    Apply(message, "restored");
+                }
+            });
+            restored = _locked;
+        }
+
+        if (restored)
+        {
+            Restored?.Invoke();
         }
     }
 
     /// <summary>
     /// Locks the PC. Does nothing when it is already locked (the first message stays). When the file cannot be
     /// written there is no lock. When no window can be made, or input cannot be blocked, the PC is not locked and the
-    /// window is not left up, and the file stays so the next start tries again.
+    /// window is not left up, and the file stays, so <see cref="Restore"/> tries again and the lock takes effect by
+    /// itself once it can.
     /// </summary>
     public void Lock(string message)
     {
@@ -71,7 +102,7 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                log($"The lock could not be written, so the PC is not locked: {e.Message}");
+                log.Write($"The lock could not be written, so the PC is not locked: {e.Message}");
                 return;
             }
 
@@ -81,7 +112,7 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
 
     /// <summary>
     /// Takes the lock window down, then removes the file, which is removed even when the PC is not showing a lock.
-    /// A file that cannot be removed is logged.
+    /// A file that cannot be removed is logged, and <see cref="Restore"/> then locks the PC again.
     /// </summary>
     public void Unlock()
     {
@@ -98,11 +129,11 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
             try
             {
                 file.Clear();
-                log("The PC is unlocked.");
+                log.Write("The PC is unlocked.");
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                log($"The lock file could not be removed, so the PC locks again at the next start: {e.Message}");
+                log.Write($"The lock file could not be removed, so the PC locks again within seconds: {e.Message}");
             }
         }
     }
@@ -124,7 +155,7 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
             Sync();
             if (!_held)
             {
-                log("Keyboard and mouse could not be blocked, so the picture shows with them free.");
+                log.Write("Keyboard and mouse could not be blocked, so the picture shows with them free.");
             }
         }
     }
@@ -168,7 +199,7 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
     {
         if (!screen.Show(message))
         {
-            log("The lock window could not be made, so the PC is not locked.");
+            log.Write("The lock window could not be made, so the PC is not locked.");
             return;
         }
 
@@ -178,11 +209,12 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
         {
             screen.Hide();
             _locked = false;
-            log("Keyboard and mouse could not be blocked, so the PC is not locked.");
+            log.Write("Keyboard and mouse could not be blocked, so the PC is not locked.");
             return;
         }
 
-        log($"The PC is locked ({how}).");
+        log.Forget();
+        log.Write($"The PC is locked ({how}).");
     }
 
     private void Sync()

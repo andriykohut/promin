@@ -11,13 +11,15 @@ public class ScreenLockTests
             Paths = temp.Paths;
             Screen = new FakeScreen(Calls);
             Input = new FakeInput(Calls);
-            File = new LockFile(Paths.LockFile, Log.Add);
-            Lock = new ScreenLock(File, Screen, Input, Log.Add);
+            LockLog = new LockLog(Log.Add);
+            File = new LockFile(Paths.LockFile, LockLog.Write);
+            Lock = new ScreenLock(File, Screen, Input, LockLog);
         }
 
         public AgentPaths Paths { get; }
         public List<string> Calls { get; } = [];
         public List<string> Log { get; } = [];
+        public LockLog LockLog { get; }
         public FakeScreen Screen { get; }
         public FakeInput Input { get; }
         public LockFile File { get; }
@@ -73,6 +75,202 @@ public class ScreenLockTests
         Assert.False(rig.Lock.IsLocked);
         Assert.Empty(rig.Calls);
         Assert.Contains(rig.Log, line => line.Contains(rig.Paths.LockFile));
+    }
+
+    [Fact]
+    public void Restore_WhenAlreadyLocked_DoesNothing()
+    {
+        using var rig = new Rig();
+        rig.Lock.Lock("Break");
+        rig.Calls.Clear();
+
+        rig.Lock.Restore();
+
+        Assert.Empty(rig.Calls);
+        Assert.True(rig.Lock.IsLocked);
+    }
+
+    [Fact]
+    public void Restore_AfterALockWhoseWindowFailed_LocksByItself()
+    {
+        using var rig = new Rig();
+        rig.Screen.CanShow = false;
+        rig.Lock.Lock("Break");
+        rig.Screen.CanShow = true;
+
+        rig.Lock.Restore();
+
+        Assert.True(rig.Lock.IsLocked);
+        Assert.Equal(["show:Break", "show:Break", "hold"], rig.Calls);
+    }
+
+    [Fact]
+    public void Restore_AfterAnUnlockWhoseFileStayed_LocksAgain()
+    {
+        using var rig = new Rig();
+        rig.Lock.Lock("Break");
+        using (new FileStream(rig.Paths.LockFile, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            rig.Lock.Unlock();
+        }
+
+        Assert.False(rig.Lock.IsLocked);
+
+        rig.Lock.Restore();
+
+        Assert.True(rig.Lock.IsLocked);
+    }
+
+    [Fact]
+    public void Restored_IsRaisedOnce_WhenARestoreLocksThePc()
+    {
+        using var rig = new Rig();
+        var raised = 0;
+        rig.Lock.Restored += () => raised++;
+        rig.File.Write("Break");
+
+        rig.Lock.Restore();
+        rig.Lock.Restore();
+
+        Assert.Equal(1, raised);
+    }
+
+    [Theory]
+    [InlineData("no file")]
+    [InlineData("unreadable")]
+    [InlineData("window")]
+    [InlineData("hold")]
+    public void Restored_IsNotRaised_WhenARestoreDoesNotLockThePc(string outcome)
+    {
+        using var rig = new Rig();
+        var raised = 0;
+        rig.Lock.Restored += () => raised++;
+        Arrange(rig, outcome);
+
+        rig.Lock.Restore();
+
+        Assert.Equal(0, raised);
+    }
+
+    [Fact]
+    public void Restored_IsNotRaised_ByALockFromTheConsole()
+    {
+        using var rig = new Rig();
+        var raised = 0;
+        rig.Lock.Restored += () => raised++;
+
+        rig.Lock.Lock("Break");
+
+        Assert.Equal(0, raised);
+    }
+
+    [Fact]
+    public void Restored_IsRaisedOutsideTheGate()
+    {
+        using var rig = new Rig();
+        var free = false;
+        rig.Lock.Restored += () => free = Task.Run(() => rig.Lock.IsLocked).Wait(TimeSpan.FromSeconds(5));
+        rig.File.Write("Break");
+
+        rig.Lock.Restore();
+
+        Assert.True(free);
+    }
+
+    [Theory]
+    [InlineData("unreadable")]
+    [InlineData("window")]
+    [InlineData("hold")]
+    public void ARestoreThatKeepsFailing_LogsOnce(string outcome)
+    {
+        using var rig = new Rig();
+        Arrange(rig, outcome);
+
+        // What the real window and input block write for themselves goes to the same log.
+        rig.Screen.OnShow = () => rig.LockLog.Write("the window's own line");
+
+        rig.Lock.Restore();
+        var first = rig.Log.ToList();
+        rig.Lock.Restore();
+        rig.Lock.Restore();
+
+        Assert.NotEmpty(first);
+        Assert.Equal(first, rig.Log);
+    }
+
+    [Fact]
+    public void AFailureThatChanges_IsLogged()
+    {
+        using var rig = new Rig();
+        Arrange(rig, "window");
+        rig.Lock.Restore();
+        rig.Screen.CanShow = true;
+        rig.Input.CanHold = false;
+
+        rig.Lock.Restore();
+
+        Assert.Contains(rig.Log, line => line.Contains("lock window could not be made"));
+        Assert.Contains(rig.Log, line => line.Contains("could not be blocked"));
+    }
+
+    [Fact]
+    public void AFailureAfterTheLockTook_IsLoggedAgain()
+    {
+        using var rig = new Rig();
+        Arrange(rig, "window");
+        rig.Lock.Restore();
+        rig.Screen.CanShow = true;
+        rig.Lock.Restore();
+        rig.Lock.Unlock();
+        Arrange(rig, "window");
+
+        rig.Lock.Restore();
+
+        Assert.Equal(2, rig.Log.Count(line => line.Contains("lock window could not be made")));
+    }
+
+    [Fact]
+    public void ALockFromTheConsole_LogsItsFailure_AndTheNextRestoreDoesNot()
+    {
+        using var rig = new Rig();
+        Arrange(rig, "window");
+        rig.Lock.Restore();
+
+        rig.Lock.Lock("Break");
+        rig.Lock.Restore();
+
+        Assert.Equal(2, rig.Log.Count(line => line.Contains("lock window could not be made")));
+    }
+
+    [Fact]
+    public void WhatTheWindowSaysWhileLocked_IsNeverDropped()
+    {
+        using var rig = new Rig();
+        rig.Lock.Lock("Break");
+
+        rig.LockLog.Write("The lock window is at the front.");
+        rig.LockLog.Write("The lock window is at the front.");
+
+        Assert.Equal(2, rig.Log.Count(line => line.Contains("at the front")));
+    }
+
+    private static void Arrange(Rig rig, string outcome)
+    {
+        switch (outcome)
+        {
+            case "unreadable":
+                Directory.CreateDirectory(rig.Paths.AgentDirectory);
+                System.IO.File.WriteAllText(rig.Paths.LockFile, "not json");
+                break;
+            case "window":
+                rig.File.Write("Break");
+                rig.Screen.CanShow = false;
+                break;
+            case "hold":
+                rig.File.Write("Break");
+                rig.Input.CanHold = false;
+                break;
+        }
     }
 
     [Fact]

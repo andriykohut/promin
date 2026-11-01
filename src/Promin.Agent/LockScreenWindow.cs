@@ -11,7 +11,8 @@ namespace Promin.Agent;
 /// <remarks>
 /// <para>
 /// <b>Threading.</b> The windows belong to a thread that lives from <see cref="Show"/> to <see cref="Hide"/>, and
-/// everything but those two and <see cref="Yield"/> runs on it.
+/// everything but those two and <see cref="Yield"/> runs on it. Each <see cref="Show"/> has a thread of its own: one
+/// that misses the limit says nothing more and takes down only its own windows, whatever a later one has put up.
 /// </para>
 /// <para>
 /// <b>Staying in front.</b> Once a second the windows are raised, except the primary screen's while a broadcast picture
@@ -62,11 +63,9 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
 
     private readonly record struct Cover(nint Window, Screen Screen);
 
-    private List<Cover> _covers = [];
     private Thread? _thread;
     private uint _threadId;
     private volatile bool _yielded;
-    private bool? _inFront;
 
     /// <summary>
     /// Covers every screen, and returns once the windows are up and drawn. False when they were not within five
@@ -75,7 +74,7 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
     public bool Show(string message)
     {
         _yielded = false;
-        var up = new TaskCompletionSource<bool>();
+        var up = new TaskCompletionSource<uint?>();
         var thread = new Thread(() => Run(message, up)) { Name = "Promin lock screen", IsBackground = true };
         try
         {
@@ -88,14 +87,19 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
         }
 
         // Whoever settles this first decides: windows that come up after the limit take themselves down again.
-        if (!up.Task.Wait(ShowLimit) && up.TrySetResult(false))
+        // shortcut: a thread that never gets past Windows stays, one for each retry; upgrade if that is ever seen.
+        if (!up.Task.Wait(ShowLimit) && up.TrySetResult(null))
         {
             log($"The lock window did not appear within {ShowLimit.TotalSeconds:F0} seconds.");
         }
 
-        var shown = up.Task.Result;
-        _thread = shown ? thread : null;
-        return shown;
+        if (up.Task.Result is not { } threadId)
+        {
+            return false;
+        }
+
+        (_thread, _threadId) = (thread, threadId);
+        return true;
     }
 
     /// <summary>
@@ -137,33 +141,41 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
         : inFront ? "The lock window is at the front."
         : $"The lock window is not at the front: process {frontProcess} is.";
 
-    private void Run(string message, TaskCompletionSource<bool> up)
+    /// <param name="up">Settled with this thread's id once the windows are up, or null when they cannot be.</param>
+    private void Run(string message, TaskCompletionSource<uint?> up)
     {
         t_message = message;
-        _threadId = GetCurrentThreadId();
-        _inFront = null;
+        List<Cover> covers;
+        bool? inFront = null;
         try
         {
             RegisterClassOnce();
-            _covers = MakeCovers(Screens());
-            Raise();
+            covers = MakeCovers(Screens());
+            if (!up.Task.IsCompleted)
+            {
+                Raise(ref covers, ref inFront);
+            }
         }
         catch (InvalidOperationException e)
         {
             // Any windows already made go with this thread.
-            log(e.Message);
-            up.TrySetResult(false);
+            if (!up.Task.IsCompleted)
+            {
+                log(e.Message);
+            }
+
+            up.TrySetResult(null);
             return;
         }
 
-        if (up.TrySetResult(true))
+        if (up.TrySetResult(GetCurrentThreadId()))
         {
             SetTimer(0, 0, 1000, 0);
             while (GetMessageW(out var received, 0, 0, 0) > 0)
             {
                 if (received.Id is WM_TIMER or ScreensChanged)
                 {
-                    Raise();
+                    Raise(ref covers, ref inFront);
                 }
                 else
                 {
@@ -172,24 +184,24 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
             }
         }
 
-        Destroy(_covers);
+        Destroy(covers);
     }
 
-    private void Raise()
+    private void Raise(ref List<Cover> covers, ref bool? inFront)
     {
         var screens = Screens();
 
         // No screens at all is Windows between two arrangements, not a reason to take the windows down.
         // shortcut: windows made while a broadcast picture is up land above it until the broadcast ends; upgrade if
         // screens changing during a broadcast turns out to matter.
-        if (screens.Count > 0 && !screens.SequenceEqual(_covers.Select(cover => cover.Screen)))
+        if (screens.Count > 0 && !screens.SequenceEqual(covers.Select(cover => cover.Screen)))
         {
-            var old = _covers;
-            _covers = MakeCovers(screens);
+            var old = covers;
+            covers = MakeCovers(screens);
             Destroy(old);
         }
 
-        foreach (var (window, screen) in _covers)
+        foreach (var (window, screen) in covers)
         {
             if (screen.Primary && _yielded)
             {
@@ -212,14 +224,14 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
         }
 
         var front = GetForegroundWindow();
-        var inFront = _covers.Any(cover => cover.Window == front);
+        var nowInFront = covers.Any(cover => cover.Window == front);
         GetWindowThreadProcessId(front, out var process);
-        if (FrontLine(_inFront, inFront, process) is { } line)
+        if (FrontLine(inFront, nowInFront, process) is { } line)
         {
             log(line);
         }
 
-        _inFront = inFront;
+        inFront = nowInFront;
     }
 
     private static List<Screen> Screens()

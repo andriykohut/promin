@@ -27,7 +27,7 @@ public interface IRoomConnections
     /// <summary>Raised on any thread when a PC's connection has ended or been dropped.</summary>
     event Action<string>? Ended;
 
-    /// <summary>Raised on any thread with a PC's id and whether it reports itself locked: after it connects, and after each lock or unlock it was sent.</summary>
+    /// <summary>Raised on any thread with a PC's id and whether it reports itself locked: after it connects, after each lock or unlock it was sent, and when a lock comes back by itself.</summary>
     event Action<string, bool>? LockReported;
 
     /// <summary>The PC is online at this address: dial it, unless it is connected, being dialled, or was tried less than five seconds ago.</summary>

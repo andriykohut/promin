@@ -39,7 +39,8 @@ public class LockLinkTests
 
         public Rig(bool mayLock = true, bool locked = false, Action? onShow = null)
         {
-            Screen = new ScreenLock(new LockFile(Path.Combine(_dir.Path, "lock"), _log.Add), new FakeScreen(_calls) { OnShow = onShow }, new FakeInput(_calls), _log.Add);
+            Window = new FakeScreen(_calls) { OnShow = onShow };
+            Screen = new ScreenLock(new LockFile(Path.Combine(_dir.Path, "lock"), _log.Add), Window, new FakeInput(_calls), new LockLog(_log.Add));
             if (locked)
             {
                 Screen.Lock("x");
@@ -49,6 +50,7 @@ public class LockLinkTests
         }
 
         public FakeChannel Channel { get; } = new();
+        public FakeScreen Window { get; }
         public ScreenLock Screen { get; }
         public Task Running { get; }
         public IReadOnlyList<string> Calls => _calls;
@@ -138,6 +140,92 @@ public class LockLinkTests
         await rig.Running.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         Assert.True(rig.Screen.IsLocked);
+    }
+
+    [Fact]
+    public async Task ALockThatComesBackByItself_IsReported()
+    {
+        using var rig = new Rig();
+        rig.Window.CanShow = false;
+        Assert.False((await rig.SendAsync(new LockPc("Back soon"))).Locked);
+        rig.Window.CanShow = true;
+
+        rig.Screen.Restore();
+
+        Assert.True((await rig.NextStateAsync()).Locked);
+    }
+
+    [Fact]
+    public async Task AReportOfARestore_DoesNotStopTheMessages()
+    {
+        using var rig = new Rig();
+        rig.Window.CanShow = false;
+        await rig.SendAsync(new LockPc("Back soon"));
+        rig.Window.CanShow = true;
+        rig.Screen.Restore();
+        await rig.NextStateAsync();
+
+        await rig.Channel.FromConsole.Writer.WriteAsync(new UnlockPc(), TestContext.Current.CancellationToken);
+
+        Assert.False((await rig.NextStateAsync()).Locked);
+    }
+
+    [Fact]
+    public async Task ARestoreThatChangesNothing_IsNotReported()
+    {
+        using var rig = new Rig(locked: true);
+        await rig.NextStateAsync();
+
+        rig.Screen.Restore();
+        await rig.Channel.FromConsole.Writer.WriteAsync(new UnlockPc(), TestContext.Current.CancellationToken);
+
+        // A report of the restore would come first, and read true.
+        Assert.False((await rig.NextStateAsync()).Locked);
+    }
+
+    [Fact]
+    public async Task ARestoreThatFails_IsNotReported()
+    {
+        using var rig = new Rig();
+        rig.Window.CanShow = false;
+        await rig.SendAsync(new LockPc("Back soon"));
+
+        rig.Screen.Restore();
+        await rig.Channel.FromConsole.Writer.WriteAsync(new LockPc(new string('a', LockLimits.MaxMessageLength + 1)), TestContext.Current.CancellationToken);
+
+        Assert.False((await rig.NextStateAsync()).Locked);
+        Assert.False(rig.Channel.ToConsole.Reader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task ARestoreAfterTheStreamEnded_ReportsNothing()
+    {
+        using var rig = new Rig();
+        rig.Window.CanShow = false;
+        await rig.SendAsync(new LockPc("Back soon"));
+        rig.Channel.FromConsole.Writer.Complete(new IOException("the stream ended"));
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        rig.Window.CanShow = true;
+
+        rig.Screen.Restore();
+
+        Assert.True(rig.Screen.IsLocked);
+        Assert.False(rig.Channel.ToConsole.Reader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task AReportThatCannotBeSent_EndsTheRun_Silently()
+    {
+        using var rig = new Rig();
+        rig.Window.CanShow = false;
+        await rig.SendAsync(new LockPc("Back soon"));
+        rig.Window.CanShow = true;
+        rig.Channel.ToConsole.Writer.Complete();
+
+        rig.Screen.Restore();
+        await rig.Running.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(rig.Log, line => line.Contains("failure"));
     }
 
     [Fact]

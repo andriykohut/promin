@@ -72,15 +72,20 @@ internal sealed record AgentServices(
         },
         () => new ScreenPictures(),
         () => new WindowsSignedInPerson(Environment.ProcessPath!),
-        (paths, log) => new ScreenLock(
-            new LockFile(paths.LockFile, log.Write), new LockScreenWindow(log.Write), new InputBlock(log.Write), log.Write));
+        (paths, log) =>
+        {
+            var lockLog = new LockLog(log.Write);
+            return new ScreenLock(
+                new LockFile(paths.LockFile, lockLog.Write), new LockScreenWindow(lockLog.Write), new InputBlock(lockLog.Write), lockLog);
+        });
 }
 
 /// <summary>
 /// The agent when it runs: a lock the PC holds, restored before anything else, then its identity, the listener, the
 /// beacon that announces it, and the two loops side by side over one listener (console PCs that are paired, each with
-/// its broadcast, its screen pictures, its file sends and its lock stream, and pairing windows). A <c>--windowed</c>
-/// agent has no lock. It returns the process's exit code and says why in the log, with one exception: a lock window or
+/// its broadcast, its screen pictures, its file sends and its lock stream, and pairing windows), with a third beside
+/// them for a lock that could not be restored. A <c>--windowed</c> agent has no lock, so no third loop.
+/// It returns the process's exit code and says why in the log, with one exception: a lock window or
 /// input block that will not go ends the process there and then (<see cref="LockScreenWindow.Hide"/>,
 /// <see cref="InputBlock.Release"/>), which an unlock or the lock's disposal can reach. There is deliberately no
 /// <c>ProcessExit</c> handler: it runs after <c>Main</c> has returned and everything it could cancel is already
@@ -88,6 +93,8 @@ internal sealed record AgentServices(
 /// </summary>
 internal static class AgentHost
 {
+    private static readonly TimeSpan RestoreEvery = TimeSpan.FromSeconds(5);
+
     /// <summary>Records what nobody catches (a crash on a thread, a task nobody awaited) in the log. Once, from <c>Main</c>.</summary>
     public static void LogWhatNobodyCatches(AgentLog log)
     {
@@ -229,11 +236,17 @@ internal static class AgentHost
             var pairingLoop = pairing.RunAsync(shutdown.Token);
             var acceptLoop = AcceptConsolePcsAsync(
                 listener, connections, command.Windowed, services.OpenScreenPictures, services.Person, screenLock, log, shutdown.Token);
+            var restoreLoop = screenLock is null
+                ? Task.CompletedTask
+                : RestoreLockAsync(screenLock, services.Time ?? TimeProvider.System, shutdown.Token);
 
-            // Neither loop ends by itself; one that does has failed.
+            // Neither the pairing loop nor the accept loop ends by itself; one that does has failed.
             var ended = await Task.WhenAny(pairingLoop, acceptLoop).ConfigureAwait(false);
             await shutdown.CancelAsync().ConfigureAwait(false);
             await connections.StopAsync().ConfigureAwait(false);
+
+            // The caller disposes screenLock once this returns.
+            await restoreLoop.ConfigureAwait(false);
             if (ended.IsFaulted)
             {
                 log.Write($"The agent stopped because a loop failed: {ended.Exception}");
@@ -242,6 +255,25 @@ internal static class AgentHost
 
             log.Write("Promin agent stopping.");
             return ExitCodes.Success;
+        }
+    }
+
+    /// <summary>
+    /// Calls <see cref="ScreenLock.Restore"/> every <see cref="RestoreEvery"/> until <paramref name="ct"/> is cancelled,
+    /// waiting first: the caller has already tried once. The first try can fail for a reason that passes, and the likeliest
+    /// moment is sign-in on a slow PC.
+    /// </summary>
+    private static async Task RestoreLockAsync(ScreenLock screenLock, TimeProvider time, CancellationToken ct)
+    {
+        while (true)
+        {
+            await Task.Delay(RestoreEvery, time, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
+
+            screenLock.Restore();
         }
     }
 
