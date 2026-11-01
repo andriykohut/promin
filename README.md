@@ -22,7 +22,7 @@ There are two apps:
 - **The console** (`Promin.Master`) runs on the PC whose screen is shown. It lists the PCs in the room, starts and stops the broadcast, shows each PC's screen in its tile, refreshed about once a second, sends files and folders to the PCs, and locks the ticked PCs (one, a few or all) with an optional message of up to 100 characters, and unlocks them with one click.
 - **The agent** (`Promin.Agent`) runs on every other PC. It has no window of its own; when a broadcast starts, it covers the display with the picture and blocks the keyboard and mouse until the broadcast's window closes. It shows the lock screen the same way when the console locks the PC. It also sends a small picture of its screen to the console about once a second, and saves the files the console sends, opening them for the person signed in when the console asks.
 
-A lock is kept on the PC itself, so it survives a restart, a sign-out and the console being closed, and comes back a moment after sign-in; nothing runs at the sign-in screen itself. A console on the same PC neither locks nor blocks.
+A lock is kept on the PC itself, so it survives a restart, a sign-out and the console being closed, and comes back a moment after sign-in. A console on the same PC neither locks nor blocks.
 
 Agents announce themselves on the network and the console finds them. A PC joins a room once, by pairing: both sides must know the same six-digit room code, and the code itself never crosses the network. After pairing, each side accepts only the other's certificate. The picture travels as H.264 video over QUIC, encoded and decoded on the graphics card where there is one.
 
@@ -62,7 +62,7 @@ pwsh installer/build.ps1
 
 The window shows one of three statuses: "No room code yet", "Not paired yet" or "Paired". Reopen it any time from the Start menu as **Promin agent**; it needs administrator rights.
 
-**Upgrading and uninstalling.** Run a newer setup to upgrade in place. An upgrade keeps the room code and pairing and does not open the window. Upgrade every agent PC before using **Send files**: an agent from an earlier version cannot receive files, so a send to it fails or waits until you stop it. On an agent PC that was set up by hand (a copied folder plus `--install`), running `Promin-Agent-Setup.exe` takes over that service, and the old folder can be deleted afterwards. To remove Promin, uninstall it from Installed apps. The agent keeps its room code, identity and pairing in `C:\ProgramData\Promin`, and the console keeps `%LocalAppData%\Promin`, so a reinstall needs no new pairing.
+**Upgrading and uninstalling.** Run a newer setup to upgrade in place. An upgrade keeps the room code and pairing and does not open the window. Upgrade every agent PC before using **Send files**: an agent from an earlier version cannot receive files, so a send to it fails or waits until you stop it. On an agent PC that was set up by hand (a copied folder plus `--install`), running `Promin-Agent-Setup.exe` takes over that service, and the old folder can be deleted afterwards. To remove Promin, uninstall it from Installed apps. The agent keeps its room code, identity, pairing and any lock in `C:\ProgramData\Promin`, and the console keeps `%LocalAppData%\Promin`, so a reinstall needs no new pairing, and a reinstall on a locked PC locks it again.
 
 ### Without the installer
 
@@ -81,7 +81,7 @@ Agent commands:
 | Command | What it does |
 |---|---|
 | `Promin.Agent.exe --install` | Registers the agent as a service that starts with Windows, adds its firewall rule, and locks the data folder (administrator terminal) |
-| `Promin.Agent.exe --uninstall` | Removes the service and its firewall rule, leaving the pairing and identity files |
+| `Promin.Agent.exe --uninstall` | Removes the service and its firewall rule, leaving the pairing, identity and lock files |
 | `Promin.Agent.exe --windowed` | Shows the broadcast in an ordinary window instead of covering the display |
 | `Promin.Agent.exe --reset-pairing` | Forgets the paired console and removes the lock, so the PC can be paired again |
 
@@ -93,7 +93,7 @@ The service runs the agent under the SYSTEM account, so every PC pairs once more
 - The room code is stored in a file that people using that PC can read. Pair each PC straight after setting its code. Until it is paired, anyone who knows the code can pair it to a different console.
 - On **Set up devices**, pair only the PCs you can account for. A device that knows the code can announce itself under any name.
 - Any device on the same network can disrupt Promin (for example, keep PCs from connecting), though it cannot watch.
-- Only the paired console can unlock a PC. If the console is lost or a PC is stuck, an administrator starts that PC in Safe Mode and runs `Promin.Agent.exe --reset-pairing`, which also removes the lock file. The PC must then pair again.
+- Only the paired console can unlock a PC. If the console is lost or a PC is stuck, an administrator starts that PC in Safe Mode and, in the agent's folder (`C:\Program Files\Promin\Agent`), runs `.\Promin.Agent.exe --reset-pairing | Out-Host`, which also removes the lock file. The PC must then pair again.
 - A program sent to a PC is saved but never run, even when **Open them on each PC when they arrive** is ticked.
 
 ## Languages

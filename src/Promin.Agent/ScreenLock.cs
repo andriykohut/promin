@@ -29,20 +29,20 @@ internal interface IInputBlock : IDisposable
 /// </summary>
 internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock input, Action<string> log) : IDisposable
 {
-    private readonly object gate = new();
-    private bool locked;
-    private bool pictureUp;
-    private bool held;
+    private readonly Lock _gate = new();
+    private bool _locked;
+    private bool _pictureUp;
+    private bool _held;
 
     public bool IsLocked
     {
-        get { lock (gate) { return locked; } }
+        get { lock (_gate) { return _locked; } }
     }
 
     /// <summary>Applies the lock the file holds, if any. The file is left as it is, whatever happens.</summary>
     public void Restore()
     {
-        lock (gate)
+        lock (_gate)
         {
             if (file.Read() is { } message)
             {
@@ -58,9 +58,9 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
     /// </summary>
     public void Lock(string message)
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (locked)
+            if (_locked)
             {
                 return;
             }
@@ -85,13 +85,13 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
     /// </summary>
     public void Unlock()
     {
-        lock (gate)
+        lock (_gate)
         {
             // The file can outlive the lock: the window may never have been made, or an earlier removal failed.
-            if (locked)
+            if (_locked)
             {
                 screen.Hide();
-                locked = false;
+                _locked = false;
                 Sync();
             }
 
@@ -113,16 +113,16 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
     /// </summary>
     public void PictureShown()
     {
-        lock (gate)
+        lock (_gate)
         {
-            pictureUp = true;
-            if (locked)
+            _pictureUp = true;
+            if (_locked)
             {
                 screen.Yield(toPicture: true);
             }
 
             Sync();
-            if (!held)
+            if (!_held)
             {
                 log("Keyboard and mouse could not be blocked, so the picture shows with them free.");
             }
@@ -131,10 +131,10 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
 
     public void PictureGone()
     {
-        lock (gate)
+        lock (_gate)
         {
-            pictureUp = false;
-            if (locked)
+            _pictureUp = false;
+            if (_locked)
             {
                 screen.Yield(toPicture: false);
             }
@@ -149,15 +149,15 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
     /// </summary>
     public void Dispose()
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (locked)
+            if (_locked)
             {
                 screen.Hide();
-                locked = false;
+                _locked = false;
             }
 
-            pictureUp = false;
+            _pictureUp = false;
             Sync();
             screen.Dispose();
             input.Dispose();
@@ -172,12 +172,12 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
             return;
         }
 
-        locked = true;
+        _locked = true;
         Sync();
-        if (!held)
+        if (!_held)
         {
             screen.Hide();
-            locked = false;
+            _locked = false;
             log("Keyboard and mouse could not be blocked, so the PC is not locked.");
             return;
         }
@@ -187,15 +187,15 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
 
     private void Sync()
     {
-        var want = locked || pictureUp;
-        if (want && !held)
+        var want = _locked || _pictureUp;
+        if (want && !_held)
         {
-            held = input.Hold();
+            _held = input.Hold();
         }
-        else if (!want && held)
+        else if (!want && _held)
         {
             input.Release();
-            held = false;
+            _held = false;
         }
     }
 }
