@@ -11,16 +11,18 @@ The name is Ukrainian: промінь, a beam of light.
 
 ## Status
 
-Early. Broadcasting and sending files work and have been run between two PCs; the room wall's pictures of each PC's screen have been tried on one PC. None of it has yet been tried in a full room of ten or more.
+Early. Broadcasting, sending files and locking PCs work and have been run between two PCs; the room wall's pictures of each PC's screen have been tried on one PC. None of it has yet been tried in a full room of ten or more.
 
-Planned next, none of it built yet: remote control and locking screens.
+Planned next, not built yet: remote control.
 
 ## How it works
 
 There are two apps:
 
-- **The console** (`Promin.Master`) runs on the PC whose screen is shown. It lists the PCs in the room, starts and stops the broadcast, shows each PC's screen in its tile, refreshed about once a second, and sends files and folders to the PCs.
-- **The agent** (`Promin.Agent`) runs on every other PC. It has no window of its own; when a broadcast starts, it covers the display with the picture. It also sends a small picture of its screen to the console about once a second, and saves the files the console sends, opening them for the person signed in when the console asks.
+- **The console** (`Promin.Master`) runs on the PC whose screen is shown. It lists the PCs in the room, starts and stops the broadcast, shows each PC's screen in its tile, refreshed about once a second, sends files and folders to the PCs, and locks the ticked PCs (one, a few or all) with an optional message of up to 100 characters, and unlocks them with one click.
+- **The agent** (`Promin.Agent`) runs on every other PC. It has no window of its own; when a broadcast starts, it covers the display with the picture and blocks the keyboard and mouse until the broadcast's window closes. It shows the lock screen the same way when the console locks the PC. It also sends a small picture of its screen to the console about once a second, and saves the files the console sends, opening them for the person signed in when the console asks.
+
+A lock is kept on the PC itself, so it survives a restart, a sign-out and the console being closed, and comes back a moment after sign-in; nothing runs at the sign-in screen itself. A console on the same PC neither locks nor blocks.
 
 Agents announce themselves on the network and the console finds them. A PC joins a room once, by pairing: both sides must know the same six-digit room code, and the code itself never crosses the network. After pairing, each side accepts only the other's certificate. The picture travels as H.264 video over QUIC, encoded and decoded on the graphics card where there is one.
 
@@ -81,7 +83,7 @@ Agent commands:
 | `Promin.Agent.exe --install` | Registers the agent as a service that starts with Windows, adds its firewall rule, and locks the data folder (administrator terminal) |
 | `Promin.Agent.exe --uninstall` | Removes the service and its firewall rule, leaving the pairing and identity files |
 | `Promin.Agent.exe --windowed` | Shows the broadcast in an ordinary window instead of covering the display |
-| `Promin.Agent.exe --reset-pairing` | Forgets the paired console, so the PC can be paired again |
+| `Promin.Agent.exe --reset-pairing` | Forgets the paired console and removes the lock, so the PC can be paired again |
 
 The service runs the agent under the SYSTEM account, so every PC pairs once more the first time it is installed (the agent's identity moves to that account).
 
@@ -91,6 +93,7 @@ The service runs the agent under the SYSTEM account, so every PC pairs once more
 - The room code is stored in a file that people using that PC can read. Pair each PC straight after setting its code. Until it is paired, anyone who knows the code can pair it to a different console.
 - On **Set up devices**, pair only the PCs you can account for. A device that knows the code can announce itself under any name.
 - Any device on the same network can disrupt Promin (for example, keep PCs from connecting), though it cannot watch.
+- Only the paired console can unlock a PC. If the console is lost or a PC is stuck, an administrator starts that PC in Safe Mode and runs `Promin.Agent.exe --reset-pairing`, which also removes the lock file. The PC must then pair again.
 - A program sent to a PC is saved but never run, even when **Open them on each PC when they arrive** is ticked.
 
 ## Languages
@@ -105,6 +108,7 @@ Every text the console shows is in `src/Promin.Master.Core/Strings.resx` (Englis
 |---|---|
 | Console data and log | `%LocalAppData%\Promin` |
 | Agent data and log | `%ProgramData%\Promin\Agent` |
+| Lock on an agent PC | `%ProgramData%\Promin\Agent\lock.json` |
 | Room code on an agent PC | `%ProgramData%\Promin\agent.json` |
 | Files sent to an agent PC | `Promin` on the desktop of the person signed in there |
 
