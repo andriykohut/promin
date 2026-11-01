@@ -9,6 +9,8 @@ Promin shows one PC's screen on every other PC in the room, over the local netwo
 
 The name is Ukrainian: промінь, a beam of light.
 
+![The Promin console: a tile for each PC in the room, with Lock, Send files and Start broadcast along the bottom](assets/screenshots/console-room.png)
+
 ## Status
 
 Early. Broadcasting, sending files and locking PCs work and have been run between two PCs; the room wall's pictures of each PC's screen have been tried on one PC. None of it has yet been tried in a full room of ten or more.
