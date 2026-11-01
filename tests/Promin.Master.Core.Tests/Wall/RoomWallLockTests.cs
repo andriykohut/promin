@@ -281,6 +281,20 @@ public sealed class RoomWallLockTests
     }
 
     [Fact]
+    public void ALockedPcThatGoesOffline_ReadsOffline_AndLockedAgainWhenItReturns()
+    {
+        var vm = TenWithSevenOffline();
+        _connections.RaiseLock(Id(1), true);
+        _now += TimeSpan.FromSeconds(7);
+        vm.Tick();
+        Assert.Equal(PcTileState.Offline, Tile(vm, 1).State);
+
+        See(1);
+        vm.Tick();
+        Assert.Equal(PcTileState.Locked, Tile(vm, 1).State);
+    }
+
+    [Fact]
     public void AnEndedConnection_ForgetsTheLock_AndTheNextReportBringsItBack()
     {
         var vm = TenWithSevenOffline();

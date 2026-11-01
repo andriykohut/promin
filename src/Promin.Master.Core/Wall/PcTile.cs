@@ -85,6 +85,7 @@ public sealed class PcTile : INotifyPropertyChanged
         Screen = jpeg.Length == 0 ? TileScreen.NotAvailable : TileScreen.Picture;
     }
 
+    /// <summary>The PC reports its screen locked: the lock glyph on a dark area, in place of any picture.</summary>
     internal void ShowLocked()
     {
         Picture = null;
