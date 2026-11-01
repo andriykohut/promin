@@ -45,7 +45,25 @@ public sealed class StringsTests
     [InlineData(3, "готові")]
     [InlineData(11, "готових")]
     public void UkrainianPillWords_AgreeWithTheCount(int ready, string expected) =>
-        Assert.Equal(expected, In(Ukrainian, () => WallText.PillsOffAir(ready, 0).Single().Word));
+        Assert.Equal(expected, In(Ukrainian, () => WallText.PillsOffAir(ready, 0, 0).Single().Word));
+
+    [Theory]
+    [InlineData(1, "заблокований")]
+    [InlineData(2, "заблоковані")]
+    [InlineData(5, "заблокованих")]
+    public void UkrainianLockedPill_AgreesWithTheCount(int locked, string expected) =>
+        Assert.Equal(expected, In(Ukrainian, () => WallText.PillsOffAir(0, locked, 0).Single().Word));
+
+    [Fact]
+    public void UkrainianLockLines_AreAsTheSpecHasThem()
+    {
+        Assert.Equal("Заблокувати 2 ПК", In(Ukrainian, () => WallText.LockPanelTitle(2)));
+        Assert.Equal("PC-07 не в мережі, тому його не буде заблоковано.", In(Ukrainian, () => WallText.LockOfflineLine(["PC-07"])));
+        Assert.Equal("2 ПК не в мережі, тому їх не буде заблоковано.", In(Ukrainian, () => WallText.LockOfflineLine(["a", "b"])));
+        Assert.Equal("PC-03 не вдалося заблокувати", In(Ukrainian, () => WallText.DidNotLockLine(["PC-03"])));
+        Assert.Equal("2 ПК не вдалося розблокувати", In(Ukrainian, () => WallText.DidNotUnlockLine(["a", "b"])));
+        Assert.Equal("Заблоковано", In(Ukrainian, () => WallText.Status(PcTileState.Locked, 0)));
+    }
 
     [Theory]
     [InlineData(1, "1 елемент · 3 MB")]

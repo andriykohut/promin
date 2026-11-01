@@ -20,19 +20,24 @@ public static class WallText
         PcTileState.Receiving => Strings.Status_Receiving,
         PcTileState.DroppingFrames => Phrase.Format(Strings.Status_FramesDropped, ("count", framesDropped)),
         PcTileState.Reconnecting => Strings.Status_Reconnecting,
+        PcTileState.Locked => Strings.Status_Locked,
         _ => string.Empty,
     };
 
     /// <summary>The header pills off air. A pill whose count is 0 is left out.</summary>
-    public static IReadOnlyList<WallPill> PillsOffAir(int ready, int offline) =>
-        Pills((PcTileState.Ready, ready, Strings.Pill_Ready), (PcTileState.Offline, offline, Strings.Pill_Offline));
+    public static IReadOnlyList<WallPill> PillsOffAir(int ready, int locked, int offline) =>
+        Pills(
+            (PcTileState.Ready, ready, Strings.Pill_Ready),
+            (PcTileState.Locked, locked, Strings.Pill_Locked),
+            (PcTileState.Offline, offline, Strings.Pill_Offline));
 
     /// <summary>The header pills on air. A pill whose count is 0 is left out.</summary>
-    public static IReadOnlyList<WallPill> PillsOnAir(int receiving, int dropping, int reconnecting) =>
+    public static IReadOnlyList<WallPill> PillsOnAir(int receiving, int dropping, int reconnecting, int locked) =>
         Pills(
             (PcTileState.Receiving, receiving, Strings.Pill_Receiving),
             (PcTileState.DroppingFrames, dropping, Strings.Pill_Dropping),
-            (PcTileState.Reconnecting, reconnecting, Strings.Pill_Reconnecting));
+            (PcTileState.Reconnecting, reconnecting, Strings.Pill_Reconnecting),
+            (PcTileState.Locked, locked, Strings.Pill_Locked));
 
     public static string SelectedLine(int selectedAndOnline, int all) =>
         Phrase.Format(Strings.Wall_Selected, ("selected", selectedAndOnline), ("all", all));
@@ -43,6 +48,16 @@ public static class WallText
         1 => Phrase.Format(Strings.Wall_OfflineOne, ("name", offlineNames[0])),
         var n => Phrase.Format(Strings.Wall_OfflineMany, ("count", n)),
     };
+
+    /// <summary>The lock panel's title, counting the PCs it will lock.</summary>
+    public static string LockPanelTitle(int count) => Phrase.Format(Strings.Lock_PanelTitle, ("count", count));
+
+    /// <summary>Says the offline PCs will not be locked: the name for one, the count for several; empty for none.</summary>
+    public static string LockOfflineLine(IReadOnlyList<string> names) => NamesLine(names, Strings.Lock_OfflineOne, Strings.Lock_OfflineMany);
+
+    public static string DidNotLockLine(IReadOnlyList<string> names) => NamesLine(names, Strings.Lock_DidNotLockOne, Strings.Lock_DidNotLockMany);
+
+    public static string DidNotUnlockLine(IReadOnlyList<string> names) => NamesLine(names, Strings.Lock_DidNotUnlockOne, Strings.Lock_DidNotUnlockMany);
 
     public static string OnAirLine(int receiving, IReadOnlyList<string> dropping, IReadOnlyList<string> reconnecting)
     {
@@ -137,6 +152,13 @@ public static class WallText
         Sharpness.Light => Strings.Sharpness_Light,
         Sharpness.Sharp => Strings.Sharpness_Sharp,
         _ => Strings.Sharpness_Standard,
+    };
+
+    private static string NamesLine(IReadOnlyList<string> names, string one, string many) => names.Count switch
+    {
+        0 => string.Empty,
+        1 => Phrase.Format(one, ("name", names[0])),
+        var n => Phrase.Format(many, ("count", n)),
     };
 
     // The word after a pill's count depends on the count in some languages, so each is a plural text.

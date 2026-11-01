@@ -12,6 +12,7 @@ public class WallTextTests
     [InlineData(PcTileState.Offline, 0, "Offline")]
     [InlineData(PcTileState.Receiving, 5, "Receiving")]
     [InlineData(PcTileState.Reconnecting, 5, "Reconnecting")]
+    [InlineData(PcTileState.Locked, 0, "Locked")]
     [InlineData(PcTileState.DroppingFrames, 37, "37 frames dropped")]
     [InlineData(PcTileState.DroppingFrames, 1, "1 frame dropped")]
     public void Status(PcTileState state, int dropped, string expected) =>
@@ -22,26 +23,66 @@ public class WallTextTests
     [InlineData(10, 0, new[] { "10 ready" })]
     [InlineData(0, 3, new[] { "3 offline" })]
     public void PillsOffAir(int ready, int offline, string[] expected) =>
-        Assert.Equal(expected, WallText.PillsOffAir(ready, offline).Select(p => $"{p.Count} {p.Word}"));
+        Assert.Equal(expected, WallText.PillsOffAir(ready, 0, offline).Select(p => $"{p.Count} {p.Word}"));
 
     [Fact]
     public void PillsOffAir_CarryTheStateTheirDotIsColouredBy() =>
         Assert.Equal(
             [PcTileState.Ready, PcTileState.Offline],
-            WallText.PillsOffAir(9, 1).Select(p => p.State));
+            WallText.PillsOffAir(9, 0, 1).Select(p => p.State));
 
     [Theory]
     [InlineData(8, 1, 1, new[] { "8 receiving", "1 dropping frames", "1 reconnecting" })]
     [InlineData(9, 0, 0, new[] { "9 receiving" })]
     [InlineData(0, 0, 2, new[] { "2 reconnecting" })]
     public void PillsOnAir(int receiving, int dropping, int reconnecting, string[] expected) =>
-        Assert.Equal(expected, WallText.PillsOnAir(receiving, dropping, reconnecting).Select(p => $"{p.Count} {p.Word}"));
+        Assert.Equal(expected, WallText.PillsOnAir(receiving, dropping, reconnecting, 0).Select(p => $"{p.Count} {p.Word}"));
 
     [Fact]
     public void PillsOnAir_CarryTheStateTheirDotIsColouredBy() =>
         Assert.Equal(
             [PcTileState.Receiving, PcTileState.DroppingFrames, PcTileState.Reconnecting],
-            WallText.PillsOnAir(8, 1, 1).Select(p => p.State));
+            WallText.PillsOnAir(8, 1, 1, 0).Select(p => p.State));
+
+    [Fact]
+    public void LockedPills_SitBetweenReadyAndOffline_OffAir() =>
+        Assert.Equal(
+            ["8 ready", "1 locked", "1 offline"],
+            WallText.PillsOffAir(8, 1, 1).Select(p => $"{p.Count} {p.Word}"));
+
+    [Fact]
+    public void LockedPill_ComesLast_OnAir() =>
+        Assert.Equal(
+            [PcTileState.Receiving, PcTileState.Locked],
+            WallText.PillsOnAir(8, 0, 0, 2).Select(p => p.State));
+
+    [Theory]
+    [InlineData(1, "Lock 1 PC")]
+    [InlineData(2, "Lock 2 PCs")]
+    [InlineData(8, "Lock 8 PCs")]
+    public void LockPanelTitle(int count, string expected) =>
+        Assert.Equal(expected, WallText.LockPanelTitle(count));
+
+    [Theory]
+    [InlineData(new string[0], "")]
+    [InlineData(new[] { "PC-07" }, "PC-07 is offline and won’t be locked.")]
+    [InlineData(new[] { "PC-03", "PC-07" }, "2 PCs are offline and won’t be locked.")]
+    public void LockOfflineLine(string[] names, string expected) =>
+        Assert.Equal(expected, WallText.LockOfflineLine(names));
+
+    [Theory]
+    [InlineData(new string[0], "")]
+    [InlineData(new[] { "PC-03" }, "PC-03 did not lock")]
+    [InlineData(new[] { "PC-03", "PC-07" }, "2 PCs did not lock")]
+    public void DidNotLockLine(string[] names, string expected) =>
+        Assert.Equal(expected, WallText.DidNotLockLine(names));
+
+    [Theory]
+    [InlineData(new string[0], "")]
+    [InlineData(new[] { "PC-03" }, "PC-03 did not unlock")]
+    [InlineData(new[] { "PC-03", "PC-07" }, "2 PCs did not unlock")]
+    public void DidNotUnlockLine(string[] names, string expected) =>
+        Assert.Equal(expected, WallText.DidNotUnlockLine(names));
 
     [Theory]
     [InlineData(9, 10, "9 of 10 PCs selected")]
@@ -120,7 +161,7 @@ public class WallTextTests
     [Fact]
     public void Pills_CarryTheirCountAndWord()
     {
-        var pill = Assert.Single(WallText.PillsOffAir(0, 3));
+        var pill = Assert.Single(WallText.PillsOffAir(0, 0, 3));
 
         Assert.Equal(3, pill.Count);
         Assert.Equal("offline", pill.Word);

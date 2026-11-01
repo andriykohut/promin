@@ -11,4 +11,7 @@ public enum TileScreen
 
     /// <summary>The PC's screen cannot be captured right now: a lock glyph and "Screen not available".</summary>
     NotAvailable,
+
+    /// <summary>The PC reports its screen locked: a dark area with the lock glyph, whatever the capture shows.</summary>
+    Locked,
 }

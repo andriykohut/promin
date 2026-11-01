@@ -85,6 +85,12 @@ public sealed class PcTile : INotifyPropertyChanged
         Screen = jpeg.Length == 0 ? TileScreen.NotAvailable : TileScreen.Picture;
     }
 
+    internal void ShowLocked()
+    {
+        Picture = null;
+        Screen = TileScreen.Locked;
+    }
+
     internal void ClearPicture()
     {
         Picture = null;
