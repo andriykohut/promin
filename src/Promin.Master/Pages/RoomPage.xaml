@@ -270,18 +270,16 @@
                         Click="Clear_Click"
                         Content="{x:Bind core:Strings.Room_ClearSelection}"
                         Visibility="{x:Bind SelectionLinksVisibility(ViewModel.IsOnAir, ViewModel.IsEmptyRoom), Mode=OneWay}" />
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        FontSize="12.5"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="·"
-                        Visibility="{x:Bind SeparatorVisibility(ViewModel.IsOnAir, ViewModel.IsEmptyRoom, ViewModel.BarLine2.Length), Mode=OneWay}" />
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        FontSize="12.5"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="{x:Bind ViewModel.BarLine2, Mode=OneWay}" />
                 </StackPanel>
+                <!-- The message on its own line, trimmed to the column; the tooltip carries the whole of it. -->
+                <TextBlock
+                    Margin="0,1,0,0"
+                    FontSize="12.5"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="{x:Bind ViewModel.BarLine2, Mode=OneWay}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind ViewModel.BarLine2, Mode=OneWay}"
+                    Visibility="{x:Bind NotEmpty(ViewModel.BarLine2), Mode=OneWay}" />
             </StackPanel>
 
             <!-- The quality picker off air; the same words as plain text on air. -->
