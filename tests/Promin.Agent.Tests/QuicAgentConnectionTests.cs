@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
+using Promin.Master.Services;
 using Promin.Protocol.Messages;
 using Promin.Protocol.Transport;
 
@@ -23,6 +24,7 @@ public class QuicAgentConnectionTests
         private readonly CancellationTokenSource _stop = new();
         private volatile IPEndPoint? _console;
         private volatile bool _pulled;
+        private int _toLose;
 
         public Cable(IPEndPoint agent)
         {
@@ -33,6 +35,8 @@ public class QuicAgentConnectionTests
         public IPEndPoint Endpoint => (IPEndPoint)_towardConsole.Client.LocalEndPoint!;
 
         public void Pull() => _pulled = true;
+
+        public void LoseTheNextDatagramToTheAgent() => Volatile.Write(ref _toLose, 1);
 
         public void Dispose()
         {
@@ -50,7 +54,7 @@ public class QuicAgentConnectionTests
                 {
                     var datagram = await _towardConsole.ReceiveAsync(_stop.Token);
                     _console = datagram.RemoteEndPoint;
-                    if (!_pulled)
+                    if (!_pulled && Interlocked.Exchange(ref _toLose, 0) == 0)
                     {
                         await _towardAgent.SendAsync(datagram.Buffer, agent, _stop.Token);
                     }
@@ -80,7 +84,7 @@ public class QuicAgentConnectionTests
         }
     }
 
-    /// <summary>A console PC connected to an agent through a <see cref="Cable"/>, its streams open and sorted by the agent.</summary>
+    /// <summary>A console PC connected to an agent through a <see cref="Cable"/>.</summary>
     private sealed class Rig : IAsyncDisposable
     {
         private readonly TempDirectory _temp = new();
@@ -93,7 +97,11 @@ public class QuicAgentConnectionTests
 
         public QuicAgentConnection Connection { get; private set; } = null!;
 
+        public QuicChannel ConsoleChannel => _consoleChannel!;
+
         public void PullTheCable() => _cable!.Pull();
+
+        public void LoseTheNextDatagramToTheAgent() => _cable!.LoseTheNextDatagramToTheAgent();
 
         public async Task ConnectAsync(CancellationToken ct)
         {
@@ -105,7 +113,11 @@ public class QuicAgentConnectionTests
             _consoleChannel = await new QuicMasterConnector(_consoleCertificate, Pins(AgentId, _agentCertificate))
                 .ConnectAsync(_cable.Endpoint, AgentId, ct);
             Connection = new QuicAgentConnection(await accepted);
+        }
 
+        /// <summary>Opens a send, the lock stream and the control stream, and waits for the agent to sort the last two.</summary>
+        public async Task OpenStreamsAsync(CancellationToken ct)
+        {
             await OpenStreamAsync(new SendFiles(1, Open: false), ct); // left queued: nothing takes it
             await OpenStreamAsync(new WatchLock(), ct);
             await OpenStreamAsync(new StopBroadcast(), ct);
@@ -161,11 +173,31 @@ public class QuicAgentConnectionTests
         var ct = TestContext.Current.CancellationToken;
         await using var rig = new Rig();
         await rig.ConnectAsync(ct);
+        await rig.OpenStreamsAsync(ct);
         if (gone)
         {
             rig.PullTheCable();
         }
 
         await rig.Connection.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5), ct);
+    }
+
+    [Fact]
+    public async Task AnUnlockSentJustBeforeTheConsoleCloses_ArrivesDespiteALostDatagram()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var rig = new Rig();
+        await rig.ConnectAsync(ct);
+        var console = new QuicPcConnection(rig.ConsoleChannel);
+        await console.SendLockAsync("Break", ct);
+        var lockStream = await rig.Connection.AcceptLockStreamAsync(ct);
+        Assert.IsType<LockPc>(await lockStream.ReceiveAsync(ct));
+
+        rig.LoseTheNextDatagramToTheAgent();
+        await console.SendUnlockAsync(ct);
+        await console.DisposeAsync();
+
+        Assert.IsType<UnlockPc>(await lockStream.ReceiveAsync(ct).WaitAsync(TimeSpan.FromSeconds(5), ct));
+        await rig.Connection.DisposeAsync();
     }
 }

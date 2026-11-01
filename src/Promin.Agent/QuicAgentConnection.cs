@@ -67,8 +67,9 @@ internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnectio
             await _sorting.ConfigureAwait(false);
         }
 
-        // The connection goes first. A stream waits for the peer to acknowledge its close, about 16 s when the peer was
-        // killed, and the newest connection waits for this one; a stream whose connection has gone closes at once.
+        // The connection goes first, unlike on the console's end, which has last messages to deliver: a replacement
+        // connection must not wait on a peer that has gone. A stream waits for the peer to acknowledge its close, about
+        // 16 s when the peer was killed, and a stream whose connection has gone closes at once.
         await channel.DisposeAsync().ConfigureAwait(false);
 
         // Sends that arrived after the receiver stopped taking them.

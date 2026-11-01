@@ -20,6 +20,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Promin.Agent.Core\Promin.Agent.Core.csproj" />
     <ProjectReference Include="..\..\src\Promin.Agent\Promin.Agent.csproj" />
+    <ProjectReference Include="..\..\src\Promin.Master.Core\Promin.Master.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The console app cannot be referenced from here. Its end of a connection is compiled in, to meet the agent's over real QUIC. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Promin.Master\Services\QuicPcConnection.cs" Link="QuicPcConnection.cs" />
   </ItemGroup>
 
 </Project>
