@@ -3,10 +3,13 @@ using System.Diagnostics;
 using Promin.Master.Controls;
 using Promin.Master.Core.Sending;
 using Promin.Master.Core.Wall;
+using Promin.Protocol.Messages;
 using Promin.Protocol.Video;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Navigation;
 using Windows.UI.ViewManagement;
@@ -46,6 +49,7 @@ public sealed partial class RoomPage : Page
             action => DispatcherQueue.TryEnqueue(() => action()));
 
         InitializeComponent();
+        LockMessage.MaxLength = LockLimits.MaxMessageLength;
 
         _timer = DispatcherQueue.CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(1);
@@ -106,6 +110,10 @@ public sealed partial class RoomPage : Page
 
     public bool CanSendFiles(bool sending, bool emptyRoom) => !sending && !emptyRoom;
 
+    public Visibility NotEmpty(string value) => string.IsNullOrEmpty(value) ? Visibility.Collapsed : Visibility.Visible;
+
+    public string LockGlyph(bool unlocks) => unlocks ? "\uE785" : "\uE72E";
+
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(RoomWallViewModel.IsOnAir))
@@ -162,6 +170,39 @@ public sealed partial class RoomPage : Page
     private void StripAction_Click(object sender, RoutedEventArgs e) => Sending.StripAction();
 
     private void SendStrip_CloseButtonClick(InfoBar sender, object args) => Sending.CloseStrip();
+
+    // The lock: the button unlocks at once or opens the panel; the panel locks from its button or Enter.
+
+    private void Lock_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.LockButtonUnlocks)
+        {
+            ViewModel.Unlock();
+        }
+        else
+        {
+            FlyoutBase.ShowAttachedFlyout((FrameworkElement)sender);
+        }
+    }
+
+    private void LockPanel_Opening(object sender, object e) => LockMessage.Text = string.Empty;
+
+    private void LockMessage_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Enter)
+        {
+            e.Handled = true;
+            LockNow();
+        }
+    }
+
+    private void LockNow_Click(object sender, RoutedEventArgs e) => LockNow();
+
+    private void LockNow()
+    {
+        ViewModel.Lock(LockMessage.Text);
+        LockPanel.Hide();
+    }
 
     // The picker: the two groups show the view model's choice when it opens and hand a change back.
 

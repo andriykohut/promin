@@ -150,6 +150,7 @@ public sealed partial class PcTileControl : UserControl
         Glyphs.Visibility = tile.Screen == TileScreen.Glyph ? Visibility.Visible : Visibility.Collapsed;
         PictureLayer.Visibility = tile.Screen == TileScreen.Picture ? Visibility.Visible : Visibility.Collapsed;
         NotAvailableNote.Visibility = tile.Screen == TileScreen.NotAvailable ? Visibility.Visible : Visibility.Collapsed;
+        LockedLayer.Visibility = tile.Screen == TileScreen.Locked ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>
