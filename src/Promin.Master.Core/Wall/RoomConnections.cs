@@ -7,6 +7,15 @@ public interface IPcConnection : IAsyncDisposable
 {
     /// <summary>The next screen picture: JPEG bytes, or empty when the PC's screen is not available. Throws once the connection has ended.</summary>
     ValueTask<byte[]> ReceivePictureAsync(CancellationToken ct);
+
+    /// <summary>The next lock state the PC reports: true when it is locked. Opens the lock stream on first use. Throws once the stream or the connection has ended.</summary>
+    Task<bool> ReceiveLockStateAsync(CancellationToken ct);
+
+    /// <summary>Asks the PC to lock, showing <paramref name="message"/>. Opens the lock stream on first use.</summary>
+    Task SendLockAsync(string message, CancellationToken ct);
+
+    /// <summary>Asks the PC to unlock. Opens the lock stream on first use.</summary>
+    Task SendUnlockAsync(CancellationToken ct);
 }
 
 /// <summary>What the wall uses of the room connections.</summary>
@@ -18,11 +27,20 @@ public interface IRoomConnections
     /// <summary>Raised on any thread when a PC's connection has ended or been dropped.</summary>
     event Action<string>? Ended;
 
+    /// <summary>Raised on any thread with a PC's id and whether it reports itself locked: after it connects, and after each lock or unlock it was sent.</summary>
+    event Action<string, bool>? LockReported;
+
     /// <summary>The PC is online at this address: dial it, unless it is connected, being dialled, or was tried less than five seconds ago.</summary>
     void Want(RoomMember pc);
 
     /// <summary>Closes the PC's connection, if any. The next <see cref="Want"/> dials again at once.</summary>
     void Drop(string deviceId);
+
+    /// <summary>Asks the PC to lock, showing <paramref name="message"/>. Does nothing when the PC has no open connection, and never throws; the PC's report is the answer.</summary>
+    void Lock(string deviceId, string message);
+
+    /// <summary>Asks the PC to unlock. Completes without effect when the PC has no open connection, and never throws.</summary>
+    Task UnlockAsync(string deviceId);
 }
 
 /// <summary>
@@ -63,6 +81,8 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
     public event Action<string, byte[]>? PictureArrived;
 
     public event Action<string>? Ended;
+
+    public event Action<string, bool>? LockReported;
 
     public void Want(RoomMember pc)
     {
@@ -132,6 +152,12 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
 
         Ended?.Invoke(deviceId);
     }
+
+    public void Lock(string deviceId, string message) =>
+        _ = SendAsync(deviceId, (connection, ct) => connection.SendLockAsync(message, ct));
+
+    public Task UnlockAsync(string deviceId) =>
+        SendAsync(deviceId, (connection, ct) => connection.SendUnlockAsync(ct));
 
     public async ValueTask DisposeAsync()
     {
@@ -216,6 +242,7 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
             if (connection is not null)
             {
                 _ = Task.Run(() => ReadAsync(pc.DeviceId, entry, connection));
+                _ = Task.Run(() => ReadLockAsync(pc.DeviceId, entry, connection));
             }
         }
         finally
@@ -253,6 +280,46 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
         {
             _ = CloseAsync(connection);
             Ended?.Invoke(deviceId);
+        }
+    }
+
+    // The lock stream ending ends only this loop: the pictures decide whether the connection is over.
+    private async Task ReadLockAsync(string deviceId, Entry entry, TConnection connection)
+    {
+        try
+        {
+            while (true)
+            {
+                var locked = await connection.ReceiveLockStateAsync(entry.Cts.Token).ConfigureAwait(false);
+                LockReported?.Invoke(deviceId, locked);
+            }
+        }
+        catch (Exception)
+        {
+            // The lock stream or the connection ended, or was dropped: no more reports.
+        }
+    }
+
+    private async Task SendAsync(string deviceId, Func<TConnection, CancellationToken, Task> send)
+    {
+        try
+        {
+            TConnection? connection;
+            Entry? entry;
+            lock (_gate)
+            {
+                _entries.TryGetValue(deviceId, out entry);
+                connection = entry?.Connection;
+            }
+
+            if (connection is not null)
+            {
+                await send(connection, entry!.Cts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (Exception)
+        {
+            // A PC that cannot be reached stays as it was; the wall shows that it did not answer.
         }
     }
 
