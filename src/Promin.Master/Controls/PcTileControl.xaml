@@ -192,7 +192,7 @@
                 CornerRadius="5"
                 Visibility="Collapsed">
                 <FontIcon
-                    FontSize="24"
+                    FontSize="26"
                     Foreground="#FF5A1F"
                     Glyph="&#xE72E;" />
             </Border>

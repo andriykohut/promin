@@ -204,6 +204,13 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
             }
         }
 
+        // The hooks swallow mouse moves, so WM_SETCURSOR never comes while locked: the pointer is hidden here, at
+        // first and again after Ctrl+Alt+Del. SetCursor, not ShowCursor, whose count would outlive a crash.
+        if (!_yielded)
+        {
+            SetCursor(0);
+        }
+
         var front = GetForegroundWindow();
         var inFront = _covers.Any(cover => cover.Window == front);
         GetWindowThreadProcessId(front, out var process);
@@ -316,6 +323,10 @@ internal sealed class LockScreenWindow(Action<string> log) : ILockScreen
 
             case WM_CLOSE:
                 return 0; // Alt+F4, should it get past the block
+
+            case WM_SETCURSOR:
+                SetCursor(0); // no pointer over the lock
+                return 1;
 
             default:
                 return DefWindowProcW(hwnd, message, wParam, lParam);
