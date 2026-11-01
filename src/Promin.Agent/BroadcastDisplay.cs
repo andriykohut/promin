@@ -104,8 +104,8 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
 
         if (!_thread.Join(TimeSpan.FromSeconds(10)))
         {
-            _log("The display did not stop within 10 seconds. It is left to finish by itself.");
             ReleaseInput();
+            _log("The display did not stop within 10 seconds. It is left to finish by itself.");
         }
     }
 
@@ -171,18 +171,18 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
         }
         finally
         {
-            Volatile.Write(ref _open, 0);
-            _mailbox.Complete();
-            if (_session is { } session)
-            {
-                _log($"The display ended. Pictures shown: {session.PresentedFrameCount}, frames dropped: " +
-                     $"{session.DroppedFrameCount}, discarded while waiting for a keyframe: {session.DiscardedFrameCount}, " +
-                     $"refused by the decoder: {session.RefusedFrameCount}, decoded but not shown to stay current: " +
-                     $"{session.SkippedPictureCount}.");
-            }
-
             try
             {
+                Volatile.Write(ref _open, 0);
+                _mailbox.Complete();
+                if (_session is { } session)
+                {
+                    _log($"The display ended. Pictures shown: {session.PresentedFrameCount}, frames dropped: " +
+                         $"{session.DroppedFrameCount}, discarded while waiting for a keyframe: {session.DiscardedFrameCount}, " +
+                         $"refused by the decoder: {session.RefusedFrameCount}, decoded but not shown to stay current: " +
+                         $"{session.SkippedPictureCount}.");
+                }
+
                 // The window first, so nothing can be drawn to it; then what it drew with. Each is released whether
                 // or not the one before it threw (a removed device can make a dispose throw).
                 Release("the window", () => window?.Dispose());
@@ -197,8 +197,9 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
         }
     }
 
-    // Runs on the display thread once the window is up. The picture is raised again after the lock yields to it:
-    // a lock tick between the window showing and the yield would otherwise leave the lock window above the picture.
+    // Runs on the display thread once the window is up, as RunMessageLoop's callback so that the block starts after
+    // the mouse move that wakes a dark screen. The picture is raised again after the lock yields to it: a lock tick
+    // between the window showing and the yield would otherwise leave the lock window above the picture.
     private void BlockInput(FullscreenRenderWindow window)
     {
         if (_screenLock is null)
@@ -206,8 +207,16 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
             return;
         }
 
-        Volatile.Write(ref _pictureHeld, 1);
-        _screenLock.PictureShown();
+        try
+        {
+            _screenLock.PictureShown();
+        }
+        finally
+        {
+            // Set afterwards so that Dispose cannot end the block before it has started.
+            Volatile.Write(ref _pictureHeld, 1);
+        }
+
         window.RaiseToTop();
     }
 
