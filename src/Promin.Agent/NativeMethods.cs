@@ -142,6 +142,8 @@ internal static class NativeMethods
     public const int GWLP_USERDATA = -21;
     public const int BLACK_BRUSH = 4;
     public static readonly nint HWND_TOPMOST = -1;
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOACTIVATE = 0x0010;
 
     public const int STD_OUTPUT_HANDLE = -11;

@@ -57,7 +57,7 @@ public class BroadcastDisplayTests(ITestOutputHelper output)
             echo(line);
         }
 
-        var display = await BroadcastDisplay.StartAsync(new StartBroadcast(1024, 768, 15), windowed: true, Log);
+        var display = await BroadcastDisplay.StartAsync(new StartBroadcast(1024, 768, 15), windowed: true, Log, null);
         Assert.NotNull(display);
         try
         {
@@ -143,7 +143,7 @@ public class BroadcastDisplayTests(ITestOutputHelper output)
             }
         }
 
-        var display = await BroadcastDisplay.StartAsync(new StartBroadcast(1024, 768, 15), windowed: true, Log);
+        var display = await BroadcastDisplay.StartAsync(new StartBroadcast(1024, 768, 15), windowed: true, Log, null);
         Assert.NotNull(display);
 
         var feeding = Task.Run(async () =>
@@ -178,7 +178,7 @@ public class BroadcastDisplayTests(ITestOutputHelper output)
         var payloads = EncodedBroadcast(1024, 768, colours: 2);
         var log = new List<string>();
         var display = await BroadcastDisplay.StartAsync(
-            new StartBroadcast(1024, 768, 15), windowed: true, line => { lock (log) { log.Add(line); } output.WriteLine(line); });
+            new StartBroadcast(1024, 768, 15), windowed: true, line => { lock (log) { log.Add(line); } output.WriteLine(line); }, null);
         Assert.NotNull(display);
 
         try

@@ -87,13 +87,16 @@ internal sealed class FullscreenRenderWindow : IDisposable
     /// <summary>
     /// Pumps this thread's messages until the window has been destroyed. For that long Windows is asked to keep
     /// the screen and the PC awake: viewers watch a session without touching the PC.
+    /// <paramref name="beforePump"/> runs after the screen is woken and before the first message is pumped.
     /// </summary>
-    public void RunMessageLoop(Action<string> log)
+    public void RunMessageLoop(Action<string> log, Action beforePump)
     {
         ArgumentNullException.ThrowIfNull(log);
+        ArgumentNullException.ThrowIfNull(beforePump);
         KeepAwake(log);
         try
         {
+            beforePump();
             while (GetMessageW(out var message, 0, 0, 0) > 0)
             {
                 TranslateMessage(ref message);
@@ -107,6 +110,9 @@ internal sealed class FullscreenRenderWindow : IDisposable
             SetThreadExecutionState(ES_CONTINUOUS);
         }
     }
+
+    /// <summary>Puts the window above every other topmost window without moving, resizing or activating it. Window thread only.</summary>
+    public void RaiseToTop() => SetWindowPos(_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
     // A failure here is logged and nothing more: a broadcast is never lost because of the PC's power settings.
     private static void KeepAwake(Action<string> log)

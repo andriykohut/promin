@@ -225,11 +225,10 @@ internal static class AgentHost
                 TimeProvider.System);
 
             var connections = new NewestConnectionWins();
-            var displays = new BroadcastDisplayFactory(command.Windowed, log.Write);
 
             var pairingLoop = pairing.RunAsync(shutdown.Token);
             var acceptLoop = AcceptConsolePcsAsync(
-                listener, connections, displays, services.OpenScreenPictures, services.Person, screenLock, log, shutdown.Token);
+                listener, connections, command.Windowed, services.OpenScreenPictures, services.Person, screenLock, log, shutdown.Token);
 
             // Neither loop ends by itself; one that does has failed.
             var ended = await Task.WhenAny(pairingLoop, acceptLoop).ConfigureAwait(false);
@@ -249,7 +248,7 @@ internal static class AgentHost
     private static async Task AcceptConsolePcsAsync(
         IAgentListener listener,
         NewestConnectionWins connections,
-        IBroadcastDisplayFactory displays,
+        bool windowed,
         Func<IScreenPictures>? openScreenPictures,
         Func<ISignedInPerson>? person,
         ScreenLock? screenLock,
@@ -296,7 +295,8 @@ internal static class AgentHost
                         : new LockLink(screenLock, mayLock: !onThisPc, log.Write).RunAsync(connection, stopLockLink.Token);
                     try
                     {
-                        await new BroadcastConnection(displays, log.Write).RunAsync(connection, token).ConfigureAwait(false);
+                        await new BroadcastConnection(
+                            new BroadcastDisplayFactory(windowed, log.Write, onThisPc ? null : screenLock), log.Write).RunAsync(connection, token).ConfigureAwait(false);
                     }
                     finally
                     {
