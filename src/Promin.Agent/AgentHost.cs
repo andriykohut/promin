@@ -39,7 +39,8 @@ internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAg
 /// The parts of start-up that touch this machine (QUIC, the Windows key store, the network), as functions, so
 /// that every way the agent can fail to start, and the exit code and log line for it, can be reached from a test.
 /// <c>OpenScreenPictures</c> is null in tests, which then take no pictures; <c>Person</c> is null in tests, which then
-/// never act as the signed-in person.
+/// never act as the signed-in person; <c>OpenScreenLock</c> is null in tests, which then never lock. <c>Time</c> is set
+/// in tests, which then move the clock themselves, and null on a PC, which uses the system clock.
 /// </summary>
 internal sealed record AgentServices(
     Action EnsureQuicSupported,
@@ -47,7 +48,9 @@ internal sealed record AgentServices(
     Func<DeviceIdentity, PeerCertificateStore, Action<Exception>, IAgentListener> CreateListener,
     Func<DeviceIdentity, IDisposable> StartBeacon,
     Func<IScreenPictures>? OpenScreenPictures = null,
-    Func<ISignedInPerson>? Person = null)
+    Func<ISignedInPerson>? Person = null,
+    Func<AgentPaths, AgentLog, ScreenLock>? OpenScreenLock = null,
+    TimeProvider? Time = null)
 {
     public static AgentServices ForThisMachine() => new(
         QuicTransportSettings.EnsureSupported,
@@ -68,18 +71,30 @@ internal sealed record AgentServices(
             return beacon;
         },
         () => new ScreenPictures(),
-        () => new WindowsSignedInPerson(Environment.ProcessPath!));
+        () => new WindowsSignedInPerson(Environment.ProcessPath!),
+        (paths, log) =>
+        {
+            var lockLog = new LockLog(log.Write);
+            return new ScreenLock(
+                new LockFile(paths.LockFile, lockLog.Write), new LockScreenWindow(lockLog.Write), new InputBlock(lockLog.Write), lockLog);
+        });
 }
 
 /// <summary>
-/// The agent when it runs: its identity, the listener, the beacon that announces it, and the two loops side by
-/// side over one listener (console PCs that are paired, each with its broadcast, its screen pictures and its file sends, and pairing windows). It returns the process's exit code
-/// and says why in the log; nothing here ends the process itself. There is deliberately no <c>ProcessExit</c>
-/// handler: it runs after <c>Main</c> has returned and everything it could cancel is already disposed. The agent
-/// is ended by <c>Stop-Process</c> or, in a test, by the token.
+/// The agent when it runs: a lock the PC holds, restored before anything else, then its identity, the listener, the
+/// beacon that announces it, and the two loops side by side over one listener (console PCs that are paired, each with
+/// its broadcast, its screen pictures, its file sends and its lock stream, and pairing windows), with a third beside
+/// them for a lock that could not be restored. A <c>--windowed</c> agent has no lock, so no third loop.
+/// It returns the process's exit code and says why in the log, with one exception: a lock window or
+/// input block that will not go ends the process there and then (<see cref="LockScreenWindow.Hide"/>,
+/// <see cref="InputBlock.Release"/>), which an unlock or the lock's disposal can reach. There is deliberately no
+/// <c>ProcessExit</c> handler: it runs after <c>Main</c> has returned and everything it could cancel is already
+/// disposed. The agent is ended by <c>Stop-Process</c> or, in a test, by the token.
 /// </summary>
 internal static class AgentHost
 {
+    private static readonly TimeSpan RestoreEvery = TimeSpan.FromSeconds(5);
+
     /// <summary>Records what nobody catches (a crash on a thread, a task nobody awaited) in the log. Once, from <c>Main</c>.</summary>
     public static void LogWhatNobodyCatches(AgentLog log)
     {
@@ -93,25 +108,41 @@ internal static class AgentHost
 
     /// <summary>
     /// Runs until <paramref name="stop"/> is cancelled (a process normally runs until it is killed) and returns 0, or
-    /// returns an <see cref="ExitCodes"/> value as soon as it cannot start or something fails.
+    /// returns an <see cref="ExitCodes"/> value as soon as it cannot start or something fails. On a locked PC such a
+    /// failure first holds the lock for <see cref="RestartBackoff.Longest"/>, or until <paramref name="stop"/>.
     /// </summary>
     public static async Task<int> RunAsync(
         AgentCommandLine command, AgentPaths paths, AgentLog log, AgentServices services, CancellationToken stop)
     {
         log.Write($"Promin agent started ({(command.Windowed ? "windowed" : "full screen")}), process {Environment.ProcessId}.");
+        using var screenLock = command.Windowed ? null : services.OpenScreenLock?.Invoke(paths, log);
+        screenLock?.Restore();
+
+        int exitCode;
         try
         {
-            return await RunCoreAsync(command, paths, log, services, stop).ConfigureAwait(false);
+            exitCode = await RunCoreAsync(command, paths, log, services, screenLock, stop).ConfigureAwait(false);
         }
         catch (Exception failure)
         {
             log.Write($"The agent stopped because of an unexpected error: {failure}");
-            return ExitCodes.Unexpected;
+            exitCode = ExitCodes.Unexpected;
         }
+
+        if (exitCode != ExitCodes.Success && screenLock?.IsLocked == true)
+        {
+            // Exiting now would leave the PC free for the whole backoff, every time. A run this long counts as healthy, so
+            // the service starts the agent again in 2 s: locked but for that, and a passing failure heals by itself.
+            log.Write($"The agent failed on a locked PC, so it keeps the lock for {RestartBackoff.Longest.TotalSeconds:F0} seconds before it exits.");
+            await Task.Delay(RestartBackoff.Longest, services.Time ?? TimeProvider.System, stop)
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+
+        return exitCode;
     }
 
     private static async Task<int> RunCoreAsync(
-        AgentCommandLine command, AgentPaths paths, AgentLog log, AgentServices services, CancellationToken stop)
+        AgentCommandLine command, AgentPaths paths, AgentLog log, AgentServices services, ScreenLock? screenLock, CancellationToken stop)
     {
         try
         {
@@ -201,16 +232,21 @@ internal static class AgentHost
                 TimeProvider.System);
 
             var connections = new NewestConnectionWins();
-            var displays = new BroadcastDisplayFactory(command.Windowed, log.Write);
 
             var pairingLoop = pairing.RunAsync(shutdown.Token);
             var acceptLoop = AcceptConsolePcsAsync(
-                listener, connections, displays, services.OpenScreenPictures, services.Person, log, shutdown.Token);
+                listener, connections, command.Windowed, services.OpenScreenPictures, services.Person, screenLock, log, shutdown.Token);
+            var restoreLoop = screenLock is null
+                ? Task.CompletedTask
+                : RestoreLockAsync(screenLock, services.Time ?? TimeProvider.System, shutdown.Token);
 
-            // Neither loop ends by itself; one that does has failed.
+            // Neither the pairing loop nor the accept loop ends by itself; one that does has failed.
             var ended = await Task.WhenAny(pairingLoop, acceptLoop).ConfigureAwait(false);
             await shutdown.CancelAsync().ConfigureAwait(false);
             await connections.StopAsync().ConfigureAwait(false);
+
+            // The caller disposes screenLock once this returns.
+            await restoreLoop.ConfigureAwait(false);
             if (ended.IsFaulted)
             {
                 log.Write($"The agent stopped because a loop failed: {ended.Exception}");
@@ -222,12 +258,32 @@ internal static class AgentHost
         }
     }
 
+    /// <summary>
+    /// Calls <see cref="ScreenLock.Restore"/> every <see cref="RestoreEvery"/> until <paramref name="ct"/> is cancelled,
+    /// waiting first: the caller has already tried once. The first try can fail for a reason that passes, and the likeliest
+    /// moment is sign-in on a slow PC.
+    /// </summary>
+    private static async Task RestoreLockAsync(ScreenLock screenLock, TimeProvider time, CancellationToken ct)
+    {
+        while (true)
+        {
+            await Task.Delay(RestoreEvery, time, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
+
+            screenLock.Restore();
+        }
+    }
+
     private static async Task AcceptConsolePcsAsync(
         IAgentListener listener,
         NewestConnectionWins connections,
-        IBroadcastDisplayFactory displays,
+        bool windowed,
         Func<IScreenPictures>? openScreenPictures,
         Func<ISignedInPerson>? person,
+        ScreenLock? screenLock,
         AgentLog log,
         CancellationToken ct)
     {
@@ -245,6 +301,7 @@ internal static class AgentHost
 
             var consolePc = channel.PinnedDeviceId;
             log.Write($"Console PC {consolePc} connected from {channel.RemoteEndPoint.Address}.");
+            var onThisPc = ConsoleOnThisPc.Is(channel.RemoteEndPoint.Address, ConsoleOnThisPc.OwnAddresses());
 
             await connections.StartAsync(
                 async token =>
@@ -263,10 +320,15 @@ internal static class AgentHost
                     using var stopFiles = CancellationTokenSource.CreateLinkedTokenSource(token);
                     var files = person is null
                         ? Task.CompletedTask
-                        : new FileReceiver(person, log.Write).RunAsync(connection, stopFiles.Token);
+                        : new FileReceiver(person, log.Write, () => screenLock?.IsLocked == true).RunAsync(connection, stopFiles.Token);
+                    using var stopLockLink = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    var lockLink = screenLock is null
+                        ? Task.CompletedTask
+                        : new LockLink(screenLock, mayLock: !onThisPc, log.Write).RunAsync(connection, stopLockLink.Token);
                     try
                     {
-                        await new BroadcastConnection(displays, log.Write).RunAsync(connection, token).ConfigureAwait(false);
+                        await new BroadcastConnection(
+                            new BroadcastDisplayFactory(windowed, log.Write, onThisPc ? null : screenLock), log.Write).RunAsync(connection, token).ConfigureAwait(false);
                     }
                     finally
                     {
@@ -277,6 +339,9 @@ internal static class AgentHost
                         // The send under way ends before the next connection's receiver can start one: staging is one folder.
                         await stopFiles.CancelAsync().ConfigureAwait(false);
                         await files.ConfigureAwait(false);
+
+                        await stopLockLink.CancelAsync().ConfigureAwait(false);
+                        await lockLink.ConfigureAwait(false);
                         await connection.DisposeAsync().ConfigureAwait(false);
                         log.Write($"The connection from console PC {consolePc} is closed.");
                     }

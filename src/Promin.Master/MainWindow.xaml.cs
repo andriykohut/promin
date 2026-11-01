@@ -18,7 +18,7 @@ public sealed partial class MainWindow : Window
 {
     private const int DefaultWidth = 1000;
     private const int DefaultHeight = 640;
-    private const int MinimumWidth = 760;
+    private const int MinimumWidth = 1000;
     private const int MinimumHeight = 520;
 
     private readonly string? _languageAtStart;

@@ -10,19 +10,52 @@ public sealed class RoomConnectionsTests
     private sealed class FakeConnection : IPcConnection
     {
         private readonly Channel<byte[]> _pictures = Channel.CreateUnbounded<byte[]>();
+        private readonly Channel<bool> _states = Channel.CreateUnbounded<bool>();
 
         public bool Disposed { get; private set; }
         public bool NeverCloses { get; init; }
+        public bool FailSends { get; init; }
+        public List<string> Locks { get; } = [];
+        public int Unlocks { get; private set; }
 
         public void Send(byte[] picture) => _pictures.Writer.TryWrite(picture);
+
+        public void SendReport(bool locked) => _states.Writer.TryWrite(locked);
+
+        public void EndLockStream() => _states.Writer.TryComplete();
 
         public void End() => _pictures.Writer.TryComplete();
 
         public ValueTask<byte[]> ReceivePictureAsync(CancellationToken ct) => _pictures.Reader.ReadAsync(ct);
 
+        public Task<bool> ReceiveLockStateAsync(CancellationToken ct) => _states.Reader.ReadAsync(ct).AsTask();
+
+        public Task SendLockAsync(string message, CancellationToken ct)
+        {
+            if (FailSends)
+            {
+                throw new IOException("stream reset");
+            }
+
+            Locks.Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task SendUnlockAsync(CancellationToken ct)
+        {
+            if (FailSends)
+            {
+                throw new IOException("stream reset");
+            }
+
+            Unlocks++;
+            return Task.CompletedTask;
+        }
+
         public ValueTask DisposeAsync()
         {
             Disposed = true;
+            _states.Writer.TryComplete();
             _pictures.Writer.TryComplete();
             return NeverCloses ? new ValueTask(new TaskCompletionSource().Task) : ValueTask.CompletedTask;
         }
@@ -33,6 +66,7 @@ public sealed class RoomConnectionsTests
     private readonly List<(string Id, Exception Failure)> _failures = [];
     private readonly List<string> _ended = [];
     private readonly List<(string Id, byte[] Picture)> _pictures = [];
+    private readonly List<(string Id, bool Locked)> _lockReports = [];
     private Func<RoomMember, Task<FakeConnection>> _answer = _ => Task.FromResult(new FakeConnection());
 
     private RoomConnections<FakeConnection> Build()
@@ -61,6 +95,13 @@ public sealed class RoomConnectionsTests
             lock (_pictures)
             {
                 _pictures.Add((id, picture));
+            }
+        };
+        connections.LockReported += (id, locked) =>
+        {
+            lock (_lockReports)
+            {
+                _lockReports.Add((id, locked));
             }
         };
         return connections;
@@ -186,6 +227,91 @@ public sealed class RoomConnectionsTests
         Assert.Equal("device-01", _pictures[0].Id);
         Assert.Equal([0xFF, 0xD8, 1], _pictures[0].Picture);
         Assert.Empty(_pictures[1].Picture);
+    }
+
+    [Fact]
+    public async Task ALockReport_IsRaisedWithThePcsId()
+    {
+        var connection = new FakeConnection();
+        _answer = _ => Task.FromResult(connection);
+        await using var connections = Build();
+        connections.Want(Pc());
+
+        connection.SendReport(true);
+        connection.SendReport(false);
+
+        await Eventually(() => _lockReports.Count == 2, "two lock reports");
+        Assert.Equal([("device-01", true), ("device-01", false)], _lockReports);
+    }
+
+    [Fact]
+    public async Task Lock_GoesToThePcsConnection()
+    {
+        var connection = new FakeConnection();
+        _answer = _ => Task.FromResult(connection);
+        await using var connections = Build();
+        connections.Want(Pc());
+        await connections.GetAsync(Pc(), CancellationToken.None);
+
+        connections.Lock("device-01", "Back in five");
+        await connections.UnlockAsync("device-01");
+
+        await Eventually(() => connection.Locks.Count == 1, "the lock sent");
+        Assert.Equal(["Back in five"], connection.Locks);
+        Assert.Equal(1, connection.Unlocks);
+    }
+
+    [Fact]
+    public async Task Lock_WithNoConnection_DoesNothing()
+    {
+        await using var connections = Build();
+
+        connections.Lock("device-01", "Back in five");
+
+        Assert.Empty(_dials);
+    }
+
+    [Fact]
+    public async Task Unlock_WithNoConnection_Completes()
+    {
+        await using var connections = Build();
+
+        await connections.UnlockAsync("device-01");
+
+        Assert.Empty(_dials);
+    }
+
+    [Fact]
+    public async Task ASendThatFails_ThrowsNothing()
+    {
+        var connection = new FakeConnection { FailSends = true };
+        _answer = _ => Task.FromResult(connection);
+        await using var connections = Build();
+        connections.Want(Pc());
+        await connections.GetAsync(Pc(), CancellationToken.None);
+
+        connections.Lock("device-01", "Back in five");
+        await connections.UnlockAsync("device-01");
+
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        Assert.Empty(_ended);
+    }
+
+    [Fact]
+    public async Task TheLockStreamEnding_LeavesThePicturesRunning()
+    {
+        var connection = new FakeConnection();
+        _answer = _ => Task.FromResult(connection);
+        await using var connections = Build();
+        connections.Want(Pc());
+
+        connection.EndLockStream();
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        connection.Send([1]);
+
+        await Eventually(() => _pictures.Count == 1, "a picture after the lock stream ended");
+        Assert.Empty(_ended);
+        Assert.False(connection.Disposed);
     }
 
     [Fact]

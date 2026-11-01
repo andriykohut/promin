@@ -534,4 +534,40 @@
   <data name="TileSend_NotSent" xml:space="preserve">
     <value>файли не отримано</value>
   </data>
+  <data name="Room_Lock" xml:space="preserve">
+    <value>Заблокувати</value>
+  </data>
+  <data name="Room_Unlock" xml:space="preserve">
+    <value>Розблокувати</value>
+  </data>
+  <data name="Lock_PanelTitle" xml:space="preserve">
+    <value>Заблокувати {count} ПК</value>
+  </data>
+  <data name="Lock_Message" xml:space="preserve">
+    <value>Повідомлення (необов’язково)</value>
+  </data>
+  <data name="Lock_OfflineOne" xml:space="preserve">
+    <value>{name} не в мережі, тому його не буде заблоковано.</value>
+  </data>
+  <data name="Lock_OfflineMany" xml:space="preserve">
+    <value>{count} ПК не в мережі, тому їх не буде заблоковано.</value>
+  </data>
+  <data name="Status_Locked" xml:space="preserve">
+    <value>Заблоковано</value>
+  </data>
+  <data name="Pill_Locked" xml:space="preserve">
+    <value>{count, plural, one {заблокований} few {заблоковані} other {заблокованих}}</value>
+  </data>
+  <data name="Lock_DidNotLockOne" xml:space="preserve">
+    <value>{name} не вдалося заблокувати</value>
+  </data>
+  <data name="Lock_DidNotLockMany" xml:space="preserve">
+    <value>{count} ПК не вдалося заблокувати</value>
+  </data>
+  <data name="Lock_DidNotUnlockOne" xml:space="preserve">
+    <value>{name} не вдалося розблокувати</value>
+  </data>
+  <data name="Lock_DidNotUnlockMany" xml:space="preserve">
+    <value>{count} ПК не вдалося розблокувати</value>
+  </data>
 </root>

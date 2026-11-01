@@ -20,7 +20,8 @@
 
         <!--
             A count pill: a capsule (the radius is half the fixed height; a larger radius is drawn as an ellipse),
-            a dot coloured by its meaning, the count in the primary colour, the word secondary, normal weight.
+            a dot coloured by its meaning (a small lock glyph for Locked), the count in the primary colour, the word
+            secondary, normal weight.
         -->
         <DataTemplate x:Key="PillTemplate" x:DataType="wall:WallPill">
             <Border
@@ -39,7 +40,14 @@
                         Width="8"
                         Height="8"
                         VerticalAlignment="Center"
-                        Fill="{x:Bind controls:PcTileColours.DotBrush(State)}" />
+                        Fill="{x:Bind controls:PcTileColours.DotBrush(State)}"
+                        Visibility="{x:Bind controls:PcTileColours.DotVisibility(State)}" />
+                    <FontIcon
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Glyph="&#xE72E;"
+                        Visibility="{x:Bind controls:PcTileColours.LockVisibility(State)}" />
                     <TextBlock
                         VerticalAlignment="Center"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -223,6 +231,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <StackPanel VerticalAlignment="Center">
@@ -261,18 +270,16 @@
                         Click="Clear_Click"
                         Content="{x:Bind core:Strings.Room_ClearSelection}"
                         Visibility="{x:Bind SelectionLinksVisibility(ViewModel.IsOnAir, ViewModel.IsEmptyRoom), Mode=OneWay}" />
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        FontSize="12.5"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="·"
-                        Visibility="{x:Bind SeparatorVisibility(ViewModel.IsOnAir, ViewModel.IsEmptyRoom, ViewModel.BarLine2.Length), Mode=OneWay}" />
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        FontSize="12.5"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="{x:Bind ViewModel.BarLine2, Mode=OneWay}" />
                 </StackPanel>
+                <!-- The message on its own line, trimmed to the column; the tooltip carries the whole of it. -->
+                <TextBlock
+                    Margin="0,1,0,0"
+                    FontSize="12.5"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="{x:Bind ViewModel.BarLine2, Mode=OneWay}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind ViewModel.BarLine2, Mode=OneWay}"
+                    Visibility="{x:Bind NotEmpty(ViewModel.BarLine2), Mode=OneWay}" />
             </StackPanel>
 
             <!-- The quality picker off air; the same words as plain text on air. -->
@@ -323,9 +330,55 @@
                     Visibility="{x:Bind ViewModel.IsOnAir, Mode=OneWay}" />
             </StackPanel>
 
-            <!-- One send at a time: the button waits while one runs. -->
+            <!--
+                Lock, or Unlock when every ticked PC is locked. Unlock acts at once; Lock opens the panel, so the
+                flyout is attached rather than the button's own, which would open on every click.
+            -->
             <Button
                 Grid.Column="2"
+                Padding="24,10"
+                FontSize="15"
+                FontWeight="SemiBold"
+                Click="Lock_Click"
+                IsEnabled="{x:Bind ViewModel.CanLock, Mode=OneWay}">
+                <FlyoutBase.AttachedFlyout>
+                    <Flyout
+                        x:Name="LockPanel"
+                        AutomationProperties.Name="{x:Bind ViewModel.LockPanelTitle, Mode=OneWay}"
+                        Opening="LockPanel_Opening"
+                        Placement="Top">
+                        <StackPanel Width="298" Spacing="10">
+                            <TextBlock
+                                FontSize="15"
+                                Style="{StaticResource BodyStrongTextBlockStyle}"
+                                Text="{x:Bind ViewModel.LockPanelTitle, Mode=OneWay}" />
+                            <TextBox
+                                x:Name="LockMessage"
+                                Header="{x:Bind core:Strings.Lock_Message}"
+                                KeyDown="LockMessage_KeyDown" />
+                            <TextBlock
+                                Style="{StaticResource SecondaryTextStyle}"
+                                Text="{x:Bind ViewModel.LockPanelOfflineLine, Mode=OneWay}"
+                                TextWrapping="Wrap"
+                                Visibility="{x:Bind NotEmpty(ViewModel.LockPanelOfflineLine), Mode=OneWay}" />
+                            <Button
+                                Margin="0,4,0,0"
+                                HorizontalAlignment="Right"
+                                Click="LockNow_Click"
+                                Content="{x:Bind core:Strings.Room_Lock}"
+                                Style="{StaticResource AccentButtonStyle}" />
+                        </StackPanel>
+                    </Flyout>
+                </FlyoutBase.AttachedFlyout>
+                <StackPanel Orientation="Horizontal" Spacing="9">
+                    <FontIcon FontSize="14" Glyph="{x:Bind LockGlyph(ViewModel.LockButtonUnlocks), Mode=OneWay}" />
+                    <TextBlock Text="{x:Bind ViewModel.LockButtonText, Mode=OneWay}" />
+                </StackPanel>
+            </Button>
+
+            <!-- One send at a time: the button waits while one runs. -->
+            <Button
+                Grid.Column="3"
                 Padding="24,10"
                 FontSize="15"
                 FontWeight="SemiBold"
@@ -337,7 +390,7 @@
                 </StackPanel>
             </Button>
             <Button
-                Grid.Column="3"
+                Grid.Column="4"
                 Padding="24,10"
                 FontSize="15"
                 FontWeight="SemiBold"
@@ -351,7 +404,7 @@
                 </StackPanel>
             </Button>
             <Button
-                Grid.Column="3"
+                Grid.Column="4"
                 Padding="24,10"
                 FontSize="15"
                 FontWeight="SemiBold"

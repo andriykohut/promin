@@ -73,6 +73,15 @@ public class ControlMessageCodecTests
         Assert.IsType<PairJPakeRound1>(RoundTrip(round1));
     }
 
+    [Fact]
+    public void EncodeThenDecode_RoundTripsTheLockMessages()
+    {
+        Assert.IsType<WatchLock>(RoundTrip(new WatchLock()));
+        Assert.Equal("Break until 11:30", Assert.IsType<LockPc>(RoundTrip(new LockPc("Break until 11:30"))).Message);
+        Assert.IsType<UnlockPc>(RoundTrip(new UnlockPc()));
+        Assert.True(Assert.IsType<LockState>(RoundTrip(new LockState(Locked: true))).Locked);
+    }
+
     private static ControlMessage RoundTrip(ControlMessage message)
     {
         var encoded = ControlMessageCodec.Encode(message);

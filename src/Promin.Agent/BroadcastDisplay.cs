@@ -5,13 +5,15 @@ using Promin.Protocol.Messages;
 namespace Promin.Agent;
 
 /// <summary>Makes <see cref="BroadcastDisplay"/>s.</summary>
-internal sealed class BroadcastDisplayFactory(bool windowed, Action<string> log) : IBroadcastDisplayFactory
+internal sealed class BroadcastDisplayFactory(bool windowed, Action<string> log, ScreenLock? screenLock) : IBroadcastDisplayFactory
 {
-    public Task<IBroadcastDisplay?> StartAsync(StartBroadcast message) => BroadcastDisplay.StartAsync(message, windowed, log);
+    public Task<IBroadcastDisplay?> StartAsync(StartBroadcast message) => BroadcastDisplay.StartAsync(message, windowed, log, screenLock);
 }
 
 /// <summary>
-/// One broadcast on the agent PC's screen, owning its own thread.
+/// One broadcast on the agent PC's screen, owning its own thread. On a PC given a <see cref="ScreenLock"/>, keyboard
+/// and mouse are blocked from the moment the picture is up until it is gone, however it ends (see
+/// <see cref="ScreenLock.PictureShown"/>); with none, input is left alone.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,6 +38,7 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
 
     private readonly bool _windowed;
     private readonly Action<string> _log;
+    private readonly ScreenLock? _screenLock;
     private readonly Thread _thread;
     private readonly TaskCompletionSource<bool> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -45,11 +48,13 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
     private ClientAgentSession? _session;
     private int _open;
     private int _disposed;
+    private int _pictureHeld;
 
-    private BroadcastDisplay(bool windowed, Action<string> log)
+    private BroadcastDisplay(bool windowed, Action<string> log, ScreenLock? screenLock)
     {
         _windowed = windowed;
         _log = log;
+        _screenLock = screenLock;
         _mailbox = new DisplayMailbox(LiveBounds.DisplayMailboxFrames, () => Volatile.Read(ref _window)?.PostAppMessage(FramesAvailable));
         _thread = new Thread(Run) { Name = "Promin display", IsBackground = true };
     }
@@ -58,11 +63,13 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
 
     /// <summary>
     /// Makes the window, the device and the decoder on a new thread and returns once the window is up, or null
-    /// when they could not be made (the reason is logged and nothing is left behind).
+    /// when they could not be made (the reason is logged and nothing is left behind). With a
+    /// <paramref name="screenLock"/>, keyboard and mouse are blocked while the picture is up.
     /// </summary>
-    public static async Task<IBroadcastDisplay?> StartAsync(StartBroadcast message, bool windowed, Action<string> log)
+    public static async Task<IBroadcastDisplay?> StartAsync(
+        StartBroadcast message, bool windowed, Action<string> log, ScreenLock? screenLock)
     {
-        var display = new BroadcastDisplay(windowed, log);
+        var display = new BroadcastDisplay(windowed, log, screenLock);
         display._thread.Start();
         if (await display._ready.Task.ConfigureAwait(false))
         {
@@ -80,7 +87,10 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
     public ValueTask RestartAsync(CancellationToken ct) =>
         IsOpen ? _mailbox.RestartAsync(ct) : ValueTask.CompletedTask;
 
-    /// <summary>Removes the broadcast from the screen and waits for the display thread to release everything.</summary>
+    /// <summary>
+    /// Removes the broadcast from the screen and waits for the display thread to release everything. Input is
+    /// released even when the thread does not finish in time.
+    /// </summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -94,6 +104,7 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
 
         if (!_thread.Join(TimeSpan.FromSeconds(10)))
         {
+            ReleaseInput();
             _log("The display did not stop within 10 seconds. It is left to finish by itself.");
         }
     }
@@ -156,25 +167,65 @@ internal sealed class BroadcastDisplay : IBroadcastDisplay
             }
 
             _ready.TrySetResult(true);
-            window.RunMessageLoop(_log);
+            window.RunMessageLoop(_log, () => BlockInput(window));
         }
         finally
         {
-            Volatile.Write(ref _open, 0);
-            _mailbox.Complete();
-            if (_session is { } session)
+            try
             {
-                _log($"The display ended. Pictures shown: {session.PresentedFrameCount}, frames dropped: " +
-                     $"{session.DroppedFrameCount}, discarded while waiting for a keyframe: {session.DiscardedFrameCount}, " +
-                     $"refused by the decoder: {session.RefusedFrameCount}, decoded but not shown to stay current: " +
-                     $"{session.SkippedPictureCount}.");
-            }
+                Volatile.Write(ref _open, 0);
+                _mailbox.Complete();
+                if (_session is { } session)
+                {
+                    _log($"The display ended. Pictures shown: {session.PresentedFrameCount}, frames dropped: " +
+                         $"{session.DroppedFrameCount}, discarded while waiting for a keyframe: {session.DiscardedFrameCount}, " +
+                         $"refused by the decoder: {session.RefusedFrameCount}, decoded but not shown to stay current: " +
+                         $"{session.SkippedPictureCount}.");
+                }
 
-            // The window first, so nothing can be drawn to it; then what it drew with. Each is released whether or
-            // not the one before it threw (a removed device can make a dispose throw).
-            Release("the window", () => window?.Dispose());
-            Release("the decoder", () => decoder?.Dispose());
-            Release("the graphics device", () => gpu?.Dispose());
+                // The window first, so nothing can be drawn to it; then what it drew with. Each is released whether
+                // or not the one before it threw (a removed device can make a dispose throw).
+                Release("the window", () => window?.Dispose());
+                Release("the decoder", () => decoder?.Dispose());
+                Release("the graphics device", () => gpu?.Dispose());
+            }
+            finally
+            {
+                // Last, so input comes back only once the picture has gone.
+                ReleaseInput();
+            }
+        }
+    }
+
+    // Runs on the display thread once the window is up, as RunMessageLoop's callback so that the block starts after
+    // the mouse move that wakes a dark screen. The picture is raised again after the lock yields to it: a lock tick
+    // between the window showing and the yield would otherwise leave the lock window above the picture.
+    private void BlockInput(FullscreenRenderWindow window)
+    {
+        if (_screenLock is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _screenLock.PictureShown();
+        }
+        finally
+        {
+            // Set afterwards so that Dispose cannot end the block before it has started.
+            Volatile.Write(ref _pictureHeld, 1);
+        }
+
+        window.RaiseToTop();
+    }
+
+    // Called from the display thread and from Dispose; only the first call after BlockInput ends the block.
+    private void ReleaseInput()
+    {
+        if (Interlocked.Exchange(ref _pictureHeld, 0) == 1)
+        {
+            _screenLock!.PictureGone();
         }
     }
 

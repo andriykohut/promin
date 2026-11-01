@@ -1,4 +1,5 @@
 using Promin.Protocol.Messages;
+using Promin.Protocol.Pairing;
 
 namespace Promin.Agent;
 
@@ -10,6 +11,12 @@ internal interface IAgentConnection
 {
     /// <summary>The next send the console PC opened on this connection. Throws when the connection has ended.</summary>
     Task<IIncomingSend> AcceptSendAsync(CancellationToken ct);
+
+    /// <summary>
+    /// The lock stream: the one the console PC opens with <see cref="WatchLock"/>. Waits for it; a second such stream
+    /// is aborted. Throws when the connection has ended.
+    /// </summary>
+    Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct);
 
     /// <summary>
     /// The next control message. The first call waits for the console PC to open its control stream, which it does

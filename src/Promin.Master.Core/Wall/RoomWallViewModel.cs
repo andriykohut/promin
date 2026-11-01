@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using Promin.Master.Core.Rooms;
 using Promin.Master.Core.Sending;
 using Promin.Master.Core.Setup;
+using Promin.Protocol.Messages;
 using Promin.Protocol.Video;
 
 namespace Promin.Master.Core.Wall;
@@ -40,6 +41,12 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     /// <summary>On air, a PC that could not be joined is not tried again sooner than this after the attempt started.</summary>
     private static readonly TimeSpan RejoinInterval = TimeSpan.FromSeconds(3);
 
+    /// <summary>How long after a Lock or Unlock a PC may take to report the change before the bar names it.</summary>
+    private static readonly TimeSpan LockReportWait = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long removing a locked PC waits for its unlock to be sent before the connection is dropped.</summary>
+    private static readonly TimeSpan UnlockBeforeDropWait = TimeSpan.FromSeconds(1);
+
     /// <summary>How long <see cref="WallMessage.IsBack"/> shows.</summary>
     private static readonly TimeSpan BackMessageTime = TimeSpan.FromSeconds(6);
 
@@ -70,6 +77,14 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     // picture of a rejoined connection arrives while the tile still reads Reconnecting, and the agent sends the next one
     // only when its screen changes.
     private readonly Dictionary<string, byte[]> _pictures = new(StringComparer.Ordinal);
+
+    // The PCs that reported their screen locked on their current connection.
+    private readonly HashSet<string> _locked = new(StringComparer.Ordinal);
+
+    // Each PC a Lock or Unlock went to and has not reported back: the state wanted, and when to give up waiting.
+    private readonly Dictionary<string, (bool Locked, DateTimeOffset Deadline)> _lockAsked = new(StringComparer.Ordinal);
+    private List<string> _didNotLock = [];
+    private List<string> _didNotUnlock = [];
 
     // Cancelled when the broadcast ends, so a PC still connecting is let go instead of being left waiting for a picture.
     private CancellationTokenSource _rejoins = new();
@@ -103,6 +118,10 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private string _qualityButtonText = string.Empty;
     private string _qualityPickerName = string.Empty;
     private string _networkLoadText = string.Empty;
+    private bool _canLock;
+    private bool _lockButtonUnlocks;
+    private string _lockPanelTitle = string.Empty;
+    private string _lockPanelOfflineLine = string.Empty;
 
     public RoomWallViewModel(
         IRoomStore store,
@@ -210,6 +229,20 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     /// <summary>What the broadcast costs the network for the PCs selected and online.</summary>
     public string NetworkLoadText => _networkLoadText;
 
+    /// <summary>Whether the Lock button is enabled: off air, with a ticked PC online.</summary>
+    public bool CanLock => _canLock;
+
+    /// <summary>Whether every ticked online PC is locked, so the button unlocks them at once instead of opening the panel.</summary>
+    public bool LockButtonUnlocks => _lockButtonUnlocks;
+
+    public string LockButtonText => _lockButtonUnlocks ? Strings.Room_Unlock : Strings.Room_Lock;
+
+    /// <summary>The panel's title, counting the ticked online PCs that are not locked.</summary>
+    public string LockPanelTitle => _lockPanelTitle;
+
+    /// <summary>Says the offline PCs will not be locked; empty when none is offline.</summary>
+    public string LockPanelOfflineLine => _lockPanelOfflineLine;
+
     public WallMessage? Message => _message;
 
     // The bar binds these, never Message itself: a binding through a null object is never re-evaluated.
@@ -238,6 +271,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             _broadcast.BroadcastFailed += OnBroadcastFailedAnyThread;
             _connections.PictureArrived += OnPictureAnyThread;
             _connections.Ended += OnEndedAnyThread;
+            _connections.LockReported += OnLockReportedAnyThread;
         }
 
         try
@@ -340,6 +374,59 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         SetFlags([member], !member.Selected);
+    }
+
+    /// <summary>
+    /// Locks the ticked online PCs that are not locked, showing <paramref name="message"/> cleaned by
+    /// <see cref="LockLimits.Clean"/>. Does nothing while <see cref="CanLock"/> is false or when every such PC is
+    /// already locked. A PC that has not reported locked 5 s later is named in the bar.
+    /// </summary>
+    public void Lock(string message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        var targets = TickedOnline().Where(m => !_locked.Contains(m.DeviceId)).ToList();
+        if (!_canLock || targets.Count == 0)
+        {
+            return;
+        }
+
+        var text = LockLimits.Clean(message);
+        AskForLock(targets, locked: true, send: id => _connections.Lock(id, text));
+    }
+
+    /// <summary>
+    /// Unlocks the ticked online PCs. Does nothing unless <see cref="LockButtonUnlocks"/>. A PC that has not
+    /// reported unlocked 5 s later is named in the bar.
+    /// </summary>
+    public void Unlock()
+    {
+        var targets = TickedOnline();
+        if (!_lockButtonUnlocks || targets.Count == 0)
+        {
+            return;
+        }
+
+        AskForLock(targets, locked: false, send: id => _ = _connections.UnlockAsync(id));
+    }
+
+    private void AskForLock(List<RoomMember> targets, bool locked, Action<string> send)
+    {
+        _didNotLock = [];
+        _didNotUnlock = [];
+        var deadline = _now() + LockReportWait;
+        foreach (var target in targets)
+        {
+            _lockAsked[target.DeviceId] = (locked, deadline);
+            send(target.DeviceId);
+        }
+
+        Refresh();
+    }
+
+    private List<RoomMember> TickedOnline()
+    {
+        var now = _now();
+        return _members.Where(m => m.Selected && _presence.IsOnline(m.DeviceId, now)).ToList();
     }
 
     /// <summary>
@@ -454,7 +541,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             _saveFailed = true;
         }
 
-        _connections.Drop(tile.DeviceId);
+        LetGo(tile.DeviceId);
         Tiles.Remove(tile);
         Raise(nameof(IsEmptyRoom));
         Refresh();
@@ -562,7 +649,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
             _stoppedByPresenter.Remove(gone);
             _pictures.Remove(gone);
-            _connections.Drop(gone);
+            LetGo(gone);
         }
 
         Tiles.Clear();
@@ -586,12 +673,61 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     private void OnSeenAnyThread(AgentPc pc) => _runOnUiThread(() => OnSeen(pc));
 
+    private void OnLockReportedAnyThread(string deviceId, bool locked) => _runOnUiThread(() => OnLockReported(deviceId, locked));
+
     private void OnPictureAnyThread(string deviceId, byte[] picture) => _runOnUiThread(() => OnPicture(deviceId, picture));
 
     private void OnEndedAnyThread(string deviceId) => _runOnUiThread(() => OnEnded(deviceId));
 
+    private void OnLockReported(string deviceId, bool locked)
+    {
+        if (locked)
+        {
+            _locked.Add(deviceId);
+        }
+        else
+        {
+            _locked.Remove(deviceId);
+        }
+
+        Refresh();
+    }
+
+    /// <summary>
+    /// Forgets the PC's lock and closes its connection. A locked PC is sent an unlock first, waited for at most
+    /// <see cref="UnlockBeforeDropWait"/>, so it is not left locked with no console to unlock it.
+    /// </summary>
+    private void LetGo(string deviceId)
+    {
+        _lockAsked.Remove(deviceId);
+        if (_locked.Remove(deviceId))
+        {
+            _ = UnlockThenDropAsync(deviceId);
+        }
+        else
+        {
+            _connections.Drop(deviceId);
+        }
+    }
+
+    private async Task UnlockThenDropAsync(string deviceId)
+    {
+        try
+        {
+            await _connections.UnlockAsync(deviceId).WaitAsync(UnlockBeforeDropWait).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The PC stays locked until it is unlocked some other way; the connection goes either way.
+        }
+
+        _connections.Drop(deviceId);
+    }
+
     private void OnEnded(string deviceId)
     {
+        _locked.Remove(deviceId);
+        _lockAsked.Remove(deviceId);
         _pictures.Remove(deviceId);
         Tiles.FirstOrDefault(t => t.DeviceId == deviceId)?.ClearPicture();
     }
@@ -608,7 +744,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         _pictures[deviceId] = picture;
-        if (tile.State is not (PcTileState.Offline or PcTileState.Reconnecting))
+        if (tile.State is not (PcTileState.Offline or PcTileState.Reconnecting or PcTileState.Locked))
         {
             tile.ShowPicture(picture);
         }
@@ -822,6 +958,11 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             }
         }
 
+        if (online && _locked.Contains(member.DeviceId))
+        {
+            return PcTileState.Locked;
+        }
+
         return online ? PcTileState.Ready : PcTileState.Offline;
     }
 
@@ -844,6 +985,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         var offlineNames = new List<string>();
         var droppingNames = new List<string>();
         var reconnectingNames = new List<string>();
+        var locked = 0;
+        var tickedOnline = 0;
+        var tickedNotLocked = 0;
 
         foreach (var tile in Tiles)
         {
@@ -861,14 +1005,27 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
             var state = StateOf(member, tile, online, now);
             tile.State = state;
-            if (state is PcTileState.Offline or PcTileState.Reconnecting)
+            if (state == PcTileState.Locked)
+            {
+                tile.ShowLocked();
+            }
+            else if (state is PcTileState.Offline or PcTileState.Reconnecting)
             {
                 tile.ClearPicture();
             }
-            else if (tile.Screen == TileScreen.Glyph && _pictures.TryGetValue(tile.DeviceId, out var remembered))
+            else if (tile.Screen is TileScreen.Glyph or TileScreen.Locked)
             {
-                tile.ShowPicture(remembered);
+                if (_pictures.TryGetValue(tile.DeviceId, out var remembered))
+                {
+                    tile.ShowPicture(remembered);
+                }
+                else
+                {
+                    tile.ClearPicture();
+                }
             }
+
+            ResolveLockAsk(tile, now);
 
             tile.StatusText = WallText.Status(state, tile.FramesDropped);
             tile.DetailSentence = WallText.DetailSentence(state, tile.SendDetail);
@@ -883,6 +1040,11 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             if (member.Selected && online)
             {
                 selectedAndOnline++;
+                tickedOnline++;
+                if (!_locked.Contains(tile.DeviceId))
+                {
+                    tickedNotLocked++;
+                }
             }
 
             switch (state)
@@ -903,20 +1065,31 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
                 case PcTileState.Reconnecting:
                     reconnectingNames.Add(tile.Name);
                     break;
+                case PcTileState.Locked:
+                    locked++;
+                    break;
             }
         }
 
         var empty = Tiles.Count == 0;
         Set(ref _pills, _onAir
-            ? WallText.PillsOnAir(receiving, droppingNames.Count, reconnectingNames.Count)
-            : WallText.PillsOffAir(ready, offline), nameof(Pills), SamePills);
+            ? WallText.PillsOnAir(receiving, droppingNames.Count, reconnectingNames.Count, locked)
+            : WallText.PillsOffAir(ready, locked, offline), nameof(Pills), SamePills);
         Set(ref _barLine1, empty ? WallText.EmptyRoomLine1 : _onAir ? WallText.OnAirLine1 : WallText.SelectedLine(selectedAndOnline, Tiles.Count), nameof(BarLine1));
         Set(ref _barLine2, empty
             ? WallText.EmptyRoomLine2
-            : _onAir ? WallText.OnAirLine(receiving, droppingNames, reconnectingNames) : WallText.OfflineLine(offlineNames), nameof(BarLine2));
+            : _onAir ? WallText.OnAirLine(receiving, droppingNames, reconnectingNames) : OffAirLine2(offlineNames), nameof(BarLine2));
         Set(ref _elapsedText, _onAir ? WallText.Elapsed(now - _startedAt) : string.Empty, nameof(ElapsedText));
         Set(ref _canStart, selectable && !_roomUnreadable && selectedAndOnline > 0, nameof(CanStart));
         Set(ref _canChooseQuality, selectable && hardware, nameof(CanChooseQuality));
+        Set(ref _canLock, selectable && tickedOnline > 0, nameof(CanLock));
+        if (Set(ref _lockButtonUnlocks, _canLock && tickedNotLocked == 0, nameof(LockButtonUnlocks)))
+        {
+            Raise(nameof(LockButtonText));
+        }
+
+        Set(ref _lockPanelTitle, WallText.LockPanelTitle(tickedNotLocked), nameof(LockPanelTitle));
+        Set(ref _lockPanelOfflineLine, WallText.LockOfflineLine(offlineNames), nameof(LockPanelOfflineLine));
         Set(ref _onAirShown, _onAir, nameof(IsOnAir));
 
         if (Set(ref _message, _roomUnreadable ? WallMessage.RoomUnreadable
@@ -950,6 +1123,31 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         Set(ref _qualityButtonText, WallText.QualityButton(_selectedPreset.Label, rate, culture), nameof(QualityButtonText));
         Set(ref _qualityPickerName, WallText.QualityPickerName(_qualityButtonText), nameof(QualityPickerName));
         Set(ref _networkLoadText, WallText.NetworkLoad(rate, selectedAndOnline, culture), nameof(NetworkLoadText));
+    }
+
+    /// <summary>Forgets a Lock or Unlock the PC has answered; past its deadline, names the PC in the bar.</summary>
+    private void ResolveLockAsk(PcTile tile, DateTimeOffset now)
+    {
+        if (!_lockAsked.TryGetValue(tile.DeviceId, out var ask))
+        {
+            return;
+        }
+
+        if (_locked.Contains(tile.DeviceId) == ask.Locked)
+        {
+            _lockAsked.Remove(tile.DeviceId);
+        }
+        else if (now >= ask.Deadline)
+        {
+            _lockAsked.Remove(tile.DeviceId);
+            (ask.Locked ? _didNotLock : _didNotUnlock).Add(tile.Name);
+        }
+    }
+
+    private string OffAirLine2(IReadOnlyList<string> offlineNames)
+    {
+        var failed = string.Join(' ', new[] { WallText.DidNotLockLine(_didNotLock), WallText.DidNotUnlockLine(_didNotUnlock) }.Where(l => l.Length > 0));
+        return failed.Length > 0 ? failed : WallText.OfflineLine(offlineNames);
     }
 
     private static bool SamePills(IReadOnlyList<WallPill> a, IReadOnlyList<WallPill> b) => a.SequenceEqual(b);

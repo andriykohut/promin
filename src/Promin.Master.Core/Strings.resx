@@ -550,4 +550,44 @@
   <data name="TileSend_NotSent" xml:space="preserve">
     <value>did not get the files</value>
   </data>
+  <data name="Room_Lock" xml:space="preserve">
+    <value>Lock</value>
+  </data>
+  <data name="Room_Unlock" xml:space="preserve">
+    <value>Unlock</value>
+  </data>
+  <data name="Lock_PanelTitle" xml:space="preserve">
+    <value>{count, plural, one {Lock 1 PC} other {Lock {count} PCs}}</value>
+  </data>
+  <data name="Lock_Message" xml:space="preserve">
+    <value>Message (optional)</value>
+  </data>
+  <data name="Lock_OfflineOne" xml:space="preserve">
+    <value>{name} is offline and won’t be locked.</value>
+  </data>
+  <data name="Lock_OfflineMany" xml:space="preserve">
+    <value>{count} PCs are offline and won’t be locked.</value>
+    <comment>count is 2 or more.</comment>
+  </data>
+  <data name="Status_Locked" xml:space="preserve">
+    <value>Locked</value>
+  </data>
+  <data name="Pill_Locked" xml:space="preserve">
+    <value>{count, plural, other {locked}}</value>
+    <comment>Shown after a number of PCs, as in: 2 locked.</comment>
+  </data>
+  <data name="Lock_DidNotLockOne" xml:space="preserve">
+    <value>{name} did not lock</value>
+  </data>
+  <data name="Lock_DidNotLockMany" xml:space="preserve">
+    <value>{count} PCs did not lock</value>
+    <comment>count is 2 or more.</comment>
+  </data>
+  <data name="Lock_DidNotUnlockOne" xml:space="preserve">
+    <value>{name} did not unlock</value>
+  </data>
+  <data name="Lock_DidNotUnlockMany" xml:space="preserve">
+    <value>{count} PCs did not unlock</value>
+    <comment>count is 2 or more.</comment>
+  </data>
 </root>

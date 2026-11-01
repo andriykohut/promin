@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Promin.Protocol.Messages;
+using Promin.Protocol.Pairing;
 
 namespace Promin.Agent.Tests;
 
@@ -17,6 +18,8 @@ public class BroadcastConnectionTests
         public Task<ControlMessage> ReceiveControlAsync(CancellationToken ct) => _control.Reader.ReadAsync(ct).AsTask();
 
         public Task<IIncomingSend> AcceptSendAsync(CancellationToken ct) => new TaskCompletionSource<IIncomingSend>().Task.WaitAsync(ct);
+
+        public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
 
         public ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct) => _video.Reader.ReadAsync(ct);
 
@@ -315,6 +318,8 @@ public class BroadcastConnectionTests
         public Task<ControlMessage> ReceiveControlAsync(CancellationToken ct) => Control.Reader.ReadAsync(ct).AsTask();
 
         public Task<IIncomingSend> AcceptSendAsync(CancellationToken ct) => new TaskCompletionSource<IIncomingSend>().Task.WaitAsync(ct);
+
+        public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
 
         public ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct) => Video.Reader.ReadAsync(ct);
 
