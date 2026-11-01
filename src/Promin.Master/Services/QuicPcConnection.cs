@@ -64,21 +64,18 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
         }
 
         await _closing.CancelAsync().ConfigureAwait(false);
-        try
-        {
-            if (lockStream is { IsCompletedSuccessfully: true })
-            {
-                await lockStream.Result.DisposeAsync().ConfigureAwait(false);
-            }
 
-            if (control is { IsCompletedSuccessfully: true })
-            {
-                await control.Result.DisposeAsync().ConfigureAwait(false);
-            }
-        }
-        finally
+        // The connection goes first. A stream waits for the peer to acknowledge its close, about 16 s when the peer has
+        // gone silent; a stream whose connection has gone closes at once.
+        await channel.DisposeAsync().ConfigureAwait(false);
+        if (lockStream is { IsCompletedSuccessfully: true })
         {
-            await channel.DisposeAsync().ConfigureAwait(false);
+            await lockStream.Result.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (control is { IsCompletedSuccessfully: true })
+        {
+            await control.Result.DisposeAsync().ConfigureAwait(false);
         }
     }
 
