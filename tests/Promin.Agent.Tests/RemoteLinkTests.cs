@@ -204,6 +204,7 @@ public class RemoteLinkTests
         var channel = rig.Open();
 
         Assert.Equal(ControlStatus.Refused, (await rig.NextStateAsync(channel)).Status);
+        await rig.WaitForAsync(() => rig.Calls.Contains("resume"));
         Assert.Equal(["pause", "video", "tab:show", "hold", "tab:hide", "video:dispose", "resume"], rig.Calls);
     }
 
@@ -219,6 +220,7 @@ public class RemoteLinkTests
         var channel = rig.Open();
 
         Assert.Equal(ControlStatus.Refused, (await rig.NextStateAsync(channel)).Status);
+        await rig.WaitForAsync(() => rig.Calls.Contains("resume"));
         Assert.Equal(
             failing == "video"
                 ? ["pause", "video", "resume"]
