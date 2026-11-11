@@ -336,6 +336,20 @@ internal static class AgentHost
                     using var stopRemote = CancellationTokenSource.CreateLinkedTokenSource(token);
                     var remoteLink = new RemoteLink(remote, screenLock, previews, mayControl: !onThisPc, log.Write)
                         .RunAsync(connection, (frame, sendCt) => channel.SendVideoFrameAsync(frame, sendCt), stopRemote.Token);
+                    // A step of closing that throws is logged by type only, and the next one still runs: each lets go of
+                    // something the next connection needs.
+                    async Task StepAsync(Func<Task> step)
+                    {
+                        try
+                        {
+                            await step().ConfigureAwait(false);
+                        }
+                        catch (Exception e)
+                        {
+                            log.Write($"A step of closing the connection from console PC {consolePc} failed: {e.GetType().Name}.");
+                        }
+                    }
+
                     try
                     {
                         await new BroadcastConnection(
@@ -344,19 +358,19 @@ internal static class AgentHost
                     finally
                     {
                         // Control ends first, so that the PC has its keyboard and mouse back before the connection goes.
-                        await stopRemote.CancelAsync().ConfigureAwait(false);
-                        await remoteLink.ConfigureAwait(false);
+                        await StepAsync(stopRemote.CancelAsync).ConfigureAwait(false);
+                        await StepAsync(() => remoteLink).ConfigureAwait(false);
 
                         // The capture is let go before the next connection's sender makes its own: two at once are refused.
-                        await previews.PauseAsync().ConfigureAwait(false);
+                        await StepAsync(previews.PauseAsync).ConfigureAwait(false);
 
                         // The send under way ends before the next connection's receiver can start one: staging is one folder.
-                        await stopFiles.CancelAsync().ConfigureAwait(false);
-                        await files.ConfigureAwait(false);
+                        await StepAsync(stopFiles.CancelAsync).ConfigureAwait(false);
+                        await StepAsync(() => files).ConfigureAwait(false);
 
-                        await stopLockLink.CancelAsync().ConfigureAwait(false);
-                        await lockLink.ConfigureAwait(false);
-                        await connection.DisposeAsync().ConfigureAwait(false);
+                        await StepAsync(stopLockLink.CancelAsync).ConfigureAwait(false);
+                        await StepAsync(() => lockLink).ConfigureAwait(false);
+                        await StepAsync(() => connection.DisposeAsync().AsTask()).ConfigureAwait(false);
                         log.Write($"The connection from console PC {consolePc} is closed.");
                     }
                 },

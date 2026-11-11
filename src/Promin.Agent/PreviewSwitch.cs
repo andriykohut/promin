@@ -12,7 +12,8 @@ internal interface IPreviewSwitch
 
 /// <summary>
 /// Runs <paramref name="run"/> (the picture sender) from construction until <see cref="PauseAsync"/>, and again after
-/// <see cref="Resume"/>. <paramref name="run"/> returns when its token is cancelled and throws nothing.
+/// <see cref="Resume"/>. <paramref name="run"/> returns when its token is cancelled, or by itself, and throws nothing;
+/// a run that ended by itself counts as stopped.
 /// </summary>
 internal sealed class PreviewSwitch : IPreviewSwitch, IAsyncDisposable
 {
@@ -58,6 +59,16 @@ internal sealed class PreviewSwitch : IPreviewSwitch, IAsyncDisposable
                     // The capture of the run being stopped is let go before the next run opens its own.
                     await previous.ConfigureAwait(false);
                     await _run(running.Token).ConfigureAwait(false);
+
+                    // A run can end by itself (a send failed): letting go of it keeps Pause off the disposed source and lets Resume start another.
+                    lock (_gate)
+                    {
+                        if (_running == running)
+                        {
+                            _running = null;
+                        }
+                    }
+
                     running.Dispose();
                 },
                 CancellationToken.None);
