@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml.Controls;
 using Promin.Master.Core.Control;
@@ -29,7 +30,7 @@ internal sealed class RemoteVideo : IDisposable
     private readonly GpuDevice _gpu;
     private readonly MediaFoundationH264Decoder _decoder;
     private readonly PictureBlitter _blitter;
-    private readonly IDXGISwapChain1 _swapChain;
+    private readonly IDXGISwapChain2 _swapChain;
     private readonly object _gate = new();
     private PixelSize _size;
     private volatile object? _pictureSize; // a boxed PixelSize, so the UI thread reads it without the draw lock
@@ -53,7 +54,7 @@ internal sealed class RemoteVideo : IDisposable
             using var dxgiDevice = _gpu.Device.QueryInterface<IDXGIDevice>();
             using var adapter = dxgiDevice.GetAdapter();
             using var factory = adapter.GetParent<IDXGIFactory2>();
-            _swapChain = factory.CreateSwapChainForComposition(
+            using var created = factory.CreateSwapChainForComposition(
                 _gpu.Device,
                 new SwapChainDescription1
                 {
@@ -67,6 +68,8 @@ internal sealed class RemoteVideo : IDisposable
                     SwapEffect = SwapEffect.FlipSequential,
                     AlphaMode = AlphaMode.Ignore,
                 });
+            _swapChain = created.QueryInterface<IDXGISwapChain2>();
+            Unscale(panel.CompositionScaleX, panel.CompositionScaleY);
             SwapChainPanelNative.SetSwapChain(panel, _swapChain);
         }
         catch
@@ -79,7 +82,10 @@ internal sealed class RemoteVideo : IDisposable
     /// <summary>The size of the newest decoded picture, or null before the first one.</summary>
     public PixelSize? PictureSize => (PixelSize?)_pictureSize;
 
-    /// <summary>Sizes the swap chain to the panel's size times its composition scale. Call from SizeChanged and CompositionScaleChanged.</summary>
+    /// <summary>
+    /// Sizes the swap chain to the panel's size times its composition scale, so that the picture fills the panel one
+    /// buffer pixel to a screen pixel. Call from SizeChanged and CompositionScaleChanged.
+    /// </summary>
     public void Resize(double width, double height, float scaleX, float scaleY)
     {
         var size = new PixelSize((int)(width * scaleX), (int)(height * scaleY));
@@ -90,15 +96,21 @@ internal sealed class RemoteVideo : IDisposable
 
         lock (_gate)
         {
-            if (_disposed || size == _size)
+            if (_disposed)
             {
                 return;
             }
 
             try
             {
-                _swapChain.ResizeBuffers(0, (uint)size.Width, (uint)size.Height, Format.Unknown, SwapChainFlags.None).CheckError();
-                _size = size;
+                if (size != _size)
+                {
+                    _swapChain.ResizeBuffers(0, (uint)size.Width, (uint)size.Height, Format.Unknown, SwapChainFlags.None).CheckError();
+                    _size = size;
+                }
+
+                // The scale can change while the size in pixels stays the same.
+                Unscale(scaleX, scaleY);
             }
             catch (Exception e)
             {
@@ -107,6 +119,10 @@ internal sealed class RemoteVideo : IDisposable
             }
         }
     }
+
+    // The panel scales what it shows by its composition scale, and the buffers are in pixels already: without the
+    // inverse, a console above 100% shows the picture magnified and cropped, and the pointer lands off its mark.
+    private void Unscale(float scaleX, float scaleY) => _swapChain.MatrixTransform = Matrix3x2.CreateScale(1 / scaleX, 1 / scaleY);
 
     /// <summary>While true, new pictures are decoded but not shown: the other PC is on a protected screen.</summary>
     public void ShowStill(bool still)
