@@ -76,12 +76,49 @@ internal static class NativeMethods
         public nint ExtraInfo;
     }
 
-    /// <summary>INPUT for a mouse event. The mouse member is the largest of the native union, so the size is right.</summary>
     [StructLayout(LayoutKind.Sequential)]
+    public struct KeyboardInput
+    {
+        public ushort VirtualKey;
+        public ushort ScanCode;
+        public uint Flags;
+        public uint Time;
+        public nint ExtraInfo;
+    }
+
+    /// <summary>
+    /// INPUT: the type, then a union of a mouse and a keyboard event. The union starts at offset 8, where 64-bit Windows
+    /// aligns it, and the agent runs only as 64-bit.
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit)]
     public struct Input
     {
-        public uint Type;
-        public MouseInput Mouse;
+        [FieldOffset(0)] public uint Type;
+        [FieldOffset(8)] public MouseInput Mouse;
+        [FieldOffset(8)] public KeyboardInput Keyboard;
+    }
+
+    /// <summary>KBDLLHOOKSTRUCT, what a low-level keyboard hook's <c>lParam</c> points to.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KeyboardHookData
+    {
+        public uint VirtualKey;
+        public uint ScanCode;
+        public uint Flags;
+        public uint Time;
+        public nint ExtraInfo;
+    }
+
+    /// <summary>MSLLHOOKSTRUCT, what a low-level mouse hook's <c>lParam</c> points to.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MouseHookData
+    {
+        public int PointX;
+        public int PointY;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public nint ExtraInfo;
     }
 
     public const uint ES_SYSTEM_REQUIRED = 0x00000001;
@@ -89,7 +126,23 @@ internal static class NativeMethods
     public const uint ES_CONTINUOUS = 0x80000000;
 
     public const uint INPUT_MOUSE = 0;
+    public const uint INPUT_KEYBOARD = 1;
     public const uint MOUSEEVENTF_MOVE = 0x0001;
+    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    public const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+    public const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+    public const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
+    public const uint MOUSEEVENTF_XDOWN = 0x0080;
+    public const uint MOUSEEVENTF_XUP = 0x0100;
+    public const uint MOUSEEVENTF_WHEEL = 0x0800;
+    public const uint MOUSEEVENTF_HWHEEL = 0x1000;
+    public const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
+    public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+    public const uint XBUTTON1 = 1;
+    public const uint XBUTTON2 = 2;
 
     public const uint WS_POPUP = 0x80000000;
     public const uint WS_OVERLAPPEDWINDOW = 0x00CF0000;
@@ -110,6 +163,7 @@ internal static class NativeMethods
     public const uint WM_KEYUP = 0x0101;
     public const uint WM_SYSKEYUP = 0x0105;
     public const uint WM_TIMER = 0x0113;
+    public const uint WM_MOUSEMOVE = 0x0200;
     public const uint WM_LBUTTONUP = 0x0202;
     public const uint WM_RBUTTONUP = 0x0205;
     public const uint WM_MBUTTONUP = 0x0208;
@@ -267,7 +321,7 @@ internal static class NativeMethods
     public static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
 
     [DllImport("user32.dll", SetLastError = true)]
-    public static extern uint SendInput(uint count, ref Input input, int size);
+    public static extern uint SendInput(uint count, [In] Input[] inputs, int size);
 
     [DllImport("gdi32.dll")]
     public static extern nint GetStockObject(int index);

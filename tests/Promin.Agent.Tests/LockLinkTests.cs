@@ -77,6 +77,17 @@ public class LockLinkTests
     }
 
     [Fact]
+    public async Task AnUnlockByControl_IsReportedAtOnce()
+    {
+        using var rig = new Rig(locked: true);
+        Assert.True((await rig.NextStateAsync()).Locked);
+
+        Assert.True(rig.Screen.TryStartControl());
+
+        Assert.False((await rig.NextStateAsync()).Locked);
+    }
+
+    [Fact]
     public async Task Connecting_ReportsTheStateAtOnce()
     {
         using var rig = new Rig(locked: true);

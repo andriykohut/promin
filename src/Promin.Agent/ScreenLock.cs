@@ -24,7 +24,8 @@ internal interface IInputBlock : IDisposable
 /// <summary>
 /// Whether an agent PC is locked, and the order things happen in: the lock is written to its file before the
 /// window shows and removed from it after the window goes, so a power cut leaves the PC locked or not, never
-/// half. Input is blocked while the PC is locked or a broadcast picture is up, and stays blocked until both end.
+/// half. Input is blocked while the PC is locked, a broadcast picture is up or a console PC controls this PC, and stays
+/// blocked until all of them end.
 /// The log gets a line for each lock, unlock and failure, never the message; a restore that keeps failing gets its
 /// lines once.
 /// </summary>
@@ -33,13 +34,15 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
     private readonly Lock _gate = new();
     private bool _locked;
     private bool _pictureUp;
+    private bool _controlled;
     private bool _held;
 
     /// <summary>
-    /// <see cref="Restore"/> has locked a PC that was not locked. Raised on the thread that called it, with the gate
-    /// free. A handler must not throw. <see cref="Lock"/> does not raise it: its caller knows when to look.
+    /// <see cref="IsLocked"/> has changed, by <see cref="Restore"/>, <see cref="Lock"/>, <see cref="Unlock"/> or
+    /// <see cref="TryStartControl"/>. Raised on the thread that made the change, with the gate free. A handler must not
+    /// throw.
     /// </summary>
-    public event Action? Restored;
+    public event Action? Changed;
 
     public bool IsLocked
     {
@@ -47,7 +50,7 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
     }
 
     /// <summary>
-    /// Applies the lock the file holds, if any, and raises <see cref="Restored"/> when that locks the PC. Does nothing
+    /// Applies the lock the file holds, if any, and raises <see cref="Changed"/> when that locks the PC. Does nothing
     /// when the PC is already locked. The file is left as it is, whatever happens. The agent calls this at start and
     /// every few seconds after that, so a lock that could not be applied takes effect by itself once it can: a
     /// <see cref="Lock"/> whose window failed locks the PC when the window can be made, and an <see cref="Unlock"/> whose
@@ -57,8 +60,7 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
     /// </summary>
     public void Restore()
     {
-        bool restored;
-        lock (_gate)
+        Changing(() =>
         {
             if (_locked)
             {
@@ -72,13 +74,7 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
                     Apply(message, "restored");
                 }
             });
-            restored = _locked;
-        }
-
-        if (restored)
-        {
-            Restored?.Invoke();
-        }
+        });
     }
 
     /// <summary>
@@ -87,54 +83,71 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
     /// window is not left up, and the file stays, so <see cref="Restore"/> tries again and the lock takes effect by
     /// itself once it can.
     /// </summary>
-    public void Lock(string message)
+    public void Lock(string message) => Changing(() =>
     {
-        lock (_gate)
+        if (_locked)
         {
-            if (_locked)
-            {
-                return;
-            }
-
-            try
-            {
-                file.Write(message);
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                log.Write($"The lock could not be written, so the PC is not locked: {e.Message}");
-                return;
-            }
-
-            Apply(message, "applied");
+            return;
         }
-    }
+
+        try
+        {
+            file.Write(message);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            log.Write($"The lock could not be written, so the PC is not locked: {e.Message}");
+            return;
+        }
+
+        Apply(message, "applied");
+    });
 
     /// <summary>
     /// Takes the lock window down, then removes the file, which is removed even when the PC is not showing a lock.
     /// A file that cannot be removed is logged, and <see cref="Restore"/> then locks the PC again.
     /// </summary>
-    public void Unlock()
+    public void Unlock() => Changing(Unlocked);
+
+    /// <summary>
+    /// A console PC is about to control this PC: blocks local input, while the input it sends gets through, and unlocks
+    /// the PC as <see cref="Unlock"/> does. False, with nothing changed, when a broadcast picture is up or input cannot
+    /// be blocked.
+    /// </summary>
+    public bool TryStartControl()
+    {
+        var started = false;
+        Changing(() =>
+        {
+            if (_pictureUp)
+            {
+                return;
+            }
+
+            _controlled = true;
+            Sync();
+            if (!_held)
+            {
+                _controlled = false;
+                return;
+            }
+
+            started = true;
+            if (_locked)
+            {
+                Unlocked();
+            }
+        });
+        return started;
+    }
+
+    /// <summary>Control of this PC has ended: releases input, unless a picture or a lock still needs it blocked.</summary>
+    public void ControlEnded()
     {
         lock (_gate)
         {
-            // The file can outlive the lock: the window may never have been made, or an earlier removal failed.
-            if (_locked)
-            {
-                screen.Hide();
-                _locked = false;
-                Sync();
-            }
-
-            try
-            {
-                file.Clear();
-                log.Write("The PC is unlocked.");
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                log.Write($"The lock file could not be removed, so the PC locks again within seconds: {e.Message}");
-            }
+            _controlled = false;
+            Sync();
         }
     }
 
@@ -195,6 +208,44 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
         }
     }
 
+    // Runs body under the gate, then raises Changed outside it when body changed IsLocked.
+    private void Changing(Action body)
+    {
+        bool changed;
+        lock (_gate)
+        {
+            var was = _locked;
+            body();
+            changed = _locked != was;
+        }
+
+        if (changed)
+        {
+            Changed?.Invoke();
+        }
+    }
+
+    private void Unlocked()
+    {
+        // The file can outlive the lock: the window may never have been made, or an earlier removal failed.
+        if (_locked)
+        {
+            screen.Hide();
+            _locked = false;
+            Sync();
+        }
+
+        try
+        {
+            file.Clear();
+            log.Write("The PC is unlocked.");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            log.Write($"The lock file could not be removed, so the PC locks again within seconds: {e.Message}");
+        }
+    }
+
     private void Apply(string message, string how)
     {
         if (!screen.Show(message))
@@ -219,7 +270,7 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
 
     private void Sync()
     {
-        var want = _locked || _pictureUp;
+        var want = _locked || _pictureUp || _controlled;
         if (want && !_held)
         {
             _held = input.Hold();
