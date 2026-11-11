@@ -133,10 +133,7 @@ internal sealed class ScreenLock(LockFile file, ILockScreen screen, IInputBlock 
             }
 
             started = true;
-            if (_locked)
-            {
-                Unlocked();
-            }
+            Unlocked();
         });
         return started;
     }

@@ -235,22 +235,37 @@ public class ScreenLockTests
     }
 
     [Fact]
-    public void TryStartControl_WhenInputCannotBeHeld_Refuses_AndLeavesTheLockAsItWas()
+    public void TryStartControl_WhenInputCannotBeHeld_Refuses_AndLeavesTheLockFile()
     {
         using var rig = new Rig();
-        rig.Input.CanHold = false;
+        rig.Screen.CanShow = false;
         rig.File.Write("Break");
         rig.Lock.Restore();
+        rig.Input.CanHold = false;
         rig.Calls.Clear();
-        var raised = 0;
-        rig.Lock.Changed += () => raised++;
 
         Assert.False(rig.Lock.TryStartControl());
+        rig.Lock.ControlEnded();
 
         Assert.False(rig.Lock.IsLocked);
         Assert.True(System.IO.File.Exists(rig.Paths.LockFile));
-        Assert.Equal(0, raised);
-        Assert.DoesNotContain("hide", rig.Calls);
+        Assert.DoesNotContain("release", rig.Calls);
+    }
+
+    [Fact]
+    public void TryStartControl_ClearsALockFileThatNeverLockedThePc_SoRestoreDoesNotLockIt()
+    {
+        using var rig = new Rig();
+        rig.Screen.CanShow = false;
+        rig.File.Write("Break");
+        rig.Lock.Restore();
+        rig.Screen.CanShow = true;
+
+        Assert.True(rig.Lock.TryStartControl());
+        rig.Lock.Restore();
+
+        Assert.False(rig.Lock.IsLocked);
+        Assert.False(System.IO.File.Exists(rig.Paths.LockFile));
     }
 
     [Fact]
