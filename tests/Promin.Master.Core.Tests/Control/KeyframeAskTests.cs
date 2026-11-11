@@ -42,4 +42,16 @@ public class KeyframeAskTests
         Assert.False(ask.ShouldAsk(2, true, T0.AddMilliseconds(499)));
         Assert.True(ask.ShouldAsk(3, true, T0.AddMilliseconds(500)));
     }
+
+    [Fact]
+    public void AGapWithinTheCooldown_IsAskedFor_WhenTheCooldownEnds()
+    {
+        var ask = new KeyframeAsk();
+        Assert.True(ask.ShouldAsk(1, true, T0));
+        Assert.False(ask.ShouldAsk(3, false, T0.AddMilliseconds(100)));
+
+        Assert.False(ask.ShouldAsk(4, false, T0.AddMilliseconds(499)));
+        Assert.True(ask.ShouldAsk(5, false, T0.AddMilliseconds(500)));
+        Assert.False(ask.ShouldAsk(6, false, T0.AddMilliseconds(1100)));
+    }
 }
