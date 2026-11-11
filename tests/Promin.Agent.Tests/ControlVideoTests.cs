@@ -17,10 +17,14 @@ public class ControlVideoTests
         public bool Disposed { get; private set; }
         public int Calls => Volatile.Read(ref _calls);
 
+        /// <summary>Runs in each call, after <see cref="Calls"/> counts it and before a frame is taken.</summary>
+        public Action? OnCall { get; set; }
+
         public bool TryGetNextFrame(TimeSpan timeout, bool forceKeyframe, out EncodedVideoFrame frame)
         {
             Forced.Enqueue(forceKeyframe);
             Interlocked.Increment(ref _calls);
+            OnCall?.Invoke();
             if (Throws is { } failure)
             {
                 throw failure;
@@ -63,6 +67,23 @@ public class ControlVideoTests
     {
         await Eventually(() => _source.Calls == n && _clock.PendingTimers == 1, $"the wait after tick {n}");
         _clock.Advance(TimeSpan.FromMilliseconds(34));
+    }
+
+    // Runs the video for <paramref name="ticks"/> ticks that each take 40 ms of the clock, so the loop goes round without
+    // waiting, as it does when the screen is still; <paramref name="onTick"/> gets each tick's number before a frame is taken.
+    private async Task RunTicksAsync(ControlVideo video, int ticks, Action<int> onTick)
+    {
+        using var stop = new CancellationTokenSource();
+        _source.OnCall = () =>
+        {
+            _clock.Advance(TimeSpan.FromMilliseconds(40));
+            onTick(_source.Calls);
+            if (_source.Calls == ticks)
+            {
+                stop.Cancel();
+            }
+        };
+        await video.RunAsync(stop.Token);
     }
 
     [Fact]
@@ -116,19 +137,58 @@ public class ControlVideoTests
     public async Task RequestKeyframe_ForcesTheNextFrame_Once()
     {
         var video = Video();
-        using var stop = new CancellationTokenSource();
-        var run = video.RunAsync(stop.Token);
+        _source.Frames.Enqueue(Frame(1, key: true));
 
-        await PastTick(1);
-        await Eventually(() => _source.Calls == 2, "the second tick");
-        video.RequestKeyframe();
-        await PastTick(2);
-        await PastTick(3);
-        await Eventually(() => _source.Calls == 4, "the fourth tick");
-        await stop.CancelAsync();
-        await run;
+        await RunTicksAsync(video, 4, tick =>
+        {
+            if (tick == 2)
+            {
+                video.RequestKeyframe();
+            }
+            else if (tick == 3)
+            {
+                _source.Frames.Enqueue(Frame(2, key: true));
+            }
+        });
 
-        Assert.Equal([true, false, true, false], _source.Forced.Take(4));
+        Assert.Equal([true, false, true, false], _source.Forced);
+    }
+
+    [Fact]
+    public async Task AForcedTickThatGivesNoKeyframe_ForcesTheNextOneToo()
+    {
+        var video = Video();
+        _source.Frames.Enqueue(Frame(1, key: true));
+
+        await RunTicksAsync(video, 6, tick =>
+        {
+            switch (tick)
+            {
+                case 2: video.RequestKeyframe(); break; // tick 3 gives nothing
+                case 4: _source.Frames.Enqueue(Frame(2)); break;
+                case 5: _source.Frames.Enqueue(Frame(3, key: true)); break;
+            }
+        });
+
+        Assert.Equal([true, false, true, true, true, false], _source.Forced);
+    }
+
+    [Fact]
+    public async Task AKeyframe_IsForcedTwoSecondsAfterTheLastOne()
+    {
+        var video = Video();
+        _source.Frames.Enqueue(Frame(1, key: true));
+
+        // Ticks start 40 ms apart: tick 50 at 1960 ms, tick 51 at 2000 ms.
+        await RunTicksAsync(video, 52, tick =>
+        {
+            if (tick == 51)
+            {
+                _source.Frames.Enqueue(Frame(2, key: true));
+            }
+        });
+
+        Assert.Equal([true, .. Enumerable.Repeat(false, 49), true, false], _source.Forced);
     }
 
     [Fact]

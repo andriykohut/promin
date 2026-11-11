@@ -19,7 +19,9 @@ internal interface IControlVideo : IDisposable
 
 /// <summary>
 /// Takes one frame per tick from the source and sends it as <c>[AgentStream.ControlVideo] + envelope + frame</c>,
-/// one send at a time. The first frame is a keyframe; frame ids count up from zero, one per frame sent.
+/// one send at a time. The first frame is a keyframe, and so is one at least every 2 s after the last; a keyframe
+/// asked for is asked of the source again on each tick until one comes out. Frame ids count up from zero, one per
+/// frame sent.
 /// </summary>
 internal sealed class ControlVideo(
     IEncodedFrameSource source,
@@ -27,8 +29,12 @@ internal sealed class ControlVideo(
     Func<byte[], CancellationToken, ValueTask> send,
     TimeProvider time) : IControlVideo
 {
+    // A lost frame the console PC did not notice smears the picture until the next keyframe; this bounds how long.
+    private static readonly TimeSpan KeyframeInterval = TimeSpan.FromSeconds(2);
+
     private readonly TimeSpan _tick = TimeSpan.FromMilliseconds(1000.0 / fps);
-    private int _keyframeRequested = 1;
+    private int _keyframeRequested;
+    private long? _lastKeyframe;
     private uint _nextId;
 
     public void RequestKeyframe() => Volatile.Write(ref _keyframeRequested, 1);
@@ -41,8 +47,20 @@ internal sealed class ControlVideo(
             while (!ct.IsCancellationRequested)
             {
                 var started = time.GetTimestamp();
-                var force = Interlocked.Exchange(ref _keyframeRequested, 0) == 1;
-                if (source.TryGetNextFrame(_tick, force, out var frame))
+                var requested = Interlocked.Exchange(ref _keyframeRequested, 0) == 1;
+                var force = requested || _lastKeyframe is not { } last || time.GetElapsedTime(last, started) >= KeyframeInterval;
+                var produced = source.TryGetNextFrame(_tick, force, out var frame);
+                if (produced && frame.IsKeyframe)
+                {
+                    _lastKeyframe = started;
+                }
+                else if (requested)
+                {
+                    // The encoder can drop a request it gets while it is not ready for a picture.
+                    RequestKeyframe();
+                }
+
+                if (produced)
                 {
                     var bytes = new byte[1 + VideoFrameEnvelope.Size + frame.Data.Length];
                     bytes[0] = AgentStream.ControlVideo;
