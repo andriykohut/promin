@@ -50,6 +50,13 @@ internal static class NativeMethods
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct Point
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct MonitorInfo
     {
         public uint Size;
@@ -148,6 +155,8 @@ internal static class NativeMethods
     public const uint WS_OVERLAPPEDWINDOW = 0x00CF0000;
     public const uint WS_EX_TOPMOST = 0x00000008;
     public const uint WS_EX_TOOLWINDOW = 0x00000080;
+    public const uint WS_EX_TRANSPARENT = 0x00000020;
+    public const uint WS_EX_NOACTIVATE = 0x08000000;
     public const int CW_USEDEFAULT = unchecked((int)0x80000000);
 
     public const uint WM_DESTROY = 0x0002;
@@ -158,6 +167,7 @@ internal static class NativeMethods
     public const uint WM_ERASEBKGND = 0x0014;
     public const uint WM_SETCURSOR = 0x0020;
     public const uint WM_DISPLAYCHANGE = 0x007E;
+    public const uint WM_NCHITTEST = 0x0084;
     public const uint WM_NCCREATE = 0x0081;
     public const uint WM_NCDESTROY = 0x0082;
     public const uint WM_KEYUP = 0x0101;
@@ -168,6 +178,7 @@ internal static class NativeMethods
     public const uint WM_RBUTTONUP = 0x0205;
     public const uint WM_MBUTTONUP = 0x0208;
     public const uint WM_XBUTTONUP = 0x020C;
+    public const uint WM_CLIPBOARDUPDATE = 0x031D;
     public const uint WM_APP = 0x8000;
 
     public const int WH_KEYBOARD_LL = 13;
@@ -190,6 +201,7 @@ internal static class NativeMethods
 
     public const int SIZE_MINIMIZED = 1;
     public const int HTCLIENT = 1;
+    public const int HTTRANSPARENT = -1;
     public const int SW_SHOW = 5;
     public const int SM_CXSCREEN = 0;
     public const int SM_CYSCREEN = 1;
@@ -199,6 +211,18 @@ internal static class NativeMethods
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOACTIVATE = 0x0010;
+
+    public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
+    public const uint MONITOR_DEFAULTTOPRIMARY = 1;
+    public const int MDT_EFFECTIVE_DPI = 0;
+    public static readonly nint HWND_MESSAGE = -3;
+    public const int NULL_PEN = 8;
+
+    public const uint CF_UNICODETEXT = 13;
+    public const uint GMEM_MOVEABLE = 2;
+
+    public const uint DESKTOP_READOBJECTS = 0x0001;
+    public const int UOI_NAME = 2;
 
     public const int STD_OUTPUT_HANDLE = -11;
     public const int ATTACH_PARENT_PROCESS = -1;
@@ -322,6 +346,90 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint SendInput(uint count, [In] Input[] inputs, int size);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindowDisplayAffinity(nint hwnd, uint affinity);
+
+    [DllImport("user32.dll")]
+    public static extern nint MonitorFromPoint(Point point, uint flags);
+
+    /// <summary>S_OK (0) when it gave the DPI; <c>shcore.dll</c> has no other way to ask a monitor.</summary>
+    [DllImport("shcore.dll")]
+    public static extern int GetDpiForMonitor(nint monitor, int type, out uint dpiX, out uint dpiY);
+
+    [DllImport("user32.dll")]
+    public static extern nint GetDC(nint hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern int ReleaseDC(nint hwnd, nint dc);
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowRgn(nint hwnd, nint region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AddClipboardFormatListener(nint hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool RemoveClipboardFormatListener(nint hwnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool OpenClipboard(nint owner);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CloseClipboard();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EmptyClipboard();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern nint SetClipboardData(uint format, nint data);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern nint GetClipboardData(uint format);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern nint OpenInputDesktop(uint flags, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint access);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CloseDesktop(nint desktop);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetUserObjectInformationW(nint handle, int index, nint buffer, uint length, out uint needed);
+
+    [DllImport("kernel32.dll")]
+    public static extern nint GlobalAlloc(uint flags, nuint bytes);
+
+    [DllImport("kernel32.dll")]
+    public static extern nint GlobalLock(nint memory);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GlobalUnlock(nint memory);
+
+    [DllImport("kernel32.dll")]
+    public static extern nint GlobalFree(nint memory);
+
+    [DllImport("gdi32.dll")]
+    public static extern nint CreatePen(int style, int width, uint colour);
+
+    [DllImport("gdi32.dll")]
+    public static extern nint CreateRoundRectRgn(int left, int top, int right, int bottom, int ellipseWidth, int ellipseHeight);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool RoundRect(nint dc, int left, int top, int right, int bottom, int ellipseWidth, int ellipseHeight);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool Ellipse(nint dc, int left, int top, int right, int bottom);
 
     [DllImport("gdi32.dll")]
     public static extern nint GetStockObject(int index);
