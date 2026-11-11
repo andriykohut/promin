@@ -53,3 +53,5 @@ Filename: "{app}\Promin.Master.exe"; Description: "{cm:LaunchProgram,Promin}"; F
 
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Promin console"""; Flags: runhidden; RunOnceId: "DeleteConsoleFirewallRule"
+
+#include "smart-app-control.iss"

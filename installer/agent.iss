@@ -110,3 +110,5 @@ begin
   else if FirstInstall then
     Exec(ExpandConstant('{app}\Window\Promin.Agent.Window.exe'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
 end;
+
+#include "smart-app-control.iss"

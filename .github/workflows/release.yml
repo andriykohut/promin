@@ -17,7 +17,8 @@ jobs:
           dotnet-version: 10.0.x
       - run: ./installer/build.ps1 -Version $env:GITHUB_REF_NAME.TrimStart('v')
         shell: pwsh
-      - run: gh release create $env:GITHUB_REF_NAME (Get-Item 'artifacts/setup/*.exe') --generate-notes
+      # --generate-notes appends the change list after --notes.
+      - run: gh release create $env:GITHUB_REF_NAME (Get-Item 'artifacts/setup/*.exe') --generate-notes --notes "**Before installing:** Smart App Control has to be off on every PC. [Українською](https://github.com/andriykohut/promin/blob/main/docs/smart-app-control-uk.md) · [English](https://github.com/andriykohut/promin/blob/main/docs/smart-app-control-en.md)"
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

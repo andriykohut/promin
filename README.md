@@ -45,7 +45,7 @@ Tests that need a real screen or graphics card are skipped unless switched on in
 
 ## Setting up a room
 
-Every PC needs Windows 11 with Smart App Control off. The setups are not signed, so Windows shows "Windows protected your PC": choose **More info**, then **Run anyway**. If Smart App Control is on, or an IT policy blocks unsigned apps, Windows stops the setup and offers no way past it.
+Every PC needs Windows 11 with Smart App Control off, and it has to stay off: Promin's programs are not signed yet, so Windows blocks them while it is on or in evaluation. The setups check this and do not install until it is off. Step by step: [українською](docs/smart-app-control-uk.md), [in English](docs/smart-app-control-en.md). Windows also shows "Windows protected your PC" for the unsigned setups: choose **More info**, then **Run anyway**. If an IT policy blocks unsigned apps, only the PC's administrator can allow Promin.
 
 **Building the setups.** You need PowerShell 7.4 or newer, the .NET SDK and Inno Setup 6 (`winget install JRSoftware.InnoSetup`). Then run:
 
