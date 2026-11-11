@@ -44,6 +44,7 @@
         AutomationProperties.Name="{x:Bind Tile.TileName, Mode=OneWay}"
         BorderThickness="1"
         CornerRadius="8"
+        DoubleTapped="Card_DoubleTapped"
         Tapped="Card_Tapped">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="States">
@@ -372,6 +373,23 @@
                                     Text="{x:Bind Tile.PairedOnText}"
                                     TextAlignment="Right" />
                             </Grid>
+                            <Button
+                                Margin="0,8,0,0"
+                                Click="Control_Click"
+                                FontSize="13"
+                                IsEnabled="{x:Bind Tile.CanControl, Mode=OneWay}"
+                                Style="{StaticResource AccentButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon FontSize="14" Glyph="&#xE7F4;" />
+                                    <TextBlock Text="{x:Bind core:Strings.Control_Button}" />
+                                </StackPanel>
+                            </Button>
+                            <TextBlock
+                                Margin="0,4,0,0"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind core:Strings.Control_Hint}"
+                                TextWrapping="Wrap" />
                             <StackPanel Margin="-8,8,-8,0">
                                 <Button
                                     Click="StopSending_Click"
