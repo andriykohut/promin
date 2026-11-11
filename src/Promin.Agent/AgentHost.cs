@@ -41,7 +41,7 @@ internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAg
 /// <c>OpenScreenPictures</c> is null in tests, which then take no pictures; <c>Person</c> is null in tests, which then
 /// never act as the signed-in person; <c>OpenScreenLock</c> is null in tests, which then never lock. <c>Time</c> is set
 /// in tests, which then move the clock themselves, and null on a PC, which uses the system clock. <c>Remote</c> is null
-/// in tests, which then refuse every remote stream.
+/// in tests and on a windowed agent, which then refuse every remote stream.
 /// </summary>
 internal sealed record AgentServices(
     Action EnsureQuicSupported,
@@ -54,7 +54,7 @@ internal sealed record AgentServices(
     TimeProvider? Time = null,
     RemoteParts? Remote = null)
 {
-    public static AgentServices ForThisMachine(AgentLog log) => new(
+    public static AgentServices ForThisMachine(AgentLog log, bool windowed) => new(
         QuicTransportSettings.EnsureSupported,
         DeviceIdentity.LoadOrCreate,
         (identity, masters, connectionRejected) => new QuicAgentListenerAdapter(
@@ -80,7 +80,7 @@ internal sealed record AgentServices(
             return new ScreenLock(
                 new LockFile(paths.LockFile, lockLog.Write), new LockScreenWindow(lockLog.Write), new InputBlock(lockLog.Write), lockLog);
         },
-        Remote: new RemoteParts(
+        Remote: windowed ? null : new RemoteParts(
             send => ControlVideo.Open(send, log.Write),
             () => new ControlTab(log.Write),
             () => new ClipboardWatch(log.Write),
@@ -334,10 +334,8 @@ internal static class AgentHost
                         ? Task.CompletedTask
                         : new LockLink(screenLock, mayLock: !onThisPc, log.Write).RunAsync(connection, stopLockLink.Token);
                     using var stopRemote = CancellationTokenSource.CreateLinkedTokenSource(token);
-                    var remoteLink = remote is null
-                        ? Task.CompletedTask
-                        : new RemoteLink(remote, screenLock, previews, mayControl: !onThisPc, log.Write)
-                            .RunAsync(connection, (frame, sendCt) => channel.SendVideoFrameAsync(frame, sendCt), stopRemote.Token);
+                    var remoteLink = new RemoteLink(remote, screenLock, previews, mayControl: !onThisPc, log.Write)
+                        .RunAsync(connection, (frame, sendCt) => channel.SendVideoFrameAsync(frame, sendCt), stopRemote.Token);
                     try
                     {
                         await new BroadcastConnection(

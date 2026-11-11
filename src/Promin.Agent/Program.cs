@@ -45,7 +45,7 @@ internal static class Program
 
         var log = new AgentLog(paths.LogFile);
         AgentHost.LogWhatNobodyCatches(log);
-        return AgentHost.RunAsync(command, paths, log, AgentServices.ForThisMachine(log), CancellationToken.None)
+        return AgentHost.RunAsync(command, paths, log, AgentServices.ForThisMachine(log, command.Windowed), CancellationToken.None)
             .GetAwaiter().GetResult();
     }
 

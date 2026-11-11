@@ -18,9 +18,10 @@ internal sealed record RemoteParts(
 /// The agent's side of the remote stream: a console PC that sends <see cref="StartControl"/> sees this PC's screen as
 /// video, moves its pointer, presses its keys and shares its clipboard, until the stream or the connection ends or the
 /// video fails. One stream at a time. Whatever way it ends, input is released, the control tab goes and the previews
-/// come back. The log gets a line for each start and end, with the type of the failure, never a key or clipboard text.
+/// come back, each step of that on its own so that one that fails does not stop the rest. Without <c>parts</c> (a
+/// windowed agent) every stream is refused. The log gets a line for each start and end, with the type of the failure, never a key or clipboard text.
 /// </summary>
-internal sealed class RemoteLink(RemoteParts parts, ScreenLock? screenLock, IPreviewSwitch previews, bool mayControl, Action<string> log)
+internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPreviewSwitch previews, bool mayControl, Action<string> log)
 {
     /// <summary>Serves remote streams until <paramref name="ct"/> is cancelled or the connection ends. Throws nothing.</summary>
     public async Task RunAsync(IAgentConnection connection, Func<byte[], CancellationToken, ValueTask> sendFrame, CancellationToken ct)
@@ -49,13 +50,15 @@ internal sealed class RemoteLink(RemoteParts parts, ScreenLock? screenLock, IPre
         IControlTab? tab = null;
         IClipboardWatch? clipboard = null;
         var controlled = false;
+        var paused = false;
         var started = false;
         var reason = "the stream ended";
         try
         {
-            if (mayControl && screenLock is not null)
+            if (mayControl && screenLock is not null && parts is not null)
             {
                 await previews.PauseAsync().ConfigureAwait(false);
+                paused = true;
                 try
                 {
                     video = parts.OpenVideo(sendFrame);
@@ -84,20 +87,20 @@ internal sealed class RemoteLink(RemoteParts parts, ScreenLock? screenLock, IPre
         {
             if (controlled)
             {
-                parts.Input.ReleaseAll();
+                Step(parts!.Input.ReleaseAll);
             }
 
-            clipboard?.Dispose();
+            Step(() => clipboard?.Dispose());
             if (controlled)
             {
-                screenLock!.ControlEnded();
+                Step(screenLock!.ControlEnded);
             }
 
-            tab?.Hide();
-            video?.Dispose();
-            if (mayControl && screenLock is not null)
+            Step(() => tab?.Hide());
+            Step(() => video?.Dispose());
+            if (paused)
             {
-                previews.Resume();
+                Step(previews.Resume);
             }
 
             if (started)
@@ -107,8 +110,28 @@ internal sealed class RemoteLink(RemoteParts parts, ScreenLock? screenLock, IPre
 
             if (stream is IAsyncDisposable closing)
             {
-                await closing.DisposeAsync().ConfigureAwait(false);
+                try
+                {
+                    await closing.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    log($"Closing the remote stream failed: {e.GetType().Name}.");
+                }
             }
+        }
+    }
+
+    // A step that throws is logged by type only, and the next one still runs: input must be given back whatever fails.
+    private void Step(Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch (Exception e)
+        {
+            log($"A step of ending remote control failed: {e.GetType().Name}.");
         }
     }
 
@@ -171,10 +194,10 @@ internal sealed class RemoteLink(RemoteParts parts, ScreenLock? screenLock, IPre
         {
             switch (await stream.ReceiveAsync(ct).ConfigureAwait(false))
             {
-                case PointerMove m: parts.Input.Move(m.X, m.Y); break;
-                case PointerButton b: parts.Input.Button(b.Button, b.Down); break;
-                case PointerWheel w: parts.Input.Wheel(w.Delta, w.Horizontal); break;
-                case KeyInput k: parts.Input.Key(k.VirtualKey, k.ScanCode, k.Extended, k.Down); break;
+                case PointerMove m: parts!.Input.Move(m.X, m.Y); break;
+                case PointerButton b: parts!.Input.Button(b.Button, b.Down); break;
+                case PointerWheel w: parts!.Input.Wheel(w.Delta, w.Horizontal); break;
+                case KeyInput k: parts!.Input.Key(k.VirtualKey, k.ScanCode, k.Extended, k.Down); break;
                 case ClipboardText { Text.Length: <= ControlLimits.MaxClipboardChars } t: clipboard.Write(t.Text); break;
                 case RequestKeyframe: video.RequestKeyframe(); break;
             }
@@ -194,8 +217,8 @@ internal sealed class RemoteLink(RemoteParts parts, ScreenLock? screenLock, IPre
         var onDesktop = true;
         while (true)
         {
-            await Task.Delay(parts.DesktopPoll, ct).ConfigureAwait(false);
-            if (parts.OnDesktop() != onDesktop)
+            await Task.Delay(parts!.DesktopPoll, ct).ConfigureAwait(false);
+            if (parts!.OnDesktop() != onDesktop)
             {
                 onDesktop = !onDesktop;
                 await send(new ControlState(onDesktop ? ControlStatus.Desktop : ControlStatus.ProtectedScreen)).ConfigureAwait(false);

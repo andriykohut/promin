@@ -32,7 +32,17 @@ internal sealed class FakeClipboard(List<string> calls) : IClipboardWatch
 
     public void Write(string text) => Written.Add(text);
 
-    public void Dispose() => calls.Add("clipboard:dispose");
+    /// <summary>Makes <see cref="Dispose"/> throw, after it has recorded itself.</summary>
+    public bool ThrowOnDispose { get; set; }
+
+    public void Dispose()
+    {
+        calls.Add("clipboard:dispose");
+        if (ThrowOnDispose)
+        {
+            throw new InvalidOperationException("clipboard");
+        }
+    }
 }
 
 /// <summary>A control video that runs until cancelled or until <see cref="Fail"/>.</summary>
@@ -75,6 +85,9 @@ internal sealed class FakeVideo(List<string> calls) : IControlVideo
 /// <summary>An injector that records every call.</summary>
 internal sealed class FakeInjector(List<string> calls) : IInputInjector
 {
+    /// <summary>Makes <see cref="ReleaseAll"/> throw, after it has recorded itself.</summary>
+    public bool ThrowOnRelease { get; set; }
+
     public void Move(ushort x, ushort y) => calls.Add($"move:{x},{y}");
 
     public void Button(MouseButton button, bool down) => calls.Add($"button:{button},{down}");
@@ -83,7 +96,14 @@ internal sealed class FakeInjector(List<string> calls) : IInputInjector
 
     public void Key(ushort virtualKey, ushort scanCode, bool extended, bool down) => calls.Add($"key:{virtualKey},{scanCode},{extended},{down}");
 
-    public void ReleaseAll() => calls.Add("release-all");
+    public void ReleaseAll()
+    {
+        calls.Add("release-all");
+        if (ThrowOnRelease)
+        {
+            throw new InvalidOperationException("injector");
+        }
+    }
 }
 
 /// <summary>A preview switch that records its calls.</summary>

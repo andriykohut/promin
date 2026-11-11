@@ -42,7 +42,7 @@ public class RemoteLinkTests
         private readonly FakeConnection _connection = new();
         private bool _onDesktop = true;
 
-        public Rig(bool mayControl = true, bool withLock = true, bool canHold = true, bool locked = false)
+        public Rig(bool mayControl = true, bool withLock = true, bool canHold = true, bool locked = false, bool withParts = true)
         {
             Input = new FakeInput(Calls) { CanHold = canHold };
             Screen = new ScreenLock(
@@ -50,6 +50,7 @@ public class RemoteLinkTests
             Tab = new FakeTab(Calls);
             Clipboard = new FakeClipboard(Calls);
             Video = new FakeVideo(Calls);
+            Injector = new FakeInjector(Calls);
             if (locked)
             {
                 Screen.Lock("x");
@@ -68,10 +69,10 @@ public class RemoteLinkTests
                     Calls.Add("clipboard");
                     return Clipboard;
                 },
-                new FakeInjector(Calls),
+                Injector,
                 () => _onDesktop,
                 TimeSpan.FromMilliseconds(10));
-            Link = new RemoteLink(parts, withLock ? Screen : null, new FakePreviews(Calls), mayControl, _log.Add);
+            Link = new RemoteLink(withParts ? parts : null, withLock ? Screen : null, new FakePreviews(Calls), mayControl, _log.Add);
         }
 
         public List<string> Calls { get; } = [];
@@ -81,12 +82,14 @@ public class RemoteLinkTests
         public FakeTab Tab { get; }
         public FakeClipboard Clipboard { get; }
         public FakeVideo Video { get; }
+        public FakeInjector Injector { get; }
+        public Task? Running { get; private set; }
         public RemoteLink Link { get; }
         public IReadOnlyList<string> Log => _log;
 
         public void OnDesktop(bool onDesktop) => _onDesktop = onDesktop;
 
-        public void Start() => _ = Link.RunAsync(_connection, (_, _) => ValueTask.CompletedTask, _stop.Token);
+        public void Start() => Running = Link.RunAsync(_connection, (_, _) => ValueTask.CompletedTask, _stop.Token);
 
         public void Cancel() => _stop.Cancel();
 
@@ -157,6 +160,38 @@ public class RemoteLinkTests
 
         Assert.Equal(ControlStatus.Refused, (await rig.NextStateAsync(channel)).Status);
         Assert.Empty(rig.Calls);
+    }
+
+    [Fact]
+    public async Task Start_WithoutParts_IsRefused_AndNothingIsPausedOrOpened()
+    {
+        using var rig = new Rig(withParts: false);
+        rig.Start();
+        var channel = rig.Open();
+
+        Assert.Equal(ControlStatus.Refused, (await rig.NextStateAsync(channel)).Status);
+        Assert.Empty(rig.Calls);
+    }
+
+    [Theory]
+    [InlineData("injector")]
+    [InlineData("clipboard")]
+    public async Task AStepOfEndingThatThrows_DoesNotStopTheRest(string throwing)
+    {
+        using var rig = new Rig();
+        rig.Injector.ThrowOnRelease = throwing == "injector";
+        rig.Clipboard.ThrowOnDispose = throwing == "clipboard";
+        var channel = await rig.StartedAsync();
+        rig.Calls.Clear();
+
+        channel.FromConsole.Writer.Complete();
+        await rig.WaitForAsync(() => rig.Calls.Contains("resume"));
+
+        Assert.Equal(["release-all", "clipboard:dispose", "release", "tab:hide", "video:dispose", "resume"], rig.Calls);
+        Assert.False(rig.Input.Held);
+        Assert.Contains(rig.Log, line => line.Contains("InvalidOperationException"));
+        Assert.False(rig.Running!.IsFaulted);
+        Assert.Equal(ControlStatus.Started, (await rig.NextStateAsync(rig.Open())).Status);
     }
 
     [Fact]
