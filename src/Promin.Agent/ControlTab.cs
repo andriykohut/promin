@@ -99,7 +99,9 @@ internal sealed class ControlTab(Action<string> log) : IControlTab
         _thread = null;
         if (!PostThreadMessageW(_threadId, WM_QUIT, 0, 0) || !thread.Join(Limit))
         {
-            log("The control tab did not close.");
+            const string Why = "The control tab did not close, so the agent ends itself, which closes it.";
+            log(Why);
+            Environment.FailFast(Why);
         }
     }
 
@@ -185,11 +187,19 @@ internal sealed class ControlTab(Action<string> log) : IControlTab
         bounds.Bottom = bounds.Top + height;
 
         var window = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT, ClassName, null, WS_POPUP,
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_LAYERED, ClassName, null, WS_POPUP,
             bounds.Left, bounds.Top, width, height, 0, 0, GetModuleHandleW(null), 0);
         if (window == 0)
         {
             throw new InvalidOperationException($"The control tab could not be created (Win32 error {Marshal.GetLastWin32Error()}).");
+        }
+
+        // Without a layered window, clicks do not pass through a window of another process.
+        if (!SetLayeredWindowAttributes(window, 0, 255, LWA_ALPHA))
+        {
+            var error = Marshal.GetLastWin32Error();
+            DestroyWindow(window);
+            throw new InvalidOperationException($"The control tab could not be made click-through (Win32 error {error}).");
         }
 
         if (!SetWindowDisplayAffinity(window, WDA_EXCLUDEFROMCAPTURE))
@@ -262,9 +272,6 @@ internal sealed class ControlTab(Action<string> log) : IControlTab
                 Draw(dc, client, (int)GetWindowLongPtr(hwnd, GWLP_USERDATA));
                 EndPaint(hwnd, ref paint);
                 return 0;
-
-            case WM_NCHITTEST:
-                return HTTRANSPARENT; // clicks go to whatever is under the tab
 
             case WM_DISPLAYCHANGE:
                 PostMessageW(hwnd, ScreensChanged, 0, 0);

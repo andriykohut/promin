@@ -156,6 +156,8 @@ internal static class NativeMethods
     public const uint WS_EX_TOPMOST = 0x00000008;
     public const uint WS_EX_TOOLWINDOW = 0x00000080;
     public const uint WS_EX_TRANSPARENT = 0x00000020;
+    public const uint WS_EX_LAYERED = 0x00080000;
+    public const uint LWA_ALPHA = 0x2;
     public const uint WS_EX_NOACTIVATE = 0x08000000;
     public const int CW_USEDEFAULT = unchecked((int)0x80000000);
 
@@ -167,7 +169,6 @@ internal static class NativeMethods
     public const uint WM_ERASEBKGND = 0x0014;
     public const uint WM_SETCURSOR = 0x0020;
     public const uint WM_DISPLAYCHANGE = 0x007E;
-    public const uint WM_NCHITTEST = 0x0084;
     public const uint WM_NCCREATE = 0x0081;
     public const uint WM_NCDESTROY = 0x0082;
     public const uint WM_KEYUP = 0x0101;
@@ -201,7 +202,6 @@ internal static class NativeMethods
 
     public const int SIZE_MINIMIZED = 1;
     public const int HTCLIENT = 1;
-    public const int HTTRANSPARENT = -1;
     public const int SW_SHOW = 5;
     public const int SM_CXSCREEN = 0;
     public const int SM_CYSCREEN = 1;
@@ -351,6 +351,10 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetWindowDisplayAffinity(nint hwnd, uint affinity);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetLayeredWindowAttributes(nint hwnd, uint colourKey, byte alpha, uint flags);
+
     [DllImport("user32.dll")]
     public static extern nint MonitorFromPoint(Point point, uint flags);
 
@@ -407,7 +411,7 @@ internal static class NativeMethods
     [DllImport("kernel32.dll")]
     public static extern nint GlobalAlloc(uint flags, nuint bytes);
 
-    [DllImport("kernel32.dll")]
+    [DllImport("kernel32.dll", SetLastError = true)]
     public static extern nint GlobalLock(nint memory);
 
     [DllImport("kernel32.dll")]

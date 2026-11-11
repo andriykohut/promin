@@ -42,6 +42,9 @@ internal sealed class ClipboardWatch : IClipboardWatch
     private volatile nint _window;
     private uint _threadId;
 
+    // Owns the clipboard while it is open: EmptyClipboard leaves SetClipboardData failing for a null owner.
+    private nint _owner;
+
     // Only the watch's thread touches this.
     private string? _lastWritten;
 
@@ -102,6 +105,7 @@ internal sealed class ClipboardWatch : IClipboardWatch
         }
 
         _threadId = GetCurrentThreadId();
+        _owner = window;
         _window = window;
         up.TrySetResult(true);
         while (GetMessageW(out var received, 0, 0, 0) > 0)
@@ -184,7 +188,15 @@ internal sealed class ClipboardWatch : IClipboardWatch
                     continue;
                 }
 
-                Marshal.Copy(chars, 0, GlobalLock(memory), chars.Length);
+                var locked = GlobalLock(memory);
+                if (locked == 0)
+                {
+                    GlobalFree(memory);
+                    _log($"The clipboard text could not be locked (Win32 error {Marshal.GetLastWin32Error()}).");
+                    continue;
+                }
+
+                Marshal.Copy(chars, 0, locked, chars.Length);
                 GlobalUnlock(memory);
                 if (SetClipboardData(CF_UNICODETEXT, memory) == 0)
                 {
@@ -236,11 +248,11 @@ internal sealed class ClipboardWatch : IClipboardWatch
         }
     }
 
-    private static bool OpenWithRetry()
+    private bool OpenWithRetry()
     {
         for (var attempt = 0; ; attempt++)
         {
-            if (OpenClipboard(0))
+            if (OpenClipboard(_owner))
             {
                 return true;
             }
