@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
 
 namespace Promin.Master.Core.Wall;
@@ -16,6 +18,9 @@ public interface IPcConnection : IAsyncDisposable
 
     /// <summary>Asks the PC to unlock. Opens the lock stream on first use.</summary>
     Task SendUnlockAsync(CancellationToken ct);
+
+    /// <summary>Opens a remote stream and starts controlling the PC. Throws <see cref="ControlRefusedException"/> when the PC refuses and <see cref="TimeoutException"/> when it does not answer within 10 seconds.</summary>
+    Task<IControlSession> StartControlAsync(CancellationToken ct);
 }
 
 /// <summary>What the wall uses of the room connections.</summary>
@@ -41,6 +46,9 @@ public interface IRoomConnections
 
     /// <summary>Asks the PC to unlock. Completes without effect when the PC has no open connection, and never throws.</summary>
     Task UnlockAsync(string deviceId);
+
+    /// <summary>Starts controlling the PC. Null when the PC has no open connection, refuses, or does not answer; never throws.</summary>
+    Task<IControlSession?> StartControlAsync(string deviceId);
 }
 
 /// <summary>
@@ -158,6 +166,13 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
 
     public Task UnlockAsync(string deviceId) =>
         SendAsync(deviceId, (connection, ct) => connection.SendUnlockAsync(ct));
+
+    public async Task<IControlSession?> StartControlAsync(string deviceId)
+    {
+        IControlSession? session = null;
+        await SendAsync(deviceId, async (connection, ct) => session = await connection.StartControlAsync(ct).ConfigureAwait(false)).ConfigureAwait(false);
+        return session;
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -317,9 +332,10 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
                 await send(connection, entry!.Cts.Token).ConfigureAwait(false);
             }
         }
-        catch (Exception)
+        catch (Exception e)
         {
             // A PC that cannot be reached stays as it was; the wall shows that it did not answer.
+            Trace.TraceInformation("A request to PC {0} failed: {1}", deviceId, e.Message);
         }
     }
 

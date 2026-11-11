@@ -1,3 +1,4 @@
+using Promin.Master.Core.Control;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Broadcast;
 using Promin.Protocol.Messages;
@@ -53,6 +54,49 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
 
     public async Task SendUnlockAsync(CancellationToken ct) =>
         await (await LockStreamAsync().ConfigureAwait(false)).SendAsync(new UnlockPc(), ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Opens a stream for this control session and waits for the agent's answer to <see cref="StartControl"/>. The
+    /// agent's capture can take 5 seconds to start, so the wait is 10.
+    /// </summary>
+    public async Task<IControlSession> StartControlAsync(CancellationToken ct)
+    {
+        using var answering = CancellationTokenSource.CreateLinkedTokenSource(ct, _closing.Token);
+        answering.CancelAfter(TimeSpan.FromSeconds(10));
+        QuicControlChannel? stream = null;
+        try
+        {
+            stream = await channel.OpenControlChannelAsync(answering.Token).ConfigureAwait(false);
+            await stream.SendAsync(new StartControl(), answering.Token).ConfigureAwait(false);
+            while (true)
+            {
+                if (await stream.ReceiveAsync(answering.Token).ConfigureAwait(false) is not ControlState state)
+                {
+                    continue;
+                }
+
+                if (state.Status == ControlStatus.Refused)
+                {
+                    throw new ControlRefusedException();
+                }
+
+                if (state.Status == ControlStatus.Started)
+                {
+                    return new QuicControlSession(stream, _streams.ReceiveControlFrameAsync);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && !_closing.IsCancellationRequested)
+        {
+            await DisposeQuietlyAsync(stream).ConfigureAwait(false);
+            throw new TimeoutException("The PC did not answer the request to control it.");
+        }
+        catch
+        {
+            await DisposeQuietlyAsync(stream).ConfigureAwait(false);
+            throw;
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -118,4 +162,12 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
 
     private async Task<ConsoleControl> OpenAsync(CancellationToken ct) =>
         new(await channel.OpenControlChannelAsync(ct).ConfigureAwait(false));
+
+    private static async Task DisposeQuietlyAsync(QuicControlChannel? stream)
+    {
+        if (stream is not null)
+        {
+            await stream.DisposeAsync().ConfigureAwait(false);
+        }
+    }
 }

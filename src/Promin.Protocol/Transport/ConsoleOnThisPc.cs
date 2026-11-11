@@ -1,10 +1,10 @@
 using System.Net;
 using System.Net.NetworkInformation;
 
-namespace Promin.Agent;
+namespace Promin.Protocol.Transport;
 
 /// <summary>Tells whether a console PC is this very PC, which must never be able to lock it.</summary>
-internal static class ConsoleOnThisPc
+public static class ConsoleOnThisPc
 {
     /// <summary>True when <paramref name="remote"/> is loopback or one of <paramref name="own"/>, an IPv4-mapped address counting as its IPv4 form.</summary>
     public static bool Is(IPAddress remote, IEnumerable<IPAddress> own)

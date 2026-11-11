@@ -26,6 +26,7 @@
   <!-- The console app cannot be referenced from here. Its end of a connection is compiled in, to meet the agent's over real QUIC. -->
   <ItemGroup>
     <Compile Include="..\..\src\Promin.Master\Services\QuicPcConnection.cs" Link="QuicPcConnection.cs" />
+    <Compile Include="..\..\src\Promin.Master\Services\QuicControlSession.cs" Link="QuicControlSession.cs" />
   </ItemGroup>
 
 </Project>
