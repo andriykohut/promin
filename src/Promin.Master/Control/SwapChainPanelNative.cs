@@ -18,8 +18,8 @@ internal static class SwapChainPanelNative
 {
     private static readonly Guid Iid = new("63aad0b8-7c24-40ff-85a8-640d944cc325");
 
-    /// <summary>Makes <paramref name="panel"/> show <paramref name="swapChain"/>, a composition swap chain. UI thread only.</summary>
-    public static void SetSwapChain(SwapChainPanel panel, IDXGISwapChain1 swapChain)
+    /// <summary>Makes <paramref name="panel"/> show <paramref name="swapChain"/>, a composition swap chain, or nothing when it is null. UI thread only.</summary>
+    public static void SetSwapChain(SwapChainPanel panel, IDXGISwapChain1? swapChain)
     {
         var inspectable = WinRT.MarshalInspectable<SwapChainPanel>.FromManaged(panel);
         try
@@ -29,7 +29,7 @@ internal static class SwapChainPanelNative
             {
                 var panelNative = (ISwapChainPanelNative)new StrategyBasedComWrappers()
                     .GetOrCreateObjectForComInstance(native, CreateObjectFlags.None);
-                Marshal.ThrowExceptionForHR(panelNative.SetSwapChain(swapChain.NativePointer));
+                Marshal.ThrowExceptionForHR(panelNative.SetSwapChain(swapChain?.NativePointer ?? 0));
             }
             finally
             {

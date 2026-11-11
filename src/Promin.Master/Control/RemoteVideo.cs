@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml.Controls;
 using Promin.Master.Core.Control;
 using Promin.MediaPipeline.Decoding;
@@ -13,10 +15,15 @@ namespace Promin.Master.Control;
 /// <summary>
 /// Decodes the agent PC's screen video from a control session and shows it, letterboxed, on a
 /// <see cref="SwapChainPanel"/>. Create it on the UI thread; <see cref="RunAsync"/> decodes and draws on a pool
-/// thread, so <see cref="Resize"/> and the drawing share a lock. Dispose it after <see cref="RunAsync"/> has ended.
+/// thread, so <see cref="Resize"/> and the drawing share a lock. The caller cancels and awaits
+/// <see cref="RunAsync"/> (it ends with <see cref="OperationCanceledException"/> on cancel, or with the session's
+/// exception when the session ends) and then disposes on the UI thread, which takes the swap chain off the panel.
+/// <see cref="Dispose"/> is idempotent and safe while <see cref="RunAsync"/> is still drawing: later frames and
+/// resizes do nothing.
 /// </summary>
 internal sealed class RemoteVideo : IDisposable
 {
+    private readonly SwapChainPanel _panel;
     private readonly Action<string> _log;
     private readonly GpuDevice _gpu;
     private readonly MediaFoundationH264Decoder _decoder;
@@ -24,12 +31,14 @@ internal sealed class RemoteVideo : IDisposable
     private readonly IDXGISwapChain1 _swapChain;
     private readonly object _gate = new();
     private PixelSize _size;
-    private PixelSize? _pictureSize;
+    private volatile object? _pictureSize; // a boxed PixelSize, so the UI thread reads it without the draw lock
+    private bool _disposed;
     private bool _still;
     private int _refused;
 
     public RemoteVideo(SwapChainPanel panel, Action<string> log)
     {
+        _panel = panel;
         _log = log;
         _gpu = GpuDevice.Create();
         try
@@ -67,16 +76,7 @@ internal sealed class RemoteVideo : IDisposable
     }
 
     /// <summary>The size of the newest decoded picture, or null before the first one.</summary>
-    public PixelSize? PictureSize
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _pictureSize;
-            }
-        }
-    }
+    public PixelSize? PictureSize => (PixelSize?)_pictureSize;
 
     /// <summary>Sizes the swap chain to the panel's size times its composition scale. Call from SizeChanged and CompositionScaleChanged.</summary>
     public void Resize(double width, double height, float scaleX, float scaleY)
@@ -89,13 +89,22 @@ internal sealed class RemoteVideo : IDisposable
 
         lock (_gate)
         {
-            if (size == _size)
+            if (_disposed || size == _size)
             {
                 return;
             }
 
-            _swapChain.ResizeBuffers(0, (uint)size.Width, (uint)size.Height, Format.Unknown, SwapChainFlags.None).CheckError();
-            _size = size;
+            try
+            {
+                _swapChain.ResizeBuffers(0, (uint)size.Width, (uint)size.Height, Format.Unknown, SwapChainFlags.None).CheckError();
+                _size = size;
+            }
+            catch (Exception e)
+            {
+                // A removed device fails here; the last frame stays on screen rather than the failure reaching the UI thread.
+                Trace.TraceWarning("The remote picture could not be resized to {0}x{1}: {2} (HRESULT 0x{3:X8}).",
+                    size.Width, size.Height, e.GetType().Name, Marshal.GetHRForException(e));
+            }
         }
     }
 
@@ -146,6 +155,11 @@ internal sealed class RemoteVideo : IDisposable
     {
         lock (_gate)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             _pictureSize = new PixelSize(picture.Width, picture.Height);
             if (_still)
             {
@@ -163,6 +177,21 @@ internal sealed class RemoteVideo : IDisposable
 
     public void Dispose()
     {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+        }
+
+        if (_swapChain is not null)
+        {
+            SwapChainPanelNative.SetSwapChain(_panel, null);
+        }
+
         _swapChain?.Dispose();
         _blitter?.Dispose();
         _decoder?.Dispose();
