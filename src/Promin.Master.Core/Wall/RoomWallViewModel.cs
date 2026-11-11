@@ -411,6 +411,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         if (targets.Any(m => m.DeviceId == _controlledId))
         {
             ControlMustEnd?.Invoke();
+            ClearControl();
         }
 
         var text = LockLimits.Clean(message);
@@ -434,7 +435,8 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// Starts a control session on the PC. Null, with the failure in the bar, when the PC cannot be controlled or the
-    /// session did not start; null, unchanged, when it is already the controlled PC. Control of another PC ends first.
+    /// session did not start; null, unchanged, when it is already the controlled PC; null, with the session disposed,
+    /// when control of it ended while it started (the PC locked, removed or lost). Control of another PC ends first.
     /// </summary>
     public async Task<IControlSession?> StartControlAsync(PcTile tile)
     {
@@ -462,6 +464,12 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         catch (Exception)
         {
             session = null;
+        }
+
+        if (session is not null && _controlledId != tile.DeviceId)
+        {
+            await session.DisposeAsync().ConfigureAwait(true);
+            return null;
         }
 
         if (session is null && _controlledId == tile.DeviceId)
@@ -834,7 +842,12 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         Tiles.FirstOrDefault(t => t.DeviceId == deviceId)?.ClearPicture();
         if (deviceId == _controlledId)
         {
+            // Set here, not left to ControlEnded: the window cannot always tell a lost connection from an end it was asked for.
+            var name = ControlledName;
             ControlMustEnd?.Invoke();
+            ClearControl();
+            _controlLine = name is null ? string.Empty : WallText.ControlLostLine(name);
+            Refresh();
         }
     }
 

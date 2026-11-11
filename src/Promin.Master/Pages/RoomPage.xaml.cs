@@ -337,14 +337,14 @@ public sealed partial class RoomPage : Page
             return;
         }
 
+        // Only the window in charge reports: a window ended for a later control of the same PC must not end that one.
         window.Ended += lost =>
         {
             if (_controlWindow == window)
             {
                 _controlWindow = null;
+                ViewModel.ControlEnded(deviceId, lost);
             }
-
-            ViewModel.ControlEnded(deviceId, lost);
         };
         _controlWindow = window;
         window.Open();

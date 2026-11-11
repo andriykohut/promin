@@ -20,13 +20,14 @@ internal interface IControlVideo : IDisposable
 /// <summary>
 /// Takes one frame per tick from the source and sends it as <c>[AgentStream.ControlVideo] + envelope + frame</c>,
 /// one send at a time. The first frame is a keyframe, and so is one at least every 2 s after the last; a keyframe
-/// asked for is asked of the source again on each tick until one comes out. Frame ids count up from zero, one per
-/// frame sent.
+/// asked for is asked of the source again on each tick until one comes out. Each frame sent takes its id from
+/// <paramref name="nextId"/>.
 /// </summary>
 internal sealed class ControlVideo(
     IEncodedFrameSource source,
     int fps,
     Func<byte[], CancellationToken, ValueTask> send,
+    Func<uint> nextId,
     TimeProvider time) : IControlVideo
 {
     // A lost frame the console PC did not notice smears the picture until the next keyframe; this bounds how long.
@@ -35,7 +36,6 @@ internal sealed class ControlVideo(
     private readonly TimeSpan _tick = TimeSpan.FromMilliseconds(1000.0 / fps);
     private int _keyframeRequested;
     private long? _lastKeyframe;
-    private uint _nextId;
 
     public void RequestKeyframe() => Volatile.Write(ref _keyframeRequested, 1);
 
@@ -64,7 +64,7 @@ internal sealed class ControlVideo(
                 {
                     var bytes = new byte[1 + VideoFrameEnvelope.Size + frame.Data.Length];
                     bytes[0] = AgentStream.ControlVideo;
-                    new VideoFrameEnvelope(_nextId++, frame.IsKeyframe).WriteTo(bytes.AsSpan(1));
+                    new VideoFrameEnvelope(nextId(), frame.IsKeyframe).WriteTo(bytes.AsSpan(1));
                     frame.Data.CopyTo(bytes, 1 + VideoFrameEnvelope.Size);
                     await send(bytes, ct).ConfigureAwait(false);
                 }
@@ -87,7 +87,7 @@ internal sealed class ControlVideo(
     /// Opens the screen and its encoder at <see cref="ControlQuality.Hardware"/>, or at <see cref="ControlQuality.Software"/>
     /// when Windows opened a software encoder. Throws when capture or encoder cannot start.
     /// </summary>
-    internal static ControlVideo Open(Func<byte[], CancellationToken, ValueTask> send, Action<string> log)
+    internal static ControlVideo Open(Func<byte[], CancellationToken, ValueTask> send, Func<uint> nextId, Action<string> log)
     {
         var preset = ControlQuality.Hardware;
         var source = BuildSource(preset, log);
@@ -99,7 +99,7 @@ internal sealed class ControlVideo(
             source = BuildSource(preset, log);
         }
 
-        return new ControlVideo(source, preset.Fps, send, TimeProvider.System);
+        return new ControlVideo(source, preset.Fps, send, nextId, TimeProvider.System);
     }
 
     private static CaptureEncodeSource BuildSource(QualityPreset preset, Action<string> log)

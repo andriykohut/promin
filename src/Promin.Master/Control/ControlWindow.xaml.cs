@@ -56,6 +56,9 @@ internal sealed partial class ControlWindow : Window
     private bool _finished;
     private bool _mayClose;
 
+    // Clipboard reads run side by side and can finish out of order; only the newest one may send.
+    private int _clipboardRead;
+
     /// <summary>
     /// Builds the window on <paramref name="session"/>; nothing is shown or started until <see cref="Open"/>. Throws when
     /// the picture cannot be set up, leaving the session to the caller.
@@ -375,7 +378,9 @@ internal sealed partial class ControlWindow : Window
         }
 
         _keyboard.Start();
-        if (_clipboard.OnViewFocused(await ClipboardTextAsync()) is { } text)
+        var read = ++_clipboardRead;
+        var current = await ClipboardTextAsync();
+        if (read == _clipboardRead && _clipboard.OnViewFocused(current) is { } text)
         {
             Send(new ClipboardText(text));
         }
@@ -384,7 +389,9 @@ internal sealed partial class ControlWindow : Window
     // The event may come on any thread; the clipboard is read, and the relay used, on the UI thread.
     private void OnClipboardChanged(object? sender, object e) => DispatcherQueue.TryEnqueue(async () =>
     {
-        if (_clipboard.OnLocalCopy(await ClipboardTextAsync(), _focused) is { } text)
+        var read = ++_clipboardRead;
+        var copied = await ClipboardTextAsync();
+        if (read == _clipboardRead && _clipboard.OnLocalCopy(copied, _focused) is { } text)
         {
             Send(new ClipboardText(text));
         }

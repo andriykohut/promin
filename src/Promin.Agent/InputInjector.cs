@@ -39,10 +39,12 @@ internal sealed class InputInjector(Action<Input[]> send) : IInputInjector
 
     public void Button(MouseButton button, bool down)
     {
+        // Built first: a button with no input must never be recorded, or ReleaseAll would throw on it and release nothing.
+        var input = ButtonInput(button, down);
         lock (_gate)
         {
             _ = down ? _buttonsDown.Add(button) : _buttonsDown.Remove(button);
-            Send(ButtonInput(button, down));
+            Send(input);
         }
     }
 

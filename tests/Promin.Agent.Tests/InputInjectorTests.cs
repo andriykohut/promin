@@ -86,6 +86,19 @@ public class InputInjectorTests
     }
 
     [Fact]
+    public void AnUnknownButton_Throws_AndReleaseAllStillReleasesTheKeys()
+    {
+        var injector = Injector();
+        injector.Key(0x11, 0x1D, extended: false, down: true);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => injector.Button((MouseButton)99, down: true));
+        _sent.Clear();
+        injector.ReleaseAll();
+
+        Assert.Equal(KEYEVENTF_KEYUP, Assert.Single(All).Keyboard.Flags);
+    }
+
+    [Fact]
     public void ADownForSomethingAlreadyDown_IsNotCountedTwice()
     {
         var injector = Injector();

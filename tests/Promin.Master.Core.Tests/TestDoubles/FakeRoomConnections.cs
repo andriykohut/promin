@@ -25,6 +25,9 @@ public sealed class FakeRoomConnections : IRoomConnections
     /// <summary>What <see cref="StartControlAsync"/> hands out; null makes the start fail.</summary>
     public IControlSession? NextSession { get; set; }
 
+    /// <summary>When set, what <see cref="StartControlAsync"/> returns in place of <see cref="NextSession"/>, for a start still under way.</summary>
+    public Task<IControlSession?>? NextStart { get; set; }
+
     private readonly Dictionary<string, TaskCompletionSource> _drops = new(StringComparer.Ordinal);
 
     public void Want(RoomMember pc) => Wanted.Add(pc);
@@ -49,7 +52,7 @@ public sealed class FakeRoomConnections : IRoomConnections
     public Task<IControlSession?> StartControlAsync(string deviceId)
     {
         ControlStarts.Add(deviceId);
-        return Task.FromResult(NextSession);
+        return NextStart ?? Task.FromResult(NextSession);
     }
 
     public void RaiseLock(string deviceId, bool locked) => LockReported?.Invoke(deviceId, locked);

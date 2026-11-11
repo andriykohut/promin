@@ -81,7 +81,7 @@ internal sealed record AgentServices(
                 new LockFile(paths.LockFile, lockLog.Write), new LockScreenWindow(lockLog.Write), new InputBlock(lockLog.Write), lockLog);
         },
         Remote: windowed ? null : new RemoteParts(
-            send => ControlVideo.Open(send, log.Write),
+            (send, nextId) => ControlVideo.Open(send, nextId, log.Write),
             () => new ControlTab(log.Write),
             () => new ClipboardWatch(log.Write),
             InputInjector.ForThisPc(),

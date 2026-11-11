@@ -40,11 +40,13 @@ public class ControlVideoTests
     private readonly FakeSource _source = new();
     private readonly ConcurrentQueue<byte[]> _sent = new();
 
+    private uint _nextId;
+
     private ControlVideo Video() => new(_source, 30, (bytes, _) =>
     {
         _sent.Enqueue(bytes);
         return ValueTask.CompletedTask;
-    }, _clock);
+    }, () => _nextId++, _clock);
 
     private static EncodedVideoFrame Frame(byte b, bool key = false) => new([b, b], key);
 
@@ -114,8 +116,9 @@ public class ControlVideoTests
     }
 
     [Fact]
-    public async Task FrameIds_CountUpFromZero_WithoutGaps()
+    public async Task FrameIds_ComeFromTheCounter_OnePerFrameSent()
     {
+        _nextId = 40;
         _source.Frames.Enqueue(Frame(1, key: true));
         using var stop = new CancellationTokenSource();
         var run = Video().RunAsync(stop.Token);
@@ -130,7 +133,7 @@ public class ControlVideoTests
         await stop.CancelAsync();
         await run;
 
-        Assert.Equal([0, 1, 2], _sent.Select(b => (int)b[4]));
+        Assert.Equal([40, 41, 42], _sent.Select(b => (int)b[4]));
     }
 
     [Fact]

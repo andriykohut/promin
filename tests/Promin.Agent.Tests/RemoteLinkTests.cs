@@ -59,9 +59,10 @@ public class RemoteLinkTests
             }
 
             var parts = new RemoteParts(
-                _ =>
+                (_, nextId) =>
                 {
                     Calls.Add("video");
+                    FrameIds.Add(nextId);
                     return FailVideoOpen ? throw new InvalidOperationException("no capture") : Video;
                 },
                 () => Tab,
@@ -78,6 +79,7 @@ public class RemoteLinkTests
 
         public List<string> Calls { get; } = [];
         public bool FailVideoOpen { get; set; }
+        public List<Func<uint>> FrameIds { get; } = [];
         public FakeInput Input { get; }
         public ScreenLock Screen { get; }
         public FakeTab Tab { get; }
@@ -385,6 +387,22 @@ public class RemoteLinkTests
         var second = rig.Open();
 
         Assert.Equal(ControlStatus.Started, (await rig.NextStateAsync(second)).Status);
+    }
+
+    [Fact]
+    public async Task FrameIds_CountOn_FromOneControlToTheNext()
+    {
+        using var rig = new Rig();
+        var first = await rig.StartedAsync();
+        Assert.Equal(0u, rig.FrameIds[0]());
+        Assert.Equal(1u, rig.FrameIds[0]());
+        first.FromConsole.Writer.Complete();
+        await rig.WaitForAsync(() => rig.Calls.Contains("resume"));
+
+        var second = rig.Open();
+        Assert.Equal(ControlStatus.Started, (await rig.NextStateAsync(second)).Status);
+
+        Assert.Equal(2u, rig.FrameIds[1]());
     }
 
     [Fact]

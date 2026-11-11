@@ -7,7 +7,7 @@ namespace Promin.Agent;
 
 /// <summary>The parts of this PC that remote control uses, as functions, so that a test can swap each for a fake.</summary>
 internal sealed record RemoteParts(
-    Func<Func<byte[], CancellationToken, ValueTask>, IControlVideo> OpenVideo,
+    Func<Func<byte[], CancellationToken, ValueTask>, Func<uint>, IControlVideo> OpenVideo,
     Func<IControlTab> OpenTab,
     Func<IClipboardWatch> OpenClipboard,
     IInputInjector Input,
@@ -23,6 +23,10 @@ internal sealed record RemoteParts(
 /// </summary>
 internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPreviewSwitch previews, bool mayControl, Action<string> log)
 {
+    // Frame ids count up across every control on this connection: the console PC's queue of control video lives as
+    // long as the connection, so a frame left from an earlier control must never look newer than one of the next.
+    private uint _nextFrameId;
+
     /// <summary>Serves remote streams until <paramref name="ct"/> is cancelled or the connection ends. Throws nothing.</summary>
     public async Task RunAsync(IAgentConnection connection, Func<byte[], CancellationToken, ValueTask> sendFrame, CancellationToken ct)
     {
@@ -62,7 +66,7 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
                     // Set first: a pause that throws may have stopped the pictures all the same.
                     paused = true;
                     await previews.PauseAsync().ConfigureAwait(false);
-                    video = parts.OpenVideo(sendFrame);
+                    video = parts.OpenVideo(sendFrame, () => Interlocked.Increment(ref _nextFrameId) - 1);
                     tab = parts.OpenTab();
                     controlled = tab.Show() && screenLock.TryStartControl();
                     clipboard = controlled ? parts.OpenClipboard() : null;

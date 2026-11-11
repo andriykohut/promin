@@ -1,4 +1,5 @@
 using System.Globalization;
+using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
 using Promin.Master.Core.Tests.TestDoubles;
 using Promin.Master.Core.Wall;
@@ -176,7 +177,7 @@ public sealed class RoomWallControlTests
         vm.ControlMustEnd += () => ended++;
         _connections.RaiseEnded(Id(1));
         Assert.Equal(1, ended);
-        vm.ControlEnded(Id(1), lost: true);
+        vm.ControlEnded(Id(1), lost: false);
         Assert.Equal("Lost the connection to PC-01. Control has ended.", vm.BarLine2);
     }
 
@@ -217,6 +218,24 @@ public sealed class RoomWallControlTests
         vm.ControlMustEnd += () => locksWhenEnded = _connections.LocksSent.Count;
         vm.Lock("Back soon");
         Assert.Equal(0, locksWhenEnded);
+        Assert.Contains(_connections.LocksSent, l => l.Id == Id(1));
+    }
+
+    [Fact]
+    public async Task LockingAPcWhileItsControlStarts_DropsTheStart()
+    {
+        var vm = TenWithSevenOffline();
+        var start = new TaskCompletionSource<IControlSession?>();
+        _connections.NextStart = start.Task;
+        var starting = vm.StartControlAsync(Tile(vm, 1));
+
+        vm.Lock("Back soon");
+        var session = new FakeControlSession();
+        start.SetResult(session);
+
+        Assert.Null(await starting);
+        Assert.True(session.Disposed);
+        Assert.Null(vm.ControlledName);
         Assert.Contains(_connections.LocksSent, l => l.Id == Id(1));
     }
 
