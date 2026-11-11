@@ -1,9 +1,11 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Net;
 using Promin.Master.Controls;
 using Promin.Master.Core.Sending;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Messages;
+using Promin.Protocol.Transport;
 using Promin.Protocol.Video;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -41,7 +43,8 @@ public sealed partial class RoomPage : Page
             services.Pairing,
             services.WallSettings,
             () => DateTimeOffset.Now,
-            action => DispatcherQueue.TryEnqueue(() => action()));
+            action => DispatcherQueue.TryEnqueue(() => action()),
+            address => IPAddress.TryParse(address, out var ip) && ConsoleOnThisPc.Is(ip, ConsoleOnThisPc.OwnAddresses()));
         Sending = new RoomSend(
             services.Files,
             deviceId => ViewModel.Tiles.FirstOrDefault(t => t.DeviceId == deviceId),

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
 using Promin.Master.Core.Sending;
 using Promin.Master.Core.Setup;
@@ -58,6 +59,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private readonly IWallSettings _settings;
     private readonly Func<DateTimeOffset> _now;
     private readonly Action<Action> _runOnUiThread;
+    private readonly Func<string, bool> _isThisPc;
 
     private readonly PresenceTracker _presence = new(PresenceTimeout);
     private readonly List<RoomMember> _members = [];
@@ -118,6 +120,11 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private string _qualityButtonText = string.Empty;
     private string _qualityPickerName = string.Empty;
     private string _networkLoadText = string.Empty;
+    // The PC being controlled, from the moment its start is asked for until control ends.
+    private string? _controlledId;
+
+    // What the bar says off air about the last control that did not start or was lost; empty until the next start, lock or unlock.
+    private string _controlLine = string.Empty;
     private bool _canLock;
     private bool _lockButtonUnlocks;
     private string _lockPanelTitle = string.Empty;
@@ -131,7 +138,8 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         IPairingClient pairing,
         IWallSettings settings,
         Func<DateTimeOffset> now,
-        Action<Action> runOnUiThread)
+        Action<Action> runOnUiThread,
+        Func<string, bool>? isThisPc = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(discovery);
@@ -150,6 +158,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _settings = settings;
         _now = now;
         _runOnUiThread = runOnUiThread;
+        _isThisPc = isThisPc ?? (_ => false);
 
         _selectedPreset = QualityPreset.All.FirstOrDefault(p => p.Label == settings.QualityLabel) ?? QualityPreset.Default;
         _sharpness = Enum.TryParse<Sharpness>(settings.SharpnessName, out var remembered) && Enum.IsDefined(remembered)
@@ -161,6 +170,12 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>
+    /// Raised when the controlled PC can no longer be controlled (its connection ended, it is being locked or removed, or
+    /// another PC is to be controlled). The page ends the session and calls <see cref="ControlEnded"/>.
+    /// </summary>
+    public event Action? ControlMustEnd;
+
     public ObservableCollection<PcTile> Tiles { get; } = [];
 
     public IReadOnlyList<WallPill> Pills => _pills;
@@ -170,6 +185,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     public bool IsEmptyRoom => Tiles.Count == 0;
 
     public bool CanStart => _canStart;
+
+    /// <summary>The name of the PC being controlled; null when none is.</summary>
+    public string? ControlledName => Tiles.FirstOrDefault(t => t.DeviceId == _controlledId)?.Name;
 
     public string BarLine1 => _barLine1;
 
@@ -390,6 +408,11 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             return;
         }
 
+        if (targets.Any(m => m.DeviceId == _controlledId))
+        {
+            ControlMustEnd?.Invoke();
+        }
+
         var text = LockLimits.Clean(message);
         AskForLock(targets, locked: true, send: id => _connections.Lock(id, text));
     }
@@ -409,8 +432,64 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         AskForLock(targets, locked: false, send: id => _ = _connections.UnlockAsync(id));
     }
 
+    /// <summary>
+    /// Starts a control session on the PC. Null, with the failure in the bar, when the PC cannot be controlled or the
+    /// session did not start; null, unchanged, when it is already the controlled PC. Control of another PC ends first.
+    /// </summary>
+    public async Task<IControlSession?> StartControlAsync(PcTile tile)
+    {
+        ArgumentNullException.ThrowIfNull(tile);
+        if (!tile.CanControl || tile.DeviceId == _controlledId)
+        {
+            return null;
+        }
+
+        if (_controlledId is not null)
+        {
+            ControlMustEnd?.Invoke();
+        }
+
+        _controlledId = tile.DeviceId;
+        _controlLine = string.Empty;
+        Refresh();
+
+        IControlSession? session;
+        try
+        {
+            session = await _connections.StartControlAsync(tile.DeviceId).ConfigureAwait(true);
+        }
+        catch (Exception)
+        {
+            session = null;
+        }
+
+        if (session is null && _controlledId == tile.DeviceId)
+        {
+            _controlledId = null;
+            _controlLine = WallText.CouldNotControlLine(tile.Name);
+            Refresh();
+        }
+
+        return session;
+    }
+
+    /// <summary>Control has ended, as asked by <see cref="ControlMustEnd"/> or by the person. When it was lost, the bar says so.</summary>
+    public void ControlEnded(bool lost)
+    {
+        var name = ControlledName;
+        if (Tiles.FirstOrDefault(t => t.DeviceId == _controlledId) is { } tile && _pictures.TryGetValue(tile.DeviceId, out var picture))
+        {
+            tile.ShowPicture(picture);
+        }
+
+        _controlledId = null;
+        _controlLine = lost && name is not null ? WallText.ControlLostLine(name) : string.Empty;
+        Refresh();
+    }
+
     private void AskForLock(List<RoomMember> targets, bool locked, Action<string> send)
     {
+        _controlLine = string.Empty;
         _didNotLock = [];
         _didNotUnlock = [];
         var deadline = _now() + LockReportWait;
@@ -699,6 +778,12 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     /// </summary>
     private void LetGo(string deviceId)
     {
+        if (deviceId == _controlledId)
+        {
+            ControlMustEnd?.Invoke();
+            _controlledId = null;
+        }
+
         _lockAsked.Remove(deviceId);
         if (_locked.Remove(deviceId))
         {
@@ -730,6 +815,10 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _lockAsked.Remove(deviceId);
         _pictures.Remove(deviceId);
         Tiles.FirstOrDefault(t => t.DeviceId == deviceId)?.ClearPicture();
+        if (deviceId == _controlledId)
+        {
+            ControlMustEnd?.Invoke();
+        }
     }
 
     /// <summary>
@@ -744,7 +833,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         _pictures[deviceId] = picture;
-        if (tile.State is not (PcTileState.Offline or PcTileState.Reconnecting or PcTileState.Locked))
+        if (tile.State is not (PcTileState.Offline or PcTileState.Reconnecting or PcTileState.Locked or PcTileState.Controlled))
         {
             tile.ShowPicture(picture);
         }
@@ -958,6 +1047,11 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             }
         }
 
+        if (online && member.DeviceId == _controlledId)
+        {
+            return PcTileState.Controlled;
+        }
+
         if (online && _locked.Contains(member.DeviceId))
         {
             return PcTileState.Locked;
@@ -1030,6 +1124,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             tile.StatusText = WallText.Status(state, tile.FramesDropped);
             tile.DetailSentence = WallText.DetailSentence(state, tile.SendDetail);
             tile.CanSelect = selectable && online;
+            tile.CanControl = online && selectable && !_isThisPc(AsDialled(member).LastAddress);
             tile.IsSelected = tile.CanSelect && member.Selected;
             tile.IsOnAir = _onAir;
             tile.ReceivingForText = _onAir ? WallText.Elapsed(now - _startedAt) : string.Empty;
@@ -1050,6 +1145,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             switch (state)
             {
                 case PcTileState.Ready:
+                case PcTileState.Controlled:
                     ready++;
                     break;
                 case PcTileState.Offline:
@@ -1080,7 +1176,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             ? WallText.EmptyRoomLine2
             : _onAir ? WallText.OnAirLine(receiving, droppingNames, reconnectingNames) : OffAirLine2(offlineNames), nameof(BarLine2));
         Set(ref _elapsedText, _onAir ? WallText.Elapsed(now - _startedAt) : string.Empty, nameof(ElapsedText));
-        Set(ref _canStart, selectable && !_roomUnreadable && selectedAndOnline > 0, nameof(CanStart));
+        Set(ref _canStart, selectable && !_roomUnreadable && selectedAndOnline > 0 && _controlledId is null, nameof(CanStart));
         Set(ref _canChooseQuality, selectable && hardware, nameof(CanChooseQuality));
         Set(ref _canLock, selectable && tickedOnline > 0, nameof(CanLock));
         if (Set(ref _lockButtonUnlocks, _canLock && tickedNotLocked == 0, nameof(LockButtonUnlocks)))
@@ -1146,6 +1242,11 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     private string OffAirLine2(IReadOnlyList<string> offlineNames)
     {
+        if (_controlLine.Length > 0)
+        {
+            return _controlLine;
+        }
+
         var failed = string.Join(' ', new[] { WallText.DidNotLockLine(_didNotLock), WallText.DidNotUnlockLine(_didNotUnlock) }.Where(l => l.Length > 0));
         return failed.Length > 0 ? failed : WallText.OfflineLine(offlineNames);
     }

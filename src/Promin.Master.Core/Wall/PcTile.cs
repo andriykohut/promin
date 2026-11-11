@@ -19,6 +19,7 @@ public sealed class PcTile : INotifyPropertyChanged
     private string _detailSentence = string.Empty;
     private bool _isSelected;
     private bool _canSelect;
+    private bool _canControl;
     private bool _isOnAir;
     private int _framesDropped;
     private int _framesOffered;
@@ -119,6 +120,13 @@ public sealed class PcTile : INotifyPropertyChanged
     {
         get => _canSelect;
         internal set => Set(ref _canSelect, value);
+    }
+
+    /// <summary>Online, with nothing on air, and not the PC the console runs on.</summary>
+    public bool CanControl
+    {
+        get => _canControl;
+        internal set => Set(ref _canControl, value);
     }
 
     /// <summary>Whether a broadcast is running; the details panel shows its frame counts and clock only then.</summary>

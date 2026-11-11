@@ -590,4 +590,34 @@
     <value>{count} PCs did not unlock</value>
     <comment>count is 2 or more.</comment>
   </data>
+  <data name="Control_Button" xml:space="preserve">
+    <value>Control this PC</value>
+  </data>
+  <data name="Control_Hint" xml:space="preserve">
+    <value>Or double-click the tile.</value>
+  </data>
+  <data name="Control_InWindow" xml:space="preserve">
+    <value>In a window</value>
+  </data>
+  <data name="Control_FullScreen" xml:space="preserve">
+    <value>Full screen</value>
+  </data>
+  <data name="Control_Stop" xml:space="preserve">
+    <value>Stop controlling</value>
+  </data>
+  <data name="Control_ProtectedScreen" xml:space="preserve">
+    <value>This PC is showing a protected Windows screen (the lock screen or a permission prompt). Control continues as soon as it closes.</value>
+  </data>
+  <data name="Control_Lost" xml:space="preserve">
+    <value>Lost the connection to {name}. Control has ended.</value>
+  </data>
+  <data name="Control_CouldNotStart" xml:space="preserve">
+    <value>Could not start controlling {name}.</value>
+  </data>
+  <data name="Status_Controlled" xml:space="preserve">
+    <value>Being controlled</value>
+  </data>
+  <data name="Control_WindowTitle" xml:space="preserve">
+    <value>{name} — Promin</value>
+  </data>
 </root>
