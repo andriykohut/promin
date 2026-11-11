@@ -69,4 +69,7 @@
   <data name="LockScreen_Locked" xml:space="preserve">
     <value>This PC is locked</value>
   </data>
+  <data name="ControlTab_Text" xml:space="preserve">
+    <value>This PC is being controlled remotely</value>
+  </data>
 </root>

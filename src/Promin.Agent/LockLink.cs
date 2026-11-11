@@ -7,8 +7,8 @@ namespace Promin.Agent;
 
 /// <summary>
 /// The lock stream of one console PC's connection: the console PC's lock and unlock messages are applied to this
-/// PC, and the state is sent back after the first connect, after each message and when a lock comes back by itself
-/// (<see cref="ScreenLock.Restored"/>). The lock outlives the stream.
+/// PC, and the state is sent back after the first connect, after each message and when the lock changes without a message
+/// (<see cref="ScreenLock.Changed"/>). The lock outlives the stream.
 /// </summary>
 /// <param name="mayLock">False when the console PC runs on this PC: it can unlock, never lock.</param>
 /// <param name="log">Gets a line for each refused message, never its text.</param>
@@ -37,11 +37,11 @@ internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Action<strin
     private async Task ExchangeAsync(IControlChannel stream, CancellationToken ct)
     {
         using var ending = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var restored = Channel.CreateUnbounded<bool>();
-        void OnRestored() => restored.Writer.TryWrite(true);
-        screenLock.Restored += OnRestored;
+        var changed = Channel.CreateUnbounded<bool>();
+        void OnChanged() => changed.Writer.TryWrite(true);
+        screenLock.Changed += OnChanged;
         var received = stream.ReceiveAsync(ending.Token);
-        var report = restored.Reader.ReadAsync(ending.Token).AsTask();
+        var report = changed.Reader.ReadAsync(ending.Token).AsTask();
         try
         {
             while (true)
@@ -55,13 +55,13 @@ internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Action<strin
                 else
                 {
                     await report.ConfigureAwait(false);
-                    report = restored.Reader.ReadAsync(ending.Token).AsTask();
+                    report = changed.Reader.ReadAsync(ending.Token).AsTask();
                 }
             }
         }
         finally
         {
-            screenLock.Restored -= OnRestored;
+            screenLock.Changed -= OnChanged;
 
             // The read under way ends here: the stream is disposed once this has returned.
             await ending.CancelAsync().ConfigureAwait(false);

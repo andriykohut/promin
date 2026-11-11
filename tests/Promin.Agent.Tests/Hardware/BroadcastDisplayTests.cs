@@ -1,8 +1,9 @@
+using Promin.MediaPipeline.Presenting;
 using Promin.MediaPipeline.Capture;
 using Promin.MediaPipeline.Encoding;
 using Promin.Protocol.Messages;
 using Promin.Protocol.Video;
-using static Promin.Agent.Tests.Hardware.GpuPictures;
+using static Promin.MediaPipeline.Tests.Hardware.GpuPictures;
 
 namespace Promin.Agent.Tests.Hardware;
 

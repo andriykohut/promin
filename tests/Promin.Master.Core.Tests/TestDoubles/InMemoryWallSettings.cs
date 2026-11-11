@@ -9,4 +9,6 @@ public sealed class InMemoryWallSettings : IWallSettings
     public string? SharpnessName { get; set; }
 
     public string? Language { get; set; }
+
+    public string? ControlWindowPlacement { get; set; }
 }

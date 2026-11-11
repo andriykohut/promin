@@ -1,3 +1,4 @@
+using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
 using Promin.Master.Core.Wall;
 
@@ -19,6 +20,14 @@ public sealed class FakeRoomConnections : IRoomConnections
 
     public List<string> UnlocksSent { get; } = [];
 
+    public List<string> ControlStarts { get; } = [];
+
+    /// <summary>What <see cref="StartControlAsync"/> hands out; null makes the start fail.</summary>
+    public IControlSession? NextSession { get; set; }
+
+    /// <summary>When set, what <see cref="StartControlAsync"/> returns in place of <see cref="NextSession"/>, for a start still under way.</summary>
+    public Task<IControlSession?>? NextStart { get; set; }
+
     private readonly Dictionary<string, TaskCompletionSource> _drops = new(StringComparer.Ordinal);
 
     public void Want(RoomMember pc) => Wanted.Add(pc);
@@ -38,6 +47,12 @@ public sealed class FakeRoomConnections : IRoomConnections
     {
         UnlocksSent.Add(deviceId);
         return Task.CompletedTask;
+    }
+
+    public Task<IControlSession?> StartControlAsync(string deviceId)
+    {
+        ControlStarts.Add(deviceId);
+        return NextStart ?? Task.FromResult(NextSession);
     }
 
     public void RaiseLock(string deviceId, bool locked) => LockReported?.Invoke(deviceId, locked);

@@ -1,3 +1,4 @@
+using Promin.MediaPipeline.Presenting;
 using System.Runtime.InteropServices;
 using Promin.Protocol.Video;
 using Vortice.Direct3D11;
@@ -124,7 +125,7 @@ internal sealed class FullscreenRenderWindow : IDisposable
         // The request keeps a screen on but does not turn on one that is already dark. A mouse move of no
         // distance does: Windows takes it as the viewer touching the PC.
         var nudge = new Input { Type = INPUT_MOUSE, Mouse = new MouseInput { Flags = MOUSEEVENTF_MOVE } };
-        if (SendInput(1, ref nudge, Marshal.SizeOf<Input>()) == 0)
+        if (SendInput(1, [nudge], Marshal.SizeOf<Input>()) == 0)
         {
             log($"A screen that was already dark could not be woken (Win32 error {Marshal.GetLastWin32Error()}).");
         }

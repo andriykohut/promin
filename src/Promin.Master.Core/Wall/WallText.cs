@@ -21,6 +21,7 @@ public static class WallText
         PcTileState.DroppingFrames => Phrase.Format(Strings.Status_FramesDropped, ("count", framesDropped)),
         PcTileState.Reconnecting => Strings.Status_Reconnecting,
         PcTileState.Locked => Strings.Status_Locked,
+        PcTileState.Controlled => Strings.Status_Controlled,
         _ => string.Empty,
     };
 
@@ -58,6 +59,10 @@ public static class WallText
     public static string DidNotLockLine(IReadOnlyList<string> names) => NamesLine(names, Strings.Lock_DidNotLockOne, Strings.Lock_DidNotLockMany);
 
     public static string DidNotUnlockLine(IReadOnlyList<string> names) => NamesLine(names, Strings.Lock_DidNotUnlockOne, Strings.Lock_DidNotUnlockMany);
+
+    public static string CouldNotControlLine(string name) => Phrase.Format(Strings.Control_CouldNotStart, ("name", name));
+
+    public static string ControlLostLine(string name) => Phrase.Format(Strings.Control_Lost, ("name", name));
 
     public static string OnAirLine(int receiving, IReadOnlyList<string> dropping, IReadOnlyList<string> reconnecting)
     {

@@ -13,6 +13,7 @@ public class WallTextTests
     [InlineData(PcTileState.Receiving, 5, "Receiving")]
     [InlineData(PcTileState.Reconnecting, 5, "Reconnecting")]
     [InlineData(PcTileState.Locked, 0, "Locked")]
+    [InlineData(PcTileState.Controlled, 0, "Being controlled")]
     [InlineData(PcTileState.DroppingFrames, 37, "37 frames dropped")]
     [InlineData(PcTileState.DroppingFrames, 1, "1 frame dropped")]
     public void Status(PcTileState state, int dropped, string expected) =>
@@ -190,6 +191,29 @@ public class WallTextTests
     [InlineData("PC-07", "Offline", TileSendMark.None, 0, "PC-07, Offline")]
     public void TheTilesName_SaysItsSendState(string name, string status, TileSendMark mark, int percent, string expected) =>
         Assert.Equal(expected, WallText.TileName(name, status, mark, percent));
+
+    [Fact]
+    public void ControlLines_NameThePc()
+    {
+        Assert.Equal("Could not start controlling PC-01.", WallText.CouldNotControlLine("PC-01"));
+        Assert.Equal("Lost the connection to PC-01. Control has ended.", WallText.ControlLostLine("PC-01"));
+    }
+
+    [Fact]
+    public void ControlLines_InUkrainian()
+    {
+        var before = CultureInfo.CurrentUICulture;
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("uk-UA");
+        try
+        {
+            Assert.Equal("Не вдалося почати керування PC-01.", WallText.CouldNotControlLine("PC-01"));
+            Assert.Equal("Зв’язок із PC-01 втрачено. Керування завершено.", WallText.ControlLostLine("PC-01"));
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = before;
+        }
+    }
 
     [Fact]
     public void Rates_FollowTheCulture() =>

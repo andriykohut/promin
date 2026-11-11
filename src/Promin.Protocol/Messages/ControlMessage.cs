@@ -20,6 +20,14 @@ namespace Promin.Protocol.Messages;
 [JsonDerivedType(typeof(LockPc), "lockPc")]
 [JsonDerivedType(typeof(UnlockPc), "unlockPc")]
 [JsonDerivedType(typeof(LockState), "lockState")]
+[JsonDerivedType(typeof(StartControl), "startControl")]
+[JsonDerivedType(typeof(ControlState), "controlState")]
+[JsonDerivedType(typeof(PointerMove), "pointerMove")]
+[JsonDerivedType(typeof(PointerButton), "pointerButton")]
+[JsonDerivedType(typeof(PointerWheel), "pointerWheel")]
+[JsonDerivedType(typeof(KeyInput), "keyInput")]
+[JsonDerivedType(typeof(ClipboardText), "clipboardText")]
+[JsonDerivedType(typeof(RequestKeyframe), "requestKeyframe")]
 public abstract record ControlMessage;
 
 /// <summary>
@@ -132,3 +140,43 @@ public sealed record UnlockPc : ControlMessage;
 
 /// <summary>The agent PC's report on the lock stream: whether it is locked now.</summary>
 public sealed record LockState(bool Locked) : ControlMessage;
+
+/// <summary>The console PC's first message on the remote stream: from here it controls the agent PC, which reports on the same stream.</summary>
+public sealed record StartControl : ControlMessage;
+
+/// <summary>What the agent PC reports about remote control.</summary>
+public enum ControlStatus
+{
+    /// <summary>Control has begun.</summary>
+    Started,
+
+    /// <summary>The agent PC will not be controlled now.</summary>
+    Refused,
+
+    /// <summary>A protected screen (such as the sign-in screen) is showing and cannot be shown or controlled.</summary>
+    ProtectedScreen,
+
+    /// <summary>The normal desktop is showing again.</summary>
+    Desktop,
+}
+
+/// <summary>The agent PC's report on the remote stream.</summary>
+public sealed record ControlState(ControlStatus Status) : ControlMessage;
+
+public enum MouseButton { Left, Right, Middle, X1, X2 }
+
+/// <summary>Moves the pointer to a place on the agent PC's main screen: 0 to 65535 on each axis, as <c>MOUSEEVENTF_ABSOLUTE</c> takes it.</summary>
+public sealed record PointerMove(ushort X, ushort Y) : ControlMessage;
+
+public sealed record PointerButton(MouseButton Button, bool Down) : ControlMessage;
+
+/// <summary>A wheel turn of <paramref name="Delta"/> units (120 is one notch), sideways when <paramref name="Horizontal"/>.</summary>
+public sealed record PointerWheel(int Delta, bool Horizontal) : ControlMessage;
+
+public sealed record KeyInput(ushort VirtualKey, ushort ScanCode, bool Extended, bool Down) : ControlMessage;
+
+/// <summary>Clipboard text, sent in either direction; at most <see cref="ControlLimits.MaxClipboardChars"/> characters.</summary>
+public sealed record ClipboardText(string Text) : ControlMessage;
+
+/// <summary>The console PC asks the agent PC's encoder for a key frame, after it has seen a gap in the control video.</summary>
+public sealed record RequestKeyframe : ControlMessage;

@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 
-namespace Promin.Agent.Tests.Hardware;
+namespace Promin.MediaPipeline.Tests.Hardware;
 
 /// <summary>Synthetic pictures on the GPU, and reading the screen-sized result back. Nothing here touches the screen.</summary>
 internal static class GpuPictures

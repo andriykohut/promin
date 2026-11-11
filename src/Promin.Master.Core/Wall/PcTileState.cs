@@ -8,4 +8,5 @@ public enum PcTileState
     DroppingFrames,
     Reconnecting,
     Locked,
+    Controlled,
 }

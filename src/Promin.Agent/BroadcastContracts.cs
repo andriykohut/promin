@@ -19,6 +19,12 @@ internal interface IAgentConnection
     Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct);
 
     /// <summary>
+    /// The next remote stream: the one the console PC opens with <see cref="StartControl"/>. Waits for it; the console PC
+    /// may open another after this one closes, one at a time. Throws when the connection has ended.
+    /// </summary>
+    Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct);
+
+    /// <summary>
     /// The next control message. The first call waits for the console PC to open its control stream, which it does
     /// by sending its first message; a stream whose first message is corrupt, or does not come in time, is aborted
     /// without a word and the wait goes on. Throws when the connection is lost or a later message on the control

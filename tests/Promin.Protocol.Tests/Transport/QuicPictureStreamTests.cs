@@ -33,7 +33,7 @@ public class QuicPictureStreamTests
     }
 
     [Fact(Timeout = 30000)]
-    public async Task APictureOverOneMegabyte_IsRefused_AndTheConnectionCarriesOn()
+    public async Task AStreamOverTheVideoFrameCap_IsRefused_AndTheConnectionCarriesOn()
     {
         using var deadline = QuicLoopbackHarness.Deadline(TestContext.Current.CancellationToken);
         await using var harness = await QuicLoopbackHarness.StartAsync(deadline.Token);
@@ -41,15 +41,15 @@ public class QuicPictureStreamTests
 
         try
         {
-            await agent.SendVideoFrameAsync(QuicLoopbackHarness.RandomBytes(QuicChannel.MaxPictureBytes + 1), deadline.Token);
+            await agent.SendVideoFrameAsync(QuicLoopbackHarness.RandomBytes(QuicChannel.MaxVideoFrameBytes + 1), deadline.Token);
         }
         catch (System.Net.Quic.QuicException)
         {
             // The console aborted reading it: expected.
         }
 
-        // The oversize picture must never surface. Without this check the small picture below would overwrite
-        // an accepted oversize one in the console's queue of one, and the test would pass with no cap at all.
+        // The oversize stream must never surface. Without this check the small frame below could overwrite
+        // an accepted oversize one in the console's queue, and the test would pass with no cap at all.
         using var brief = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
         brief.CancelAfter(TimeSpan.FromMilliseconds(500));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>

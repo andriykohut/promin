@@ -13,7 +13,7 @@ public class InputBlockTests
     [InlineData(0x0205)] // WM_RBUTTONUP
     [InlineData(0x0208)] // WM_MBUTTONUP
     [InlineData(0x020C)] // WM_XBUTTONUP
-    public void AReleaseGoesThrough(int inputEvent) => Assert.True(InputBlock.LetsThrough(inputEvent));
+    public void AReleaseGoesThrough(int inputEvent) => Assert.True(InputBlock.LetsThrough(inputEvent, extraInfo: 0));
 
     [Theory]
     [InlineData(0x0100)] // WM_KEYDOWN
@@ -25,7 +25,18 @@ public class InputBlockTests
     [InlineData(0x020A)] // WM_MOUSEWHEEL
     [InlineData(0x020B)] // WM_XBUTTONDOWN
     [InlineData(0x020E)] // WM_MOUSEHWHEEL
-    public void EverythingElseIsSwallowed(int inputEvent) => Assert.False(InputBlock.LetsThrough(inputEvent));
+    public void EverythingElseIsSwallowed(int inputEvent) => Assert.False(InputBlock.LetsThrough(inputEvent, extraInfo: 0));
+
+    [Fact]
+    public void LetsThrough_InputCarryingOurTag_Always() =>
+        Assert.True(InputBlock.LetsThrough(0x0100, InputBlock.OwnTag));
+
+    [Fact]
+    public void LetsThrough_InputCarryingAnotherTag_IsTreatedAsLocal() =>
+        Assert.False(InputBlock.LetsThrough(0x0100, InputBlock.OwnTag ^ 1));
+
+    [Fact]
+    public void OwnTag_IsNeverZero() => Assert.NotEqual(0, InputBlock.OwnTag);
 
     [Fact]
     public void Renew_PutsTheFreshHooksIn_BeforeTakingTheOldOnesOut()

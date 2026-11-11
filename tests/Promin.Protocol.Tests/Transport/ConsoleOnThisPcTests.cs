@@ -1,6 +1,7 @@
 using System.Net;
+using Promin.Protocol.Transport;
 
-namespace Promin.Agent.Tests;
+namespace Promin.Protocol.Tests.Transport;
 
 public class ConsoleOnThisPcTests
 {

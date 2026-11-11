@@ -1,10 +1,11 @@
+using Promin.MediaPipeline.Presenting;
 using Promin.MediaPipeline.Capture;
 using Promin.MediaPipeline.Decoding;
 using Promin.MediaPipeline.Encoding;
 using Promin.Protocol.Video;
-using static Promin.Agent.Tests.Hardware.GpuPictures;
+using static Promin.MediaPipeline.Tests.Hardware.GpuPictures;
 
-namespace Promin.Agent.Tests.Hardware;
+namespace Promin.MediaPipeline.Tests.Hardware;
 
 // The test the agent PC's display was missing: the decoder's OWN texture, not a converter's, handed to the
 // blitter. PictureBlitterTests feed the blitter textures the capture side's converter makes (render-target

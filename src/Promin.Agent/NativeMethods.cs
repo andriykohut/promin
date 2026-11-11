@@ -50,6 +50,13 @@ internal static class NativeMethods
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct Point
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct MonitorInfo
     {
         public uint Size;
@@ -76,12 +83,49 @@ internal static class NativeMethods
         public nint ExtraInfo;
     }
 
-    /// <summary>INPUT for a mouse event. The mouse member is the largest of the native union, so the size is right.</summary>
     [StructLayout(LayoutKind.Sequential)]
+    public struct KeyboardInput
+    {
+        public ushort VirtualKey;
+        public ushort ScanCode;
+        public uint Flags;
+        public uint Time;
+        public nint ExtraInfo;
+    }
+
+    /// <summary>
+    /// INPUT: the type, then a union of a mouse and a keyboard event. The union starts at offset 8, where 64-bit Windows
+    /// aligns it, and the agent runs only as 64-bit.
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit)]
     public struct Input
     {
-        public uint Type;
-        public MouseInput Mouse;
+        [FieldOffset(0)] public uint Type;
+        [FieldOffset(8)] public MouseInput Mouse;
+        [FieldOffset(8)] public KeyboardInput Keyboard;
+    }
+
+    /// <summary>KBDLLHOOKSTRUCT, what a low-level keyboard hook's <c>lParam</c> points to.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KeyboardHookData
+    {
+        public uint VirtualKey;
+        public uint ScanCode;
+        public uint Flags;
+        public uint Time;
+        public nint ExtraInfo;
+    }
+
+    /// <summary>MSLLHOOKSTRUCT, what a low-level mouse hook's <c>lParam</c> points to.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MouseHookData
+    {
+        public int PointX;
+        public int PointY;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public nint ExtraInfo;
     }
 
     public const uint ES_SYSTEM_REQUIRED = 0x00000001;
@@ -89,12 +133,32 @@ internal static class NativeMethods
     public const uint ES_CONTINUOUS = 0x80000000;
 
     public const uint INPUT_MOUSE = 0;
+    public const uint INPUT_KEYBOARD = 1;
     public const uint MOUSEEVENTF_MOVE = 0x0001;
+    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    public const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+    public const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+    public const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
+    public const uint MOUSEEVENTF_XDOWN = 0x0080;
+    public const uint MOUSEEVENTF_XUP = 0x0100;
+    public const uint MOUSEEVENTF_WHEEL = 0x0800;
+    public const uint MOUSEEVENTF_HWHEEL = 0x1000;
+    public const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
+    public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+    public const uint XBUTTON1 = 1;
+    public const uint XBUTTON2 = 2;
 
     public const uint WS_POPUP = 0x80000000;
     public const uint WS_OVERLAPPEDWINDOW = 0x00CF0000;
     public const uint WS_EX_TOPMOST = 0x00000008;
     public const uint WS_EX_TOOLWINDOW = 0x00000080;
+    public const uint WS_EX_TRANSPARENT = 0x00000020;
+    public const uint WS_EX_LAYERED = 0x00080000;
+    public const uint LWA_ALPHA = 0x2;
+    public const uint WS_EX_NOACTIVATE = 0x08000000;
     public const int CW_USEDEFAULT = unchecked((int)0x80000000);
 
     public const uint WM_DESTROY = 0x0002;
@@ -110,10 +174,12 @@ internal static class NativeMethods
     public const uint WM_KEYUP = 0x0101;
     public const uint WM_SYSKEYUP = 0x0105;
     public const uint WM_TIMER = 0x0113;
+    public const uint WM_MOUSEMOVE = 0x0200;
     public const uint WM_LBUTTONUP = 0x0202;
     public const uint WM_RBUTTONUP = 0x0205;
     public const uint WM_MBUTTONUP = 0x0208;
     public const uint WM_XBUTTONUP = 0x020C;
+    public const uint WM_CLIPBOARDUPDATE = 0x031D;
     public const uint WM_APP = 0x8000;
 
     public const int WH_KEYBOARD_LL = 13;
@@ -145,6 +211,18 @@ internal static class NativeMethods
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOACTIVATE = 0x0010;
+
+    public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
+    public const uint MONITOR_DEFAULTTOPRIMARY = 1;
+    public const int MDT_EFFECTIVE_DPI = 0;
+    public static readonly nint HWND_MESSAGE = -3;
+    public const int NULL_PEN = 8;
+
+    public const uint CF_UNICODETEXT = 13;
+    public const uint GMEM_MOVEABLE = 2;
+
+    public const uint DESKTOP_READOBJECTS = 0x0001;
+    public const int UOI_NAME = 2;
 
     public const int STD_OUTPUT_HANDLE = -11;
     public const int ATTACH_PARENT_PROCESS = -1;
@@ -267,7 +345,95 @@ internal static class NativeMethods
     public static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
 
     [DllImport("user32.dll", SetLastError = true)]
-    public static extern uint SendInput(uint count, ref Input input, int size);
+    public static extern uint SendInput(uint count, [In] Input[] inputs, int size);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindowDisplayAffinity(nint hwnd, uint affinity);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetLayeredWindowAttributes(nint hwnd, uint colourKey, byte alpha, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern nint MonitorFromPoint(Point point, uint flags);
+
+    /// <summary>S_OK (0) when it gave the DPI; <c>shcore.dll</c> has no other way to ask a monitor.</summary>
+    [DllImport("shcore.dll")]
+    public static extern int GetDpiForMonitor(nint monitor, int type, out uint dpiX, out uint dpiY);
+
+    [DllImport("user32.dll")]
+    public static extern nint GetDC(nint hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern int ReleaseDC(nint hwnd, nint dc);
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowRgn(nint hwnd, nint region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AddClipboardFormatListener(nint hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool RemoveClipboardFormatListener(nint hwnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool OpenClipboard(nint owner);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CloseClipboard();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EmptyClipboard();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern nint SetClipboardData(uint format, nint data);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern nint GetClipboardData(uint format);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern nint OpenInputDesktop(uint flags, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint access);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CloseDesktop(nint desktop);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetUserObjectInformationW(nint handle, int index, nint buffer, uint length, out uint needed);
+
+    [DllImport("kernel32.dll")]
+    public static extern nint GlobalAlloc(uint flags, nuint bytes);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern nint GlobalLock(nint memory);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GlobalUnlock(nint memory);
+
+    [DllImport("kernel32.dll")]
+    public static extern nint GlobalFree(nint memory);
+
+    [DllImport("gdi32.dll")]
+    public static extern nint CreatePen(int style, int width, uint colour);
+
+    [DllImport("gdi32.dll")]
+    public static extern nint CreateRoundRectRgn(int left, int top, int right, int bottom, int ellipseWidth, int ellipseHeight);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool RoundRect(nint dc, int left, int top, int right, int bottom, int ellipseWidth, int ellipseHeight);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool Ellipse(nint dc, int left, int top, int right, int bottom);
 
     [DllImport("gdi32.dll")]
     public static extern nint GetStockObject(int index);

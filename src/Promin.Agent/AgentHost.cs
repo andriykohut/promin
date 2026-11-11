@@ -40,7 +40,8 @@ internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAg
 /// that every way the agent can fail to start, and the exit code and log line for it, can be reached from a test.
 /// <c>OpenScreenPictures</c> is null in tests, which then take no pictures; <c>Person</c> is null in tests, which then
 /// never act as the signed-in person; <c>OpenScreenLock</c> is null in tests, which then never lock. <c>Time</c> is set
-/// in tests, which then move the clock themselves, and null on a PC, which uses the system clock.
+/// in tests, which then move the clock themselves, and null on a PC, which uses the system clock. <c>Remote</c> is null
+/// in tests and on a windowed agent, which then refuse every remote stream.
 /// </summary>
 internal sealed record AgentServices(
     Action EnsureQuicSupported,
@@ -50,9 +51,10 @@ internal sealed record AgentServices(
     Func<IScreenPictures>? OpenScreenPictures = null,
     Func<ISignedInPerson>? Person = null,
     Func<AgentPaths, AgentLog, ScreenLock>? OpenScreenLock = null,
-    TimeProvider? Time = null)
+    TimeProvider? Time = null,
+    RemoteParts? Remote = null)
 {
-    public static AgentServices ForThisMachine() => new(
+    public static AgentServices ForThisMachine(AgentLog log, bool windowed) => new(
         QuicTransportSettings.EnsureSupported,
         DeviceIdentity.LoadOrCreate,
         (identity, masters, connectionRejected) => new QuicAgentListenerAdapter(
@@ -77,7 +79,14 @@ internal sealed record AgentServices(
             var lockLog = new LockLog(log.Write);
             return new ScreenLock(
                 new LockFile(paths.LockFile, lockLog.Write), new LockScreenWindow(lockLog.Write), new InputBlock(lockLog.Write), lockLog);
-        });
+        },
+        Remote: windowed ? null : new RemoteParts(
+            (send, nextId) => ControlVideo.Open(send, nextId, log.Write),
+            () => new ControlTab(log.Write),
+            () => new ClipboardWatch(log.Write),
+            InputInjector.ForThisPc(),
+            InputDesktop.IsDefault,
+            TimeSpan.FromMilliseconds(500)));
 }
 
 /// <summary>
@@ -235,7 +244,7 @@ internal static class AgentHost
 
             var pairingLoop = pairing.RunAsync(shutdown.Token);
             var acceptLoop = AcceptConsolePcsAsync(
-                listener, connections, command.Windowed, services.OpenScreenPictures, services.Person, screenLock, log, shutdown.Token);
+                listener, connections, command.Windowed, services.OpenScreenPictures, services.Person, services.Remote, screenLock, log, shutdown.Token);
             var restoreLoop = screenLock is null
                 ? Task.CompletedTask
                 : RestoreLockAsync(screenLock, services.Time ?? TimeProvider.System, shutdown.Token);
@@ -283,6 +292,7 @@ internal static class AgentHost
         bool windowed,
         Func<IScreenPictures>? openScreenPictures,
         Func<ISignedInPerson>? person,
+        RemoteParts? remote,
         ScreenLock? screenLock,
         AgentLog log,
         CancellationToken ct)
@@ -307,16 +317,14 @@ internal static class AgentHost
                 async token =>
                 {
                     var connection = new QuicAgentConnection(channel);
-                    using var stopPictures = CancellationTokenSource.CreateLinkedTokenSource(token);
-                    var pictures = openScreenPictures is null
-                        ? Task.CompletedTask
-                        : Task.Run(
-                            () => new PictureSender(
+                    await using var previews = new PreviewSwitch(
+                        openScreenPictures is null
+                            ? _ => Task.CompletedTask
+                            : stopPictures => new PictureSender(
                                 openScreenPictures,
-                                (jpeg, sendCt) => channel.SendVideoFrameAsync(jpeg, sendCt),
+                                (jpeg, sendCt) => channel.SendVideoFrameAsync(AgentStream.Tag(AgentStream.Picture, jpeg), sendCt),
                                 log.Write,
-                                TimeProvider.System).RunAsync(stopPictures.Token),
-                            CancellationToken.None);
+                                TimeProvider.System).RunAsync(stopPictures));
                     using var stopFiles = CancellationTokenSource.CreateLinkedTokenSource(token);
                     var files = person is null
                         ? Task.CompletedTask
@@ -325,6 +333,24 @@ internal static class AgentHost
                     var lockLink = screenLock is null
                         ? Task.CompletedTask
                         : new LockLink(screenLock, mayLock: !onThisPc, log.Write).RunAsync(connection, stopLockLink.Token);
+                    using var stopRemote = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    var remoteLink = new RemoteLink(remote, screenLock, previews, mayControl: !onThisPc, log.Write)
+                        .RunAsync(connection, (frame, sendCt) => channel.SendVideoFrameAsync(frame, sendCt), stopRemote.Token);
+
+                    // A step of closing that throws is logged by type only, and the next one still runs: each lets go of
+                    // something the next connection needs.
+                    async Task StepAsync(Func<Task> step)
+                    {
+                        try
+                        {
+                            await step().ConfigureAwait(false);
+                        }
+                        catch (Exception e)
+                        {
+                            log.Write($"A step of closing the connection from console PC {consolePc} failed: {e.GetType().Name}.");
+                        }
+                    }
+
                     try
                     {
                         await new BroadcastConnection(
@@ -332,17 +358,20 @@ internal static class AgentHost
                     }
                     finally
                     {
+                        // Control ends first, so that the PC has its keyboard and mouse back before the connection goes.
+                        await StepAsync(stopRemote.CancelAsync).ConfigureAwait(false);
+                        await StepAsync(() => remoteLink).ConfigureAwait(false);
+
                         // The capture is let go before the next connection's sender makes its own: two at once are refused.
-                        await stopPictures.CancelAsync().ConfigureAwait(false);
-                        await pictures.ConfigureAwait(false);
+                        await StepAsync(previews.PauseAsync).ConfigureAwait(false);
 
                         // The send under way ends before the next connection's receiver can start one: staging is one folder.
-                        await stopFiles.CancelAsync().ConfigureAwait(false);
-                        await files.ConfigureAwait(false);
+                        await StepAsync(stopFiles.CancelAsync).ConfigureAwait(false);
+                        await StepAsync(() => files).ConfigureAwait(false);
 
-                        await stopLockLink.CancelAsync().ConfigureAwait(false);
-                        await lockLink.ConfigureAwait(false);
-                        await connection.DisposeAsync().ConfigureAwait(false);
+                        await StepAsync(stopLockLink.CancelAsync).ConfigureAwait(false);
+                        await StepAsync(() => lockLink).ConfigureAwait(false);
+                        await StepAsync(() => connection.DisposeAsync().AsTask()).ConfigureAwait(false);
                         log.Write($"The connection from console PC {consolePc} is closed.");
                     }
                 },

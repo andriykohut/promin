@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using static Promin.Agent.NativeMethods;
 
 namespace Promin.Agent;
@@ -19,12 +20,18 @@ namespace Promin.Agent;
 /// </para>
 /// <para>
 /// The hooks end with the process, so an agent that is killed gives the keyboard and mouse back at once. They look only
-/// at the kind of event: which keys were pressed is neither read nor kept.
+/// at the kind of event and its tag: which keys were pressed is neither read nor kept.
 /// </para>
 /// </remarks>
 internal sealed class InputBlock(Action<string> log) : IInputBlock
 {
     private const uint RenewalMilliseconds = 30_000;
+
+    /// <summary>
+    /// The <c>dwExtraInfo</c> of every event <see cref="InputInjector"/> sends, random for each process so that nothing
+    /// else can be taken for it by guessing. Never 0, which is what local input carries.
+    /// </summary>
+    internal static readonly nint OwnTag = (nint)(BitConverter.ToInt64(RandomNumberGenerator.GetBytes(8)) | 1);
 
     private static readonly TimeSpan ReleaseLimit = TimeSpan.FromSeconds(5);
 
@@ -94,12 +101,15 @@ internal sealed class InputBlock(Action<string> log) : IInputBlock
     public void Dispose() => Release();
 
     /// <summary>
-    /// Whether an input event goes on to Windows: a key or a button being released. Swallowed, a release would leave
-    /// what was held at the moment the block started down for good: a game's W, a stuck Shift, a drag that never ends.
+    /// Whether an input event goes on to Windows: input this process injected, or a key or a button being released.
+    /// Swallowed, a release would leave what was held at the moment the block started down for good: a game's W, a
+    /// stuck Shift, a drag that never ends.
     /// </summary>
-    /// <param name="inputEvent">The window message a low-level hook gets as its <c>wParam</c>, which names only the kind of event.</param>
-    internal static bool LetsThrough(nint inputEvent) =>
-        (uint)inputEvent is WM_KEYUP or WM_SYSKEYUP or WM_LBUTTONUP or WM_RBUTTONUP or WM_MBUTTONUP or WM_XBUTTONUP;
+    /// <param name="message">The window message a low-level hook gets as its <c>wParam</c>, which names only the kind of event.</param>
+    /// <param name="extraInfo">The event's <c>dwExtraInfo</c>, which is <see cref="OwnTag"/> on input this process sent.</param>
+    internal static bool LetsThrough(nint message, nint extraInfo) =>
+        extraInfo == OwnTag
+        || (uint)message is WM_KEYUP or WM_SYSKEYUP or WM_LBUTTONUP or WM_RBUTTONUP or WM_MBUTTONUP or WM_XBUTTONUP;
 
     /// <summary>
     /// Replaces <paramref name="current"/> with fresh hooks, or keeps it when they cannot be made. The fresh pair goes in
@@ -164,6 +174,17 @@ internal sealed class InputBlock(Action<string> log) : IInputBlock
         UnhookWindowsHookEx(hooks.Keyboard);
     }
 
-    private static nint OnInput(int code, nint wParam, nint lParam) =>
-        code >= 0 && !LetsThrough(wParam) ? 1 : CallNextHookEx(0, code, wParam, lParam);
+    private static nint OnInput(int code, nint wParam, nint lParam)
+    {
+        if (code < 0)
+        {
+            return CallNextHookEx(0, code, wParam, lParam);
+        }
+
+        // Keyboard messages all come before WM_MOUSEMOVE, and the two hooks' structs differ.
+        var extraInfo = (uint)wParam < WM_MOUSEMOVE
+            ? Marshal.PtrToStructure<KeyboardHookData>(lParam).ExtraInfo
+            : Marshal.PtrToStructure<MouseHookData>(lParam).ExtraInfo;
+        return LetsThrough(wParam, extraInfo) ? CallNextHookEx(0, code, wParam, lParam) : 1;
+    }
 }

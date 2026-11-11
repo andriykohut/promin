@@ -20,6 +20,7 @@ public class LockLinkTests
     private sealed class FakeConnection(FakeChannel channel) : IAgentConnection
     {
         public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => Task.FromResult<IControlChannel>(channel);
+        public Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
 
         public Task<IIncomingSend> AcceptSendAsync(CancellationToken ct) => throw new NotSupportedException();
 
@@ -73,6 +74,17 @@ public class LockLinkTests
             _stop.Dispose();
             _dir.Dispose();
         }
+    }
+
+    [Fact]
+    public async Task AnUnlockByControl_IsReportedAtOnce()
+    {
+        using var rig = new Rig(locked: true);
+        Assert.True((await rig.NextStateAsync()).Locked);
+
+        Assert.True(rig.Screen.TryStartControl());
+
+        Assert.False((await rig.NextStateAsync()).Locked);
     }
 
     [Fact]

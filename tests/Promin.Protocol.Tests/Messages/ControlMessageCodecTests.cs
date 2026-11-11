@@ -82,6 +82,26 @@ public class ControlMessageCodecTests
         Assert.True(Assert.IsType<LockState>(RoundTrip(new LockState(Locked: true))).Locked);
     }
 
+    [Fact]
+    public void EncodeThenDecode_RoundTripsTheControlMessages()
+    {
+        Assert.IsType<StartControl>(RoundTrip(new StartControl()));
+        Assert.Equal(ControlStatus.ProtectedScreen, Assert.IsType<ControlState>(RoundTrip(new ControlState(ControlStatus.ProtectedScreen))).Status);
+        Assert.Equal(new PointerMove(65535, 0), RoundTrip(new PointerMove(65535, 0)));
+        Assert.Equal(new PointerButton(MouseButton.X2, true), RoundTrip(new PointerButton(MouseButton.X2, true)));
+        Assert.Equal(new PointerWheel(-120, Horizontal: true), RoundTrip(new PointerWheel(-120, true)));
+        Assert.Equal(new KeyInput(0x5B, 0x5B, Extended: true, Down: false), RoundTrip(new KeyInput(0x5B, 0x5B, true, false)));
+        Assert.Equal("Привіт ’", Assert.IsType<ClipboardText>(RoundTrip(new ClipboardText("Привіт ’"))).Text);
+        Assert.IsType<RequestKeyframe>(RoundTrip(new RequestKeyframe()));
+    }
+
+    [Fact]
+    public void ClipboardText_AtTheCap_FitsInOneMessage()   // worst case: every character a 6-byte JSON escape
+    {
+        var text = new string('щ', ControlLimits.MaxClipboardChars);
+        Assert.True(ControlMessageCodec.Encode(new ClipboardText(text)).Length <= ControlMessageCodec.MaxFrameSize + 4);
+    }
+
     private static ControlMessage RoundTrip(ControlMessage message)
     {
         var encoded = ControlMessageCodec.Encode(message);

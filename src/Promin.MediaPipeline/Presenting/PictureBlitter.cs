@@ -4,7 +4,7 @@ using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Vortice.Mathematics;
 
-namespace Promin.Agent;
+namespace Promin.MediaPipeline.Presenting;
 
 /// <summary>
 /// Draws a decoded NV12 picture onto a screen-sized RGB texture with the Direct3D 11 video processor, which scales
@@ -13,7 +13,7 @@ namespace Promin.Agent;
 /// encoder wrote it. Nothing is copied. Not thread-safe: one call at a time, on the thread that owns the device's
 /// immediate context.
 /// </summary>
-internal sealed class PictureBlitter : IDisposable
+public sealed class PictureBlitter : IDisposable
 {
     private readonly ID3D11Device _device;
     private readonly ID3D11VideoDevice _videoDevice;

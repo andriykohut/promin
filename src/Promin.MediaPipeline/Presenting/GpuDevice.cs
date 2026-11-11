@@ -2,14 +2,14 @@ using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 
-namespace Promin.Agent;
+namespace Promin.MediaPipeline.Presenting;
 
 /// <summary>
 /// The Direct3D 11 device the decoder and the render window share: on the adapter that drives the primary
 /// display, with video support (the decoder needs it to decode on the GPU, the window needs it for the video
 /// processor) and multithread protection on (Media Foundation uses the device from its own threads).
 /// </summary>
-internal sealed class GpuDevice : IDisposable
+public sealed class GpuDevice : IDisposable
 {
     private readonly IDXGIAdapter1 _adapter;
 

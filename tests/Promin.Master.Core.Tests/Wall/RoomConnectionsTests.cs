@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Threading.Channels;
+using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
+using Promin.Master.Core.Tests.TestDoubles;
 using Promin.Master.Core.Wall;
 
 namespace Promin.Master.Core.Tests.Wall;
@@ -17,6 +19,8 @@ public sealed class RoomConnectionsTests
         public bool FailSends { get; init; }
         public List<string> Locks { get; } = [];
         public int Unlocks { get; private set; }
+        public IControlSession? Session { get; init; }
+        public bool RefuseControl { get; init; }
 
         public void Send(byte[] picture) => _pictures.Writer.TryWrite(picture);
 
@@ -51,6 +55,9 @@ public sealed class RoomConnectionsTests
             Unlocks++;
             return Task.CompletedTask;
         }
+
+        public Task<IControlSession> StartControlAsync(CancellationToken ct) =>
+            RefuseControl ? throw new ControlRefusedException() : Task.FromResult(Session!);
 
         public ValueTask DisposeAsync()
         {
@@ -429,5 +436,34 @@ public sealed class RoomConnectionsTests
         Assert.InRange(clock.Elapsed, TimeSpan.Zero, TimeSpan.FromSeconds(2));
         connections.Want(Pc());
         Assert.Single(_dials);   // nothing is dialled once closed
+    }
+
+    [Fact]
+    public async Task StartControl_GoesToThePcsConnection()
+    {
+        var session = new FakeControlSession();
+        _answer = _ => Task.FromResult(new FakeConnection { Session = session });
+        await using var connections = Build();
+        await connections.GetAsync(Pc(), CancellationToken.None);
+
+        Assert.Same(session, await connections.StartControlAsync("device-01"));
+    }
+
+    [Fact]
+    public async Task StartControl_Refused_GivesNull()
+    {
+        _answer = _ => Task.FromResult(new FakeConnection { RefuseControl = true });
+        await using var connections = Build();
+        await connections.GetAsync(Pc(), CancellationToken.None);
+
+        Assert.Null(await connections.StartControlAsync("device-01"));
+    }
+
+    [Fact]
+    public async Task StartControl_WithNoConnection_GivesNull()
+    {
+        await using var connections = Build();
+
+        Assert.Null(await connections.StartControlAsync("device-01"));
     }
 }

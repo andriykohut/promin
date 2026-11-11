@@ -13,16 +13,16 @@ The name is Ukrainian: промінь, a beam of light.
 
 ## Status
 
-Early. Broadcasting and sending files work and have been run between two PCs; locking and the room wall's pictures of each PC's screen have been tried on one PC. None of it has yet been tried in a full room of ten or more.
-
-Planned next, not built yet: remote control.
+Early. Broadcasting and sending files work and have been run between two PCs; locking and the room wall's pictures of each PC's screen have been tried on one PC. Remote control works. None of it has yet been tried in a full room of ten or more.
 
 ## How it works
 
 There are two apps:
 
-- **The console** (`Promin.Master`) runs on the PC whose screen is shown. It lists the PCs in the room, starts and stops the broadcast, shows each PC's screen in its tile, refreshed about once a second, sends files and folders to the PCs, and locks the ticked PCs (one, a few or all) with an optional message of up to 100 characters, and unlocks them with one click.
-- **The agent** (`Promin.Agent`) runs on every other PC. It has no window of its own; when a broadcast starts, it covers the display with the picture and blocks the keyboard and mouse until the broadcast's window closes. It shows the lock screen the same way when the console locks the PC. It also sends a small picture of its screen to the console about once a second, and saves the files the console sends, opening them for the person signed in when the console asks.
+- **The console** (`Promin.Master`) runs on the PC whose screen is shown. It lists the PCs in the room, starts and stops the broadcast, shows each PC's screen in its tile, refreshed about once a second, sends files and folders to the PCs, and locks the ticked PCs (one, a few or all) with an optional message of up to 100 characters, and unlocks them with one click. It can also control one PC at a time (see below).
+- **The agent** (`Promin.Agent`) runs on every other PC. It has no window of its own; when a broadcast starts, it covers the display with the picture and blocks the keyboard and mouse until the broadcast's window closes. It shows the lock screen the same way when the console locks the PC. It also sends a small picture of its screen to the console about once a second, and saves the files the console sends, opening them for the person signed in when the console asks. While the console controls it, it shows a small tab at the top of the screen reading "This PC is being controlled remotely" and blocks its own keyboard and mouse.
+
+**Controlling a PC.** Open a PC's **⋯** panel on its tile and choose **Control this PC**, or double-click the tile. The PC's screen opens full screen on the console PC, with a bar that tucks away; the bar can also move the picture to a separate window. Your keyboard and mouse then work on that PC, and copying and pasting text works both ways, up to 10,000 characters at a time. Only one PC can be controlled at a time, not during a broadcast, and never the console's own PC. Controlling a PC that Promin has locked unlocks it. The Windows lock screen, administrator prompts and the sign-in screen cannot be reached yet ([#50](https://github.com/andriykohut/promin/issues/50), [#51](https://github.com/andriykohut/promin/issues/51)).
 
 A lock is kept on the PC itself, so it survives a restart, a sign-out and the console being closed, and comes back a moment after sign-in. A console on the same PC neither locks nor blocks.
 
@@ -96,6 +96,8 @@ The service runs the agent under the SYSTEM account, so every PC pairs once more
 - On **Set up devices**, pair only the PCs you can account for. A device that knows the code can announce itself under any name.
 - Any device on the same network can disrupt Promin (for example, keep PCs from connecting), though it cannot watch.
 - Only the paired console can unlock a PC. If the console is lost or a PC is stuck, an administrator starts that PC in Safe Mode and, in the agent's folder (`C:\Program Files\Promin\Agent`), runs `.\Promin.Agent.exe --reset-pairing | Out-Host`, which also removes the lock file. The PC must then pair again.
+- Only the paired console can take control of a PC, and never the console's own PC. The PC shows a tab for as long as it is controlled. Keys pressed and clipboard text are never written to any log.
+- While the control picture has focus, text copied on the console PC goes to the controlled PC, and so does the text already on the console PC’s clipboard when you click into the picture. Copy something harmless first if it holds a password.
 - A program sent to a PC is saved but never run, even when **Open them on each PC when they arrive** is ticked.
 
 ## Languages
@@ -109,6 +111,7 @@ Every text the console shows is in `src/Promin.Master.Core/Strings.resx` (Englis
 | What | Where |
 |---|---|
 | Console data and log | `%LocalAppData%\Promin` |
+| Console settings, including where the control window was last placed | `%LocalAppData%\Promin\settings.json` |
 | Agent data and log | `%ProgramData%\Promin\Agent` |
 | Lock on an agent PC | `%ProgramData%\Promin\Agent\lock.json` |
 | Room code on an agent PC | `%ProgramData%\Promin\agent.json` |
@@ -118,11 +121,11 @@ Every text the console shows is in `src/Promin.Master.Core/Strings.resx` (Englis
 
 | Project | What it holds |
 |---|---|
-| `src/Promin.Master` | The console app (WinUI 3) |
-| `src/Promin.Master.Core` | The console's logic, free of UI code |
+| `src/Promin.Master` | The console app (WinUI 3), including the control window (`Control/`) |
+| `src/Promin.Master.Core` | The console's logic, free of UI code, including the control session (`Control/`) |
 | `src/Promin.Agent` | The agent app |
 | `src/Promin.Protocol` | Discovery, pairing, transport and the broadcast session |
-| `src/Promin.MediaPipeline` | Screen capture, H.264 encoding and decoding |
+| `src/Promin.MediaPipeline` | Screen capture, H.264 encoding and decoding, and showing a decoded picture (`Presenting/`) |
 | `tests/` | One test project per project above, except the console app |
 
 ## Licence

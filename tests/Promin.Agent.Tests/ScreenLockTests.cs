@@ -122,11 +122,11 @@ public class ScreenLockTests
     }
 
     [Fact]
-    public void Restored_IsRaisedOnce_WhenARestoreLocksThePc()
+    public void Changed_IsRaisedOnce_WhenARestoreLocksThePc()
     {
         using var rig = new Rig();
         var raised = 0;
-        rig.Lock.Restored += () => raised++;
+        rig.Lock.Changed += () => raised++;
         rig.File.Write("Break");
 
         rig.Lock.Restore();
@@ -140,11 +140,11 @@ public class ScreenLockTests
     [InlineData("unreadable")]
     [InlineData("window")]
     [InlineData("hold")]
-    public void Restored_IsNotRaised_WhenARestoreDoesNotLockThePc(string outcome)
+    public void Changed_IsNotRaised_WhenARestoreDoesNotLockThePc(string outcome)
     {
         using var rig = new Rig();
         var raised = 0;
-        rig.Lock.Restored += () => raised++;
+        rig.Lock.Changed += () => raised++;
         Arrange(rig, outcome);
 
         rig.Lock.Restore();
@@ -153,28 +153,133 @@ public class ScreenLockTests
     }
 
     [Fact]
-    public void Restored_IsNotRaised_ByALockFromTheConsole()
+    public void Changed_IsRaised_ByALockFromTheConsole()
     {
         using var rig = new Rig();
         var raised = 0;
-        rig.Lock.Restored += () => raised++;
+        rig.Lock.Changed += () => raised++;
 
         rig.Lock.Lock("Break");
 
-        Assert.Equal(0, raised);
+        Assert.Equal(1, raised);
     }
 
     [Fact]
-    public void Restored_IsRaisedOutsideTheGate()
+    public void Changed_IsRaisedOutsideTheGate()
     {
         using var rig = new Rig();
         var free = false;
-        rig.Lock.Restored += () => free = Task.Run(() => rig.Lock.IsLocked).Wait(TimeSpan.FromSeconds(5));
+        rig.Lock.Changed += () => free = Task.Run(() => rig.Lock.IsLocked).Wait(TimeSpan.FromSeconds(5));
         rig.File.Write("Break");
 
         rig.Lock.Restore();
 
         Assert.True(free);
+    }
+
+    [Fact]
+    public void Changed_IsRaisedForEveryChangeOfIsLocked()
+    {
+        using var rig = new Rig();
+        var raised = 0;
+        rig.Lock.Changed += () => raised++;
+
+        rig.Lock.Lock("Break");
+        rig.Lock.Lock("Break");
+        rig.Lock.Unlock();
+        rig.Lock.Unlock();
+        rig.Lock.Lock("Break");
+        rig.Lock.TryStartControl();
+
+        Assert.Equal(4, raised);
+    }
+
+    [Fact]
+    public void TryStartControl_HoldsInput()
+    {
+        using var rig = new Rig();
+
+        Assert.True(rig.Lock.TryStartControl());
+
+        Assert.True(rig.Input.Held);
+    }
+
+    [Fact]
+    public void TryStartControl_OnALockedPc_UnlocksIt_AndRaisesChanged()
+    {
+        using var rig = new Rig();
+        rig.Lock.Lock("Break");
+        var raised = 0;
+        rig.Lock.Changed += () => raised++;
+
+        Assert.True(rig.Lock.TryStartControl());
+
+        Assert.False(rig.Lock.IsLocked);
+        Assert.True(rig.Input.Held);
+        Assert.False(System.IO.File.Exists(rig.Paths.LockFile));
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void TryStartControl_WithAPictureUp_Refuses()
+    {
+        using var rig = new Rig();
+        rig.Lock.Lock("Break");
+        rig.Lock.PictureShown();
+        rig.Calls.Clear();
+
+        Assert.False(rig.Lock.TryStartControl());
+
+        Assert.True(rig.Lock.IsLocked);
+        Assert.Empty(rig.Calls);
+    }
+
+    [Fact]
+    public void TryStartControl_WhenInputCannotBeHeld_Refuses_AndLeavesTheLockFile()
+    {
+        using var rig = new Rig();
+        rig.Screen.CanShow = false;
+        rig.File.Write("Break");
+        rig.Lock.Restore();
+        rig.Input.CanHold = false;
+        rig.Calls.Clear();
+
+        Assert.False(rig.Lock.TryStartControl());
+        rig.Lock.ControlEnded();
+
+        Assert.False(rig.Lock.IsLocked);
+        Assert.True(System.IO.File.Exists(rig.Paths.LockFile));
+        Assert.DoesNotContain("release", rig.Calls);
+    }
+
+    [Fact]
+    public void TryStartControl_ClearsALockFileThatNeverLockedThePc_SoRestoreDoesNotLockIt()
+    {
+        using var rig = new Rig();
+        rig.Screen.CanShow = false;
+        rig.File.Write("Break");
+        rig.Lock.Restore();
+        rig.Screen.CanShow = true;
+
+        Assert.True(rig.Lock.TryStartControl());
+        rig.Lock.Restore();
+
+        Assert.False(rig.Lock.IsLocked);
+        Assert.False(System.IO.File.Exists(rig.Paths.LockFile));
+    }
+
+    [Fact]
+    public void ControlEnded_ReleasesInput_UnlessAPictureOrALockNeedsIt()
+    {
+        using var rig = new Rig();
+        rig.Lock.TryStartControl();
+        rig.Lock.ControlEnded();
+        Assert.False(rig.Input.Held);
+
+        rig.Lock.TryStartControl();
+        rig.Lock.Lock("Break");
+        rig.Lock.ControlEnded();
+        Assert.True(rig.Input.Held);
     }
 
     [Theory]

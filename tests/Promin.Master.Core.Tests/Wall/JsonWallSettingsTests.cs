@@ -22,6 +22,7 @@ public sealed class JsonWallSettingsTests : IDisposable
 
         Assert.Null(settings.QualityLabel);
         Assert.Null(settings.SharpnessName);
+        Assert.Null(settings.ControlWindowPlacement);
         Assert.False(File.Exists(_path));
     }
 
@@ -31,11 +32,13 @@ public sealed class JsonWallSettingsTests : IDisposable
         var settings = new JsonWallSettings(_path);
         settings.QualityLabel = "720p, 15 fps";
         settings.SharpnessName = "Light";
+        settings.ControlWindowPlacement = "-1200,40,1920,1200";
 
         var next = new JsonWallSettings(_path);
 
         Assert.Equal("720p, 15 fps", next.QualityLabel);
         Assert.Equal("Light", next.SharpnessName);
+        Assert.Equal("-1200,40,1920,1200", next.ControlWindowPlacement);
         Assert.Empty(Directory.GetFiles(_directory, "*.tmp"));
     }
 

@@ -570,4 +570,34 @@
   <data name="Lock_DidNotUnlockMany" xml:space="preserve">
     <value>{count} ПК не вдалося розблокувати</value>
   </data>
+  <data name="Control_Button" xml:space="preserve">
+    <value>Керувати цим ПК</value>
+  </data>
+  <data name="Control_Hint" xml:space="preserve">
+    <value>Або двічі клацніть плитку.</value>
+  </data>
+  <data name="Control_InWindow" xml:space="preserve">
+    <value>У вікні</value>
+  </data>
+  <data name="Control_FullScreen" xml:space="preserve">
+    <value>На весь екран</value>
+  </data>
+  <data name="Control_Stop" xml:space="preserve">
+    <value>Завершити керування</value>
+  </data>
+  <data name="Control_ProtectedScreen" xml:space="preserve">
+    <value>Цей ПК показує захищений екран Windows (блокування або запит дозволу). Керування продовжиться, щойно він закриється.</value>
+  </data>
+  <data name="Control_Lost" xml:space="preserve">
+    <value>Зв’язок із {name} втрачено. Керування завершено.</value>
+  </data>
+  <data name="Control_CouldNotStart" xml:space="preserve">
+    <value>Не вдалося почати керування {name}.</value>
+  </data>
+  <data name="Status_Controlled" xml:space="preserve">
+    <value>Під керуванням</value>
+  </data>
+  <data name="Control_WindowTitle" xml:space="preserve">
+    <value>{name} — Promin</value>
+  </data>
 </root>

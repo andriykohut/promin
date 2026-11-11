@@ -34,6 +34,9 @@ public sealed partial class PcTileControl : UserControl
     // Whether the failure of the last picture is already traced; a good picture re-arms it.
     private bool _decodeFailureTraced;
 
+    // The tick before the last tap on the card, which a double-click puts back.
+    private bool _selectedBeforeTap;
+
     public PcTileControl()
     {
         InitializeComponent();
@@ -53,6 +56,9 @@ public sealed partial class PcTileControl : UserControl
     public event Action<PcTile>? RenameRequested;
 
     public event Action<PcTile>? RemoveRequested;
+
+    /// <summary>The presenter asked to control the PC, from the details panel or by double-clicking a tile that <see cref="PcTile.CanControl"/>.</summary>
+    public event Action<PcTile>? ControlRequested;
 
     /// <summary>The moment a broadcast starts: the screen area fades and scales in, after <paramref name="delay"/>.</summary>
     public void PlayLightUp(TimeSpan delay)
@@ -212,18 +218,47 @@ public sealed partial class PcTileControl : UserControl
     // 16:10, whatever width the grid gives the tile.
     private void Screen_SizeChanged(object sender, SizeChangedEventArgs e) => Screen.Height = e.NewSize.Width * 10 / 16;
 
-    // A tap anywhere on the card toggles, except on the checkbox and the More button, which answer for themselves.
     private void Card_Tapped(object sender, TappedRoutedEventArgs e)
     {
-        for (var element = e.OriginalSource as DependencyObject; element is not null && element != Card; element = VisualTreeHelper.GetParent(element))
+        if (IsOnCardItself(e.OriginalSource))
+        {
+            _selectedBeforeTap = Tile?.IsSelected ?? false;
+            RaiseToggled();
+        }
+    }
+
+    // The first click of a double-click has already toggled, so that a single click answers at once; the second raises
+    // no Tapped. Toggling back only when the tick moved leaves it as it was even when the first toggle did not take.
+    private void Card_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (!IsOnCardItself(e.OriginalSource) || Tile is not { } tile)
+        {
+            return;
+        }
+
+        if (tile.IsSelected != _selectedBeforeTap)
+        {
+            RaiseToggled();
+        }
+
+        if (tile.CanControl)
+        {
+            ControlRequested?.Invoke(tile);
+        }
+    }
+
+    // A tap anywhere on the card is the card's, except on the checkbox and the More button, which answer for themselves.
+    private bool IsOnCardItself(object originalSource)
+    {
+        for (var element = originalSource as DependencyObject; element is not null && element != Card; element = VisualTreeHelper.GetParent(element))
         {
             if (element == SelectBox || element == More)
             {
-                return;
+                return false;
             }
         }
 
-        RaiseToggled();
+        return true;
     }
 
     private void SelectBox_Click(object sender, RoutedEventArgs e)
@@ -247,6 +282,8 @@ public sealed partial class PcTileControl : UserControl
     private void Rename_Click(object sender, RoutedEventArgs e) => Ask(RenameRequested);
 
     private void Remove_Click(object sender, RoutedEventArgs e) => Ask(RemoveRequested);
+
+    private void Control_Click(object sender, RoutedEventArgs e) => Ask(ControlRequested);
 
     private void Ask(Action<PcTile>? request)
     {
