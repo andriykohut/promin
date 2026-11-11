@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml.Controls;
 using Promin.Master.Core.Control;
@@ -18,8 +17,8 @@ namespace Promin.Master.Control;
 /// thread, so <see cref="Resize"/> and the drawing share a lock. The caller cancels and awaits
 /// <see cref="RunAsync"/> (it ends with <see cref="OperationCanceledException"/> on cancel, or with the session's
 /// exception when the session ends) and then disposes on the UI thread, which takes the swap chain off the panel.
-/// <see cref="Dispose"/> is idempotent and safe while <see cref="RunAsync"/> is still drawing: later frames and
-/// resizes do nothing.
+/// <see cref="Dispose"/> is idempotent and safe while <see cref="RunAsync"/> is still running: it waits for the
+/// frame being decoded and drawn, after which frames and resizes do nothing and <see cref="RunAsync"/> returns.
 /// </summary>
 internal sealed class RemoteVideo : IDisposable
 {
@@ -102,8 +101,7 @@ internal sealed class RemoteVideo : IDisposable
             catch (Exception e)
             {
                 // A removed device fails here; the last frame stays on screen rather than the failure reaching the UI thread.
-                Trace.TraceWarning("The remote picture could not be resized to {0}x{1}: {2} (HRESULT 0x{3:X8}).",
-                    size.Width, size.Height, e.GetType().Name, Marshal.GetHRForException(e));
+                _log($"The remote picture could not be resized to {size.Width}x{size.Height}: {e.GetType().Name} (HRESULT 0x{Marshal.GetHRForException(e):X8}).");
             }
         }
     }
@@ -130,40 +128,55 @@ internal sealed class RemoteVideo : IDisposable
                 continue;
             }
 
-            if (keyframeAsk.ShouldAsk(envelope.FrameId, _decoder.NeedsKeyframe, DateTimeOffset.UtcNow))
+            bool ask;
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                ask = keyframeAsk.ShouldAsk(envelope.FrameId, _decoder.NeedsKeyframe, DateTimeOffset.UtcNow);
+            }
+
+            if (ask)
             {
                 await session.SendAsync(new RequestKeyframe(), ct);
             }
 
-            if (!_decoder.TryDecode(new EncodedFrame(encoded.ToArray(), envelope.IsKeyframe, envelope.FrameId), out var picture))
+            if (!DecodeAndShow(new EncodedFrame(encoded.ToArray(), envelope.IsKeyframe, envelope.FrameId)))
             {
-                // A decoder that is refused often would fill the log; the first few say why, then now and then.
-                _refused++;
-                if (_refused <= 5 || _refused % 100 == 0)
-                {
-                    _log($"The decoder gave no picture for frame {envelope.FrameId}: {_decoder.LastFailure ?? "none came back"}. Refused so far: {_refused}.");
-                }
-
-                continue;
+                return;
             }
-
-            Show(picture);
         }
     }, ct);
 
-    private void Show(DecodedFrame picture)
+    /// <summary>Decodes and draws one frame under the lock that <see cref="Dispose"/> takes. False once disposed.</summary>
+    private bool DecodeAndShow(EncodedFrame encoded)
     {
         lock (_gate)
         {
             if (_disposed)
             {
-                return;
+                return false;
+            }
+
+            if (!_decoder.TryDecode(encoded, out var picture))
+            {
+                // A decoder that is refused often would fill the log; the first few say why, then now and then.
+                _refused++;
+                if (_refused <= 5 || _refused % 100 == 0)
+                {
+                    _log($"The decoder gave no picture for frame {encoded.FrameId}: {_decoder.LastFailure ?? "none came back"}. Refused so far: {_refused}.");
+                }
+
+                return true;
             }
 
             _pictureSize = new PixelSize(picture.Width, picture.Height);
             if (_still)
             {
-                return;
+                return true;
             }
 
             using (var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0))
@@ -172,6 +185,7 @@ internal sealed class RemoteVideo : IDisposable
             }
 
             _swapChain.Present(1, PresentFlags.None).CheckError();
+            return true;
         }
     }
 
@@ -187,14 +201,27 @@ internal sealed class RemoteVideo : IDisposable
             _disposed = true;
         }
 
+        // Every step runs whether or not the one before it threw: the GPU objects must still be released.
         if (_swapChain is not null)
         {
-            SwapChainPanelNative.SetSwapChain(_panel, null);
+            Release(() => SwapChainPanelNative.SetSwapChain(_panel, null));
         }
 
-        _swapChain?.Dispose();
-        _blitter?.Dispose();
-        _decoder?.Dispose();
-        _gpu.Dispose();
+        Release(() => _swapChain?.Dispose());
+        Release(() => _blitter?.Dispose());
+        Release(() => _decoder?.Dispose());
+        Release(() => _gpu.Dispose());
+    }
+
+    private void Release(Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch (Exception e)
+        {
+            _log($"Releasing the remote picture failed in one step: {e.GetType().Name}.");
+        }
     }
 }
