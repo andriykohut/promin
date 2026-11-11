@@ -129,6 +129,23 @@ public sealed class RoomWallControlTests
         Assert.Equal("PC-02", vm.ControlledName);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ALateEndOfTheFirstControl_LeavesTheSecondAlone(bool lost)
+    {
+        var vm = await Controlling(1);
+        var ended = 0;
+        vm.ControlMustEnd += () => ended++;
+        _connections.NextSession = new FakeControlSession();
+        await vm.StartControlAsync(Tile(vm, 2));
+        vm.ControlEnded(Id(1), lost);
+        Assert.Equal(1, ended);
+        Assert.Equal(PcTileState.Controlled, Tile(vm, 2).State);
+        Assert.Equal("PC-02", vm.ControlledName);
+        Assert.Equal(WallText.OfflineLine(["PC-07"]), vm.BarLine2);
+    }
+
     [Fact]
     public async Task StartControl_OnTheControlledPc_ReturnsNull()
     {
@@ -144,7 +161,7 @@ public sealed class RoomWallControlTests
     public async Task ControlEnded_ReturnsTheTileToReady()
     {
         var vm = await Controlling(1);
-        vm.ControlEnded(lost: false);
+        vm.ControlEnded(Id(1), lost: false);
         Assert.Equal(PcTileState.Ready, Tile(vm, 1).State);
         Assert.Null(vm.ControlledName);
         Assert.True(vm.CanStart);
@@ -159,7 +176,7 @@ public sealed class RoomWallControlTests
         vm.ControlMustEnd += () => ended++;
         _connections.RaiseEnded(Id(1));
         Assert.Equal(1, ended);
-        vm.ControlEnded(lost: true);
+        vm.ControlEnded(Id(1), lost: true);
         Assert.Equal("Lost the connection to PC-01. Control has ended.", vm.BarLine2);
     }
 
@@ -168,7 +185,7 @@ public sealed class RoomWallControlTests
     {
         var vm = await Controlling(1);
         _connections.RaiseEnded(Id(1));
-        vm.ControlEnded(lost: true);
+        vm.ControlEnded(Id(1), lost: true);
         See(1);
         vm.Tick();
         _connections.NextSession = new FakeControlSession();
@@ -188,7 +205,7 @@ public sealed class RoomWallControlTests
         byte[] newer = [0xFF, 0xD8, 2];
         _connections.RaisePicture(Id(1), newer);
         Assert.Equal(Picture1, Tile(vm, 1).Picture);
-        vm.ControlEnded(lost: false);
+        vm.ControlEnded(Id(1), lost: false);
         Assert.Equal(newer, Tile(vm, 1).Picture);
     }
 
@@ -235,7 +252,7 @@ public sealed class RoomWallControlTests
         await vm.StartControlAsync(Tile(vm, 1));
         Assert.Equal(PcTileState.Controlled, Tile(vm, 1).State);
         _connections.RaiseLock(Id(1), false);
-        vm.ControlEnded(lost: false);
+        vm.ControlEnded(Id(1), lost: false);
         Assert.Equal(PcTileState.Ready, Tile(vm, 1).State);
     }
 }

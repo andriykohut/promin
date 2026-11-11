@@ -447,6 +447,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         if (_controlledId is not null)
         {
             ControlMustEnd?.Invoke();
+            ClearControl();
         }
 
         _controlledId = tile.DeviceId;
@@ -473,18 +474,34 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         return session;
     }
 
-    /// <summary>Control has ended, as asked by <see cref="ControlMustEnd"/> or by the person. When it was lost, the bar says so.</summary>
-    public void ControlEnded(bool lost)
+    /// <summary>
+    /// Control of <paramref name="deviceId"/> has ended, as asked by <see cref="ControlMustEnd"/> or by the person. When it
+    /// was lost, the bar says so. Ignored when that PC is not the controlled one, as when a window already replaced by a
+    /// later control reports in late.
+    /// </summary>
+    public void ControlEnded(string deviceId, bool lost)
     {
+        if (deviceId != _controlledId)
+        {
+            return;
+        }
+
         var name = ControlledName;
+        ClearControl();
+        _controlLine = lost && name is not null ? WallText.ControlLostLine(name) : string.Empty;
+        Refresh();
+    }
+
+    /// <summary>Forgets the controlled PC; its tile shows the newest picture received meanwhile.</summary>
+    private void ClearControl()
+    {
         if (Tiles.FirstOrDefault(t => t.DeviceId == _controlledId) is { } tile && _pictures.TryGetValue(tile.DeviceId, out var picture))
         {
             tile.ShowPicture(picture);
         }
 
         _controlledId = null;
-        _controlLine = lost && name is not null ? WallText.ControlLostLine(name) : string.Empty;
-        Refresh();
+        _controlLine = string.Empty;
     }
 
     private void AskForLock(List<RoomMember> targets, bool locked, Action<string> send)

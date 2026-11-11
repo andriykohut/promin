@@ -28,9 +28,27 @@ public sealed partial class RoomPage : Page
 {
     private static readonly TimeSpan LightUpStagger = TimeSpan.FromMilliseconds(45);
 
+    private static readonly TimeSpan OwnAddressesLife = TimeSpan.FromSeconds(30);
+
     private readonly DispatcherQueueTimer _timer;
     private readonly UISettings _uiSettings = new();
     private readonly Storyboard _pulse = new() { RepeatBehavior = RepeatBehavior.Forever, AutoReverse = true };
+
+    // Reading the network interfaces is slow and the wall asks once per PC on every tick.
+    private IReadOnlyList<IPAddress> _ownAddresses = [];
+    private DateTimeOffset _ownAddressesReadAt = DateTimeOffset.MinValue;
+
+    private IReadOnlyList<IPAddress> OwnAddresses()
+    {
+        var now = DateTimeOffset.Now;
+        if (now - _ownAddressesReadAt >= OwnAddressesLife)
+        {
+            _ownAddresses = ConsoleOnThisPc.OwnAddresses();
+            _ownAddressesReadAt = now;
+        }
+
+        return _ownAddresses;
+    }
 
     public RoomPage()
     {
@@ -44,7 +62,7 @@ public sealed partial class RoomPage : Page
             services.WallSettings,
             () => DateTimeOffset.Now,
             action => DispatcherQueue.TryEnqueue(() => action()),
-            address => IPAddress.TryParse(address, out var ip) && ConsoleOnThisPc.Is(ip, ConsoleOnThisPc.OwnAddresses()));
+            address => IPAddress.TryParse(address, out var ip) && ConsoleOnThisPc.Is(ip, OwnAddresses()));
         Sending = new RoomSend(
             services.Files,
             deviceId => ViewModel.Tiles.FirstOrDefault(t => t.DeviceId == deviceId),
