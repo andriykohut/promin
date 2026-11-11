@@ -1,5 +1,5 @@
 using Promin.MediaPipeline.Capture;
-using static Promin.Agent.Tests.Hardware.GpuPictures;
+using static Promin.MediaPipeline.Tests.Hardware.GpuPictures;
 
 namespace Promin.Agent.Tests.Hardware;
 

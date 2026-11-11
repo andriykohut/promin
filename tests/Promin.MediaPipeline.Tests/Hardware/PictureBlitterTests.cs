@@ -1,8 +1,9 @@
+using Promin.MediaPipeline.Presenting;
 using Promin.MediaPipeline.Scaling;
 using Promin.Protocol.Video;
-using static Promin.Agent.Tests.Hardware.GpuPictures;
+using static Promin.MediaPipeline.Tests.Hardware.GpuPictures;
 
-namespace Promin.Agent.Tests.Hardware;
+namespace Promin.MediaPipeline.Tests.Hardware;
 
 // These need the GPU and its video processor. They use synthetic pictures, open no window and capture nothing.
 // They cannot run on a headless CI agent: run them by hand on the target machine (remove the Skip text, run,

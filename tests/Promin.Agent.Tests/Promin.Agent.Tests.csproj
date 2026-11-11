@@ -27,6 +27,7 @@
   <ItemGroup>
     <Compile Include="..\..\src\Promin.Master\Services\QuicPcConnection.cs" Link="QuicPcConnection.cs" />
     <Compile Include="..\..\src\Promin.Master\Services\QuicControlSession.cs" Link="QuicControlSession.cs" />
+    <Compile Include="..\Promin.MediaPipeline.Tests\Hardware\GpuPictures.cs" Link="GpuPictures.cs" />
   </ItemGroup>
 
 </Project>

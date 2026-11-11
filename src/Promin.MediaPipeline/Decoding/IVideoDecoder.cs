@@ -10,8 +10,8 @@ namespace Promin.MediaPipeline.Decoding;
 public interface IVideoDecoder : IDisposable
 {
     /// <summary>
-    /// Whether the decoder has nothing to build a picture on until a keyframe arrives. It only reports: nothing
-    /// in the product acts on it, because the protocol has no way to ask the console PC for a keyframe (one is
+    /// Whether the decoder has nothing to build a picture on until a keyframe arrives. It only reports: the broadcast viewer does not act on it, and remote control asks for a keyframe from it
+    /// (<c>RemoteVideo</c>); the broadcast protocol has no way to ask the console PC for one (one is
     /// sent every two seconds regardless) and the viewer's session finds loss from the frame ids.
     /// True from construction and again
     /// after anything that breaks the stream (bytes that were refused, a decoder that refused or failed). It stays

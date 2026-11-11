@@ -1,7 +1,7 @@
-namespace Promin.Agent;
+namespace Promin.MediaPipeline.Presenting;
 
 /// <summary>A step of drawing or presenting a picture failed. The message names the step, so a log line says which call refused.</summary>
-internal sealed class DisplayStepException(string step, Exception inner)
+public sealed class DisplayStepException(string step, Exception inner)
     : Exception($"{step} failed: {inner.GetType().Name}: {inner.Message}", inner)
 {
     /// <summary>Runs <paramref name="action"/>; whatever it throws comes out as a <see cref="DisplayStepException"/> naming <paramref name="step"/>.</summary>
