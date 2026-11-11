@@ -18,7 +18,9 @@ namespace Promin.Master.Control;
 /// <see cref="RunAsync"/> (it ends with <see cref="OperationCanceledException"/> on cancel, or with the session's
 /// exception when the session ends) and then disposes on the UI thread, which takes the swap chain off the panel.
 /// <see cref="Dispose"/> is idempotent and safe while <see cref="RunAsync"/> is still running: it waits for the
-/// frame being decoded and drawn, after which frames and resizes do nothing and <see cref="RunAsync"/> returns.
+/// frame being decoded and drawn, after which frames and resizes do nothing; <see cref="RunAsync"/> returns on its
+/// next frame or when its token is cancelled, whichever comes first. The log delegate is called from a pool
+/// thread while the picture's lock is held, so it must not wait on the UI thread.
 /// </summary>
 internal sealed class RemoteVideo : IDisposable
 {
