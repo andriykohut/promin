@@ -50,6 +50,7 @@
             x:Name="Picture"
             Grid.Row="1"
             CompositionScaleChanged="Picture_CompositionScaleChanged"
+            PointerCaptureLost="Picture_PointerCaptureLost"
             PointerEntered="Picture_PointerEntered"
             PointerExited="Picture_PointerExited"
             PointerMoved="Picture_Pointer"

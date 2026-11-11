@@ -47,13 +47,19 @@ internal sealed partial class ControlWindow : Window
     private readonly Channel<ControlMessage> _outbox = Channel.CreateUnbounded<ControlMessage>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
 
+    // The mouse buttons sent down to the agent PC and not yet up.
+    private readonly HashSet<MouseButton> _buttonsDown = [];
+
     private Task _videoRun = Task.CompletedTask;
     private bool _focused;
     private bool _pointerHidden;
     private bool _finished;
     private bool _mayClose;
 
-    /// <summary>Opens on <paramref name="session"/>, full screen on the monitor that <paramref name="mainWindow"/> is on. Call <see cref="Window.Activate"/> to show it.</summary>
+    /// <summary>
+    /// Builds the window on <paramref name="session"/>; nothing is shown or started until <see cref="Open"/>. Throws when
+    /// the picture cannot be set up, leaving the session to the caller.
+    /// </summary>
     public ControlWindow(IControlSession session, string pcName, AppWindow mainWindow)
     {
         _session = session;
@@ -80,23 +86,39 @@ internal sealed partial class ControlWindow : Window
         _tuck.Interval = TuckDelay;
         _tuck.IsRepeating = false;
         _tuck.Tick += (_, _) => Tuck(away: true);
-
-        Activated += OnActivated;
-        Closed += OnClosed;
-        Clipboard.ContentChanged += OnClipboardChanged;
-        mainWindow.Destroying += OnMainWindowDestroying;
-
-        // Full screen fills the monitor the window is on, and this place is on the main window's.
-        AppWindow.MoveAndResize(BesideMainWindow());
-        ShowFullScreen(true);
-
-        Trace.TraceInformation("Controlling {0}.", pcName);
-        _ = Task.Run(SendAllAsync);
-        Run();
     }
 
     /// <summary>Raised once, on the UI thread, after the window has closed and the session is disposed: true when the session ended by itself (its stream or the connection is gone).</summary>
     public event Action<bool>? Ended;
+
+    /// <summary>
+    /// Shows the window full screen on the monitor the main window is on and starts control. Call once, after
+    /// subscribing to <see cref="Ended"/>: from here every end, a failure to show the window included, raises it.
+    /// </summary>
+    public void Open()
+    {
+        Trace.TraceInformation("Controlling {0}.", _pcName);
+        try
+        {
+            Activated += OnActivated;
+            Closed += OnClosed;
+            Clipboard.ContentChanged += OnClipboardChanged;
+            _mainWindow.Destroying += OnMainWindowDestroying;
+
+            // Full screen fills the monitor the window is on, and this place is on the main window's.
+            AppWindow.MoveAndResize(BesideMainWindow());
+            ShowFullScreen(true);
+            Activate();
+        }
+        catch (Exception e)
+        {
+            Finish(lost: false, $"the window could not be shown ({e.GetType().Name})");
+            return;
+        }
+
+        _ = Task.Run(SendAllAsync);
+        Run();
+    }
 
     /// <summary>
     /// Ends control, as the room asks when this PC is locked, removed or replaced by another: closes the window and
@@ -123,7 +145,9 @@ internal sealed partial class ControlWindow : Window
         var stopped = await Task.WhenAny(_videoRun, ReceiveMessagesAsync(_closing.Token));
         if (!_closing.IsCancellationRequested)
         {
-            Finish(lost: true, $"the connection was lost ({stopped.Exception?.GetBaseException().GetType().Name})");
+            Finish(lost: true, stopped.Exception is { } failure
+                ? $"the connection was lost ({failure.GetBaseException().GetType().Name})"
+                : "the connection was lost");
         }
     }
 
@@ -163,7 +187,10 @@ internal sealed partial class ControlWindow : Window
         }
     }
 
-    /// <summary>The one way control ends: the keys still down are let go, the window closes once the picture is off it, then the session goes.</summary>
+    /// <summary>
+    /// The one way control ends, run at most once: the keys and buttons still down are let go, the window closes once
+    /// the picture is off it, then the session goes and <see cref="Ended"/> is raised, whichever earlier step failed.
+    /// </summary>
     private async void Finish(bool lost, string why)
     {
         if (_finished)
@@ -172,13 +199,17 @@ internal sealed partial class ControlWindow : Window
         }
 
         _finished = true;
-        _keyboard.Dispose();
+        Step(() =>
+        {
+            _keyboard.Dispose();
+            ReleaseButtons();
+        });
         _outbox.Writer.TryComplete();
-        RememberPlace();
-        Clipboard.ContentChanged -= OnClipboardChanged;
-        _mainWindow.Destroying -= OnMainWindowDestroying;
-        _tuck.Stop();
-        _closing.Cancel();
+        Step(RememberPlace);
+        Step(() => Clipboard.ContentChanged -= OnClipboardChanged);
+        Step(() => _mainWindow.Destroying -= OnMainWindowDestroying);
+        Step(_tuck.Stop);
+        Step(_closing.Cancel);
         try
         {
             await _videoRun;
@@ -188,10 +219,13 @@ internal sealed partial class ControlWindow : Window
             // Cancelled, or the session's own end, which why already gives.
         }
 
-        _video.Dispose();
-        ShowPointer(true);
-        _mayClose = true;
-        Close();
+        Step(_video.Dispose);
+        Step(() => ShowPointer(true));
+        Step(() =>
+        {
+            _mayClose = true;
+            Close();
+        });
         try
         {
             await _session.DisposeAsync();
@@ -203,6 +237,19 @@ internal sealed partial class ControlWindow : Window
 
         Trace.TraceInformation("Control of {0} ended: {1}.", _pcName, why);
         Ended?.Invoke(lost);
+    }
+
+    // A step of Finish that fails is logged and the rest still run: the session must be disposed and Ended raised.
+    private void Step(Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch (Exception e)
+        {
+            Trace.TraceWarning("A step of ending control of {0} failed: {1}.", _pcName, e.GetType().Name);
+        }
     }
 
     private void OnClosed(object sender, WindowEventArgs args)
@@ -323,6 +370,7 @@ internal sealed partial class ControlWindow : Window
         if (!_focused || _finished)
         {
             _keyboard.Stop();
+            ReleaseButtons();
             return;
         }
 
@@ -421,10 +469,29 @@ internal sealed partial class ControlWindow : Window
             if (change.Down)
             {
                 Picture.CapturePointer(e.Pointer);
+                _buttonsDown.Add(change.Button);
+            }
+            else
+            {
+                _buttonsDown.Remove(change.Button);
             }
 
             Send(new PointerButton(change.Button, change.Down));
         }
+    }
+
+    // After a normal release nothing is left down; a capture taken away mid-press leaves buttons down over there.
+    private void Picture_PointerCaptureLost(object sender, PointerRoutedEventArgs e) => ReleaseButtons();
+
+    /// <summary>Sends an up for every mouse button still down on the agent PC.</summary>
+    private void ReleaseButtons()
+    {
+        foreach (var button in _buttonsDown)
+        {
+            Send(new PointerButton(button, Down: false));
+        }
+
+        _buttonsDown.Clear();
     }
 
     private void Picture_PointerWheelChanged(object sender, PointerRoutedEventArgs e)

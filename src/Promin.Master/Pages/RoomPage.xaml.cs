@@ -347,7 +347,7 @@ public sealed partial class RoomPage : Page
             ViewModel.ControlEnded(deviceId, lost);
         };
         _controlWindow = window;
-        window.Activate();
+        window.Open();
     });
 
     /// <summary>Runs a handler's work so that nothing it throws reaches the dispatcher.</summary>
