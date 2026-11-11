@@ -8,8 +8,11 @@ namespace Promin.Agent;
 /// <summary>
 /// <see cref="IAgentConnection"/> over a pinned console PC's <see cref="QuicChannel"/>. The console PC opens every
 /// bidirectional stream and speaks first on it, and its first message says what the stream is: a send begins with
-/// <see cref="SendFiles"/>, the lock stream with <see cref="WatchLock"/>, and the first stream to begin with anything
-/// else is the control stream.
+/// <see cref="SendFiles"/>, the lock stream with <see cref="WatchLock"/>, a remote stream with <see cref="StartControl"/>,
+/// and the first stream to begin with anything else is the control stream. A connection has one control stream and one
+/// lock stream; the console PC may open a remote stream again after the previous one closed, and one that arrives
+/// while the previous is still waiting to be accepted is aborted. The wait for each kind fails with what ended the
+/// connection.
 /// </summary>
 internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnection, IAsyncDisposable
 {
@@ -21,6 +24,7 @@ internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnectio
     private readonly TaskCompletionSource<ControlMessage> _firstControlMessage = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Channel<IIncomingSend> _sends = Channel.CreateUnbounded<IIncomingSend>();
     private readonly Channel<QuicControlChannel> _lockStreams = Channel.CreateBounded<QuicControlChannel>(1);
+    private readonly Channel<QuicControlChannel> _remoteStreams = Channel.CreateBounded<QuicControlChannel>(1);
     private Task? _sorting;
     private QuicControlChannel? _control;
     private QuicControlChannel? _lockStream;
@@ -53,6 +57,12 @@ internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnectio
         return await _lockStreams.Reader.ReadAsync(ct).ConfigureAwait(false);
     }
 
+    public async Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct)
+    {
+        StartSorting();
+        return await _remoteStreams.Reader.ReadAsync(ct).ConfigureAwait(false);
+    }
+
     public ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct) => channel.ReceiveVideoFrameAsync(ct);
 
     // Only ever called after a message was received, so the stream is there; sends and receives do not block each other.
@@ -76,6 +86,11 @@ internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnectio
         while (_sends.Reader.TryRead(out var send))
         {
             await send.DisposeAsync().ConfigureAwait(false);
+        }
+
+        while (_remoteStreams.Reader.TryRead(out var remote))
+        {
+            await remote.DisposeAsync().ConfigureAwait(false);
         }
 
         if (_control is not null)
@@ -121,7 +136,16 @@ internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnectio
                         _lockStreams.Writer.TryWrite(stream);
                         break;
 
-                    case { } first when first is not WatchLock && _control is null:
+                    case StartControl:
+                        if (!_remoteStreams.Writer.TryWrite(stream))
+                        {
+                            stream.Abort(QuicControlChannel.CorruptFrameErrorCode);
+                            await stream.DisposeAsync().ConfigureAwait(false);
+                        }
+
+                        break;
+
+                    case { } first when first is not (WatchLock or StartControl) && _control is null:
                         _control = stream;
                         _firstControlMessage.TrySetResult(first);
                         break;
@@ -142,6 +166,7 @@ internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnectio
             _ = _firstControlMessage.Task.Exception;
             _sends.Writer.TryComplete(ended);
             _lockStreams.Writer.TryComplete(ended);
+            _remoteStreams.Writer.TryComplete(ended);
         }
     }
 

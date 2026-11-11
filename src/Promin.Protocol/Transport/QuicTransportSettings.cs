@@ -82,12 +82,11 @@ public static class QuicTransportSettings
 
     /// <summary>
     /// Bidirectional credit the <b>agent</b> grants the master, which is the side that opens the
-    /// control stream and every file send. Control messages need exactly one bidirectional stream,
-    /// and a send uses one more for as long as it lasts. Four leaves room for a reconnect whose
-    /// replacement control stream overlaps the old one briefly, or a second send while the agent
-    /// refuses it, without ever granting enough credit for a peer to open streams as a DoS.
+    /// control stream, the lock stream, the remote stream and every file send. Five is one of each
+    /// of the first three, a send, and one spare for a reconnect whose replacement stream overlaps
+    /// the old one briefly, without ever granting enough credit for a peer to open streams as a DoS.
     /// </summary>
-    public const int MaxInboundBidirectionalStreams = 4;
+    public const int MaxInboundBidirectionalStreams = 5;
 
     /// <summary>
     /// Bidirectional credit the <b>master</b> grants an agent: none. The master opens the control
@@ -111,12 +110,12 @@ public static class QuicTransportSettings
     public const int AgentMaxInboundUnidirectionalStreams = 256;
 
     /// <summary>
-    /// Inbound credit the <b>master</b> grants an agent on an ordinary connection: four streams, for screen
-    /// pictures. The agent sends one picture at a time and waits for it to arrive, so one is in use; the rest is
-    /// slack for a stream whose close is still being acknowledged. Each is at most <see cref="QuicChannel.MaxPictureBytes"/>,
-    /// so an agent PC can make the presenter's PC buffer at most 4 MB.
+    /// Inbound credit the <b>master</b> grants an agent on an ordinary connection: 32 streams, one second of control
+    /// video at 30 fps (screen pictures use one at a time). Each is at most <see cref="QuicChannel.MaxVideoFrameBytes"/>
+    /// and the connection reads at most <see cref="MaxConcurrentInboundVideoStreams"/> into memory at once, so an
+    /// agent PC can make the presenter's PC buffer at most 8 x 4 MB.
     /// </summary>
-    public const int MasterMaxInboundUnidirectionalStreams = 4;
+    public const int MasterMaxInboundUnidirectionalStreams = 32;
 
     /// <summary>Inbound unidirectional credit the master grants on a <b>pairing</b> connection: none. Nothing travels agent to master while pairing.</summary>
     public const int MasterPairingMaxInboundUnidirectionalStreams = 0;

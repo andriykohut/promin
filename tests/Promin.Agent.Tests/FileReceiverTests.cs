@@ -19,6 +19,7 @@ public class FileReceiverTests
         public Task<IIncomingSend> AcceptSendAsync(CancellationToken ct) => _sends.Reader.ReadAsync(ct).AsTask();
 
         public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
+        public Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
 
         public Task<ControlMessage> ReceiveControlAsync(CancellationToken ct) => throw new NotSupportedException();
 

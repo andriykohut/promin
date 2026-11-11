@@ -312,9 +312,10 @@ public sealed class QuicMasterConnector
             ? deviceId
             : null;
 
-        // An ordinary connection reads the agent's screen pictures, keeping only the newest one unread.
+        // An ordinary connection reads the agent's tagged streams (pictures and control video); AgentStreamDemux keeps
+        // only the newest picture.
         return ordinary
-            ? new QuicChannel(connection, pinnedDeviceId, inboundFrameQueueCapacity: 1, acceptsStreams: true, maxInboundFrameBytes: QuicChannel.MaxPictureBytes)
+            ? new QuicChannel(connection, pinnedDeviceId, inboundFrameQueueCapacity: 8, acceptsStreams: true, maxInboundFrameBytes: QuicChannel.MaxVideoFrameBytes)
             : new QuicChannel(connection, pinnedDeviceId, acceptsStreams: false);
     }
 

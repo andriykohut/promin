@@ -20,6 +20,7 @@ public class LockLinkTests
     private sealed class FakeConnection(FakeChannel channel) : IAgentConnection
     {
         public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => Task.FromResult<IControlChannel>(channel);
+        public Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
 
         public Task<IIncomingSend> AcceptSendAsync(CancellationToken ct) => throw new NotSupportedException();
 

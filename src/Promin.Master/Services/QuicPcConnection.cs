@@ -11,6 +11,7 @@ namespace Promin.Master.Services;
 /// </summary>
 public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
 {
+    private readonly AgentStreamDemux _streams = new(channel.ReceiveVideoFrameAsync);
     private readonly object _gate = new();
     private readonly CancellationTokenSource _closing = new();
     private Task<ConsoleControl>? _control;
@@ -18,7 +19,7 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
 
     public QuicChannel Channel => channel;
 
-    public ValueTask<byte[]> ReceivePictureAsync(CancellationToken ct) => channel.ReceiveVideoFrameAsync(ct);
+    public ValueTask<byte[]> ReceivePictureAsync(CancellationToken ct) => _streams.ReceivePictureAsync(ct);
 
     /// <summary>The control stream, opened by the first broadcast on this connection. A failed open is tried again next time.</summary>
     public Task<ConsoleControl> ControlAsync(CancellationToken ct)

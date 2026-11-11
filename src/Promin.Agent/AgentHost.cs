@@ -313,7 +313,7 @@ internal static class AgentHost
                         : Task.Run(
                             () => new PictureSender(
                                 openScreenPictures,
-                                (jpeg, sendCt) => channel.SendVideoFrameAsync(jpeg, sendCt),
+                                (jpeg, sendCt) => channel.SendVideoFrameAsync(AgentStream.Tag(AgentStream.Picture, jpeg), sendCt),
                                 log.Write,
                                 TimeProvider.System).RunAsync(stopPictures.Token),
                             CancellationToken.None);
