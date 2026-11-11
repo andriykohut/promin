@@ -35,6 +35,26 @@ public class ClipboardRelayTests
         Assert.Null(relay.OnViewFocused("x"));
     }
 
+    [Fact]
+    public void TextSentBefore_IsSentAgain_OnceTheOtherPcHasCopiedSomethingElse()
+    {
+        var relay = new ClipboardRelay();
+        Assert.Equal("a", relay.OnLocalCopy("a", true));
+        relay.OnRemoteText("b");
+
+        Assert.Equal("a", relay.OnLocalCopy("a", true));
+    }
+
+    [Fact]
+    public void TextFromTheOtherPc_IsSentBack_OnceSomethingElseWasSentAfterIt()
+    {
+        var relay = new ClipboardRelay();
+        relay.OnRemoteText("x");
+        Assert.Equal("y", relay.OnLocalCopy("y", true));
+
+        Assert.Equal("x", relay.OnLocalCopy("x", true));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
