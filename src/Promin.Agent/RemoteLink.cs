@@ -57,10 +57,11 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
         {
             if (mayControl && screenLock is not null && parts is not null)
             {
-                await previews.PauseAsync().ConfigureAwait(false);
-                paused = true;
                 try
                 {
+                    // Set first: a pause that throws may have stopped the pictures all the same.
+                    paused = true;
+                    await previews.PauseAsync().ConfigureAwait(false);
                     video = parts.OpenVideo(sendFrame);
                     tab = parts.OpenTab();
                     controlled = tab.Show() && screenLock.TryStartControl();
@@ -159,17 +160,16 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
         void OnCopied(string text) => copied.Writer.TryWrite(text);
         clipboard.Copied += OnCopied;
 
-        var running = video.RunAsync(ending.Token);
-        var tasks = new Dictionary<Task, string>
-        {
-            [running] = "the video stopped",
-            [Task.Run(() => ReceiveAsync(stream, video, clipboard, ending.Token), CancellationToken.None)] = "the stream ended",
-            [Task.Run(() => ReportCopiesAsync(copied.Reader, SendAsync, ending.Token), CancellationToken.None)] = "the clipboard report stopped",
-            [Task.Run(() => ReportDesktopAsync(SendAsync, ending.Token), CancellationToken.None)] = "the desktop report stopped",
-        };
+        var tasks = new Dictionary<Task, string>();
         try
         {
+            // Started goes out before the video runs, and the video runs on a pool thread like the other loops, not on
+            // this one: on a still screen its loop waits out each tick in the source and goes round without yielding.
             await SendAsync(new ControlState(ControlStatus.Started)).ConfigureAwait(false);
+            tasks[Task.Run(() => video.RunAsync(ending.Token), CancellationToken.None)] = "the video stopped";
+            tasks[Task.Run(() => ReceiveAsync(stream, video, clipboard, ending.Token), CancellationToken.None)] = "the stream ended";
+            tasks[Task.Run(() => ReportCopiesAsync(copied.Reader, SendAsync, ending.Token), CancellationToken.None)] = "the clipboard report stopped";
+            tasks[Task.Run(() => ReportDesktopAsync(SendAsync, ending.Token), CancellationToken.None)] = "the desktop report stopped";
             var first = await Task.WhenAny(tasks.Keys).ConfigureAwait(false);
             var failure = first.Exception?.GetBaseException();
             return failure is null || failure is OperationCanceledException

@@ -51,6 +51,7 @@ public class RemoteLinkTests
             Clipboard = new FakeClipboard(Calls);
             Video = new FakeVideo(Calls);
             Injector = new FakeInjector(Calls);
+            Previews = new FakePreviews(Calls);
             if (locked)
             {
                 Screen.Lock("x");
@@ -72,7 +73,7 @@ public class RemoteLinkTests
                 Injector,
                 () => _onDesktop,
                 TimeSpan.FromMilliseconds(10));
-            Link = new RemoteLink(withParts ? parts : null, withLock ? Screen : null, new FakePreviews(Calls), mayControl, _log.Add);
+            Link = new RemoteLink(withParts ? parts : null, withLock ? Screen : null, Previews, mayControl, _log.Add);
         }
 
         public List<string> Calls { get; } = [];
@@ -83,6 +84,7 @@ public class RemoteLinkTests
         public FakeClipboard Clipboard { get; }
         public FakeVideo Video { get; }
         public FakeInjector Injector { get; }
+        public FakePreviews Previews { get; }
         public Task? Running { get; private set; }
         public RemoteLink Link { get; }
         public IReadOnlyList<string> Log => _log;
@@ -222,6 +224,38 @@ public class RemoteLinkTests
                 ? ["pause", "video", "resume"]
                 : ["pause", "video", "tab:show", "tab:hide", "video:dispose", "resume"],
             rig.Calls);
+        Assert.False(rig.Input.Held);
+    }
+
+    [Fact]
+    public async Task APauseThatThrows_IsRefused_AndTheNextStartStillWorks()
+    {
+        using var rig = new Rig();
+        rig.Previews.ThrowOnPause = true;
+        rig.Start();
+        var channel = rig.Open();
+
+        Assert.Equal(ControlStatus.Refused, (await rig.NextStateAsync(channel)).Status);
+        await rig.WaitForAsync(() => rig.Calls.Contains("resume"));
+        Assert.Equal(["pause", "resume"], rig.Calls);
+        Assert.Contains(rig.Log, line => line.Contains("ObjectDisposedException"));
+
+        rig.Previews.ThrowOnPause = false;
+        Assert.Equal(ControlStatus.Started, (await rig.NextStateAsync(rig.Open())).Status);
+    }
+
+    [Fact]
+    public async Task AVideoThatHoldsItsThread_HoldsBackNeitherStartedNorInput()
+    {
+        using var rig = new Rig();
+        rig.Video.Blocks = true;
+        var channel = await rig.StartedAsync();
+
+        await channel.FromConsole.Writer.WriteAsync(new PointerMove(1, 2), TestContext.Current.CancellationToken);
+        await rig.WaitForAsync(() => rig.Calls.Contains("move:1,2"));
+
+        channel.FromConsole.Writer.Complete();
+        await rig.WaitForAsync(() => rig.Calls.Contains("resume"));
         Assert.False(rig.Input.Held);
     }
 

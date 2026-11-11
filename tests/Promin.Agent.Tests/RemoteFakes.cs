@@ -54,6 +54,9 @@ internal sealed class FakeVideo(List<string> calls) : IControlVideo
 
     public bool Running { get; private set; }
 
+    /// <summary>Makes <see cref="RunAsync"/> hold its caller's thread until cancelled, as the loop does on a still screen.</summary>
+    public bool Blocks { get; set; }
+
     public void Fail(Exception failure) => _failure.SetException(failure);
 
     public void RequestKeyframe() => Keyframes++;
@@ -63,6 +66,12 @@ internal sealed class FakeVideo(List<string> calls) : IControlVideo
         Running = true;
         try
         {
+            if (Blocks)
+            {
+                ct.WaitHandle.WaitOne();
+                return;
+            }
+
             await _failure.Task.WaitAsync(ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             if (_failure.Task.IsFaulted)
             {
@@ -109,10 +118,13 @@ internal sealed class FakeInjector(List<string> calls) : IInputInjector
 /// <summary>A preview switch that records its calls.</summary>
 internal sealed class FakePreviews(List<string> calls) : IPreviewSwitch
 {
+    /// <summary>Makes <see cref="PauseAsync"/> throw, after it has recorded itself.</summary>
+    public bool ThrowOnPause { get; set; }
+
     public Task PauseAsync()
     {
         calls.Add("pause");
-        return Task.CompletedTask;
+        return ThrowOnPause ? throw new ObjectDisposedException("previews") : Task.CompletedTask;
     }
 
     public void Resume() => calls.Add("resume");
