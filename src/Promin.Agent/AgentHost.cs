@@ -336,6 +336,7 @@ internal static class AgentHost
                     using var stopRemote = CancellationTokenSource.CreateLinkedTokenSource(token);
                     var remoteLink = new RemoteLink(remote, screenLock, previews, mayControl: !onThisPc, log.Write)
                         .RunAsync(connection, (frame, sendCt) => channel.SendVideoFrameAsync(frame, sendCt), stopRemote.Token);
+
                     // A step of closing that throws is logged by type only, and the next one still runs: each lets go of
                     // something the next connection needs.
                     async Task StepAsync(Func<Task> step)

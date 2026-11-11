@@ -60,7 +60,8 @@ internal sealed class PreviewSwitch : IPreviewSwitch, IAsyncDisposable
                     await previous.ConfigureAwait(false);
                     await _run(running.Token).ConfigureAwait(false);
 
-                    // A run can end by itself (a send failed): letting go of it keeps Pause off the disposed source and lets Resume start another.
+                    // A run can end by itself (a send failed): letting go of it keeps Pause off the disposed source and
+                    // lets Resume start another.
                     lock (_gate)
                     {
                         if (_running == running)
