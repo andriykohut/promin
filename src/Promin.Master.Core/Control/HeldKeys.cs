@@ -13,7 +13,8 @@ public sealed class HeldKeys
         _down.Add(key with { Down = true });
     }
 
-    public void Up(KeyInput key) => Remove(key);
+    /// <summary>Forgets the key. True when it was down, so its up is due on the agent PC.</summary>
+    public bool Up(KeyInput key) => Remove(key) > 0;
 
     /// <summary>An up for each key still down, in the order they went down. Nothing is held afterwards.</summary>
     public IReadOnlyList<KeyInput> ReleaseAll()
@@ -23,6 +24,6 @@ public sealed class HeldKeys
         return ups;
     }
 
-    private void Remove(KeyInput key) =>
+    private int Remove(KeyInput key) =>
         _down.RemoveAll(held => held.VirtualKey == key.VirtualKey && held.Extended == key.Extended);
 }

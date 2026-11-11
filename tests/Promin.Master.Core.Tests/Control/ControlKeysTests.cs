@@ -15,4 +15,16 @@ public class ControlKeysTests
     [InlineData(0x41, true, false, false, true)]
     public void GoesToRemote(int vk, bool alt, bool ctrl, bool fullScreen, bool expected) =>
         Assert.Equal(expected, ControlKeys.GoesToRemote(vk, alt, ctrl, fullScreen));
+
+    [Theory]
+    [InlineData(0xA2, false, true)]
+    [InlineData(0xA3, false, true)]
+    [InlineData(0xA4, false, true)]
+    [InlineData(0xA5, false, true)]
+    [InlineData(0xA4, true, false)]
+    [InlineData(0xA2, true, false)]
+    [InlineData(0xA0, false, false)]
+    [InlineData(0x41, false, false)]
+    public void AlsoReachesThisPc(int vk, bool fullScreen, bool expected) =>
+        Assert.Equal(expected, ControlKeys.AlsoReachesThisPc(vk, fullScreen));
 }

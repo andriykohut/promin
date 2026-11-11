@@ -40,6 +40,12 @@ public sealed class JsonWallSettings : IWallSettings
         set => Save(_stored with { Language = value });
     }
 
+    public string? ControlWindowPlacement
+    {
+        get => _stored.ControlWindowPlacement;
+        set => Save(_stored with { ControlWindowPlacement = value });
+    }
+
     private static Stored Load(string path)
     {
         try
@@ -67,5 +73,6 @@ public sealed class JsonWallSettings : IWallSettings
         }
     }
 
-    private sealed record Stored(string? QualityLabel = null, string? SharpnessName = null, string? Language = null);
+    private sealed record Stored(
+        string? QualityLabel = null, string? SharpnessName = null, string? Language = null, string? ControlWindowPlacement = null);
 }

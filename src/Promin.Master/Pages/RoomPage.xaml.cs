@@ -1,13 +1,16 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
+using Promin.Master.Control;
 using Promin.Master.Controls;
+using Promin.Master.Core.Control;
 using Promin.Master.Core.Sending;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Messages;
 using Promin.Protocol.Transport;
 using Promin.Protocol.Video;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -37,6 +40,10 @@ public sealed partial class RoomPage : Page
     // Reading the network interfaces is slow and the wall asks once per PC on every tick.
     private IReadOnlyList<IPAddress> _ownAddresses = [];
     private DateTimeOffset _ownAddressesReadAt = DateTimeOffset.MinValue;
+
+    // One control window at most; a request while a start is under way is dropped, so two sessions cannot both open one.
+    private ControlWindow? _controlWindow;
+    private bool _startingControl;
 
     private IReadOnlyList<IPAddress> OwnAddresses()
     {
@@ -86,6 +93,7 @@ public sealed partial class RoomPage : Page
         _pulse.Children.Add(fade);
 
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+        ViewModel.ControlMustEnd += () => _controlWindow?.End();
     }
 
     public RoomWallViewModel ViewModel { get; }
@@ -259,6 +267,7 @@ public sealed partial class RoomPage : Page
             tile.StopSendingRequested += ViewModel.StopSendingTo;
             tile.RenameRequested += Rename;
             tile.RemoveRequested += Remove;
+            tile.ControlRequested += ControlPc;
         }
     }
 
@@ -270,6 +279,7 @@ public sealed partial class RoomPage : Page
             tile.StopSendingRequested -= ViewModel.StopSendingTo;
             tile.RenameRequested -= Rename;
             tile.RemoveRequested -= Remove;
+            tile.ControlRequested -= ControlPc;
         }
     }
 
@@ -287,6 +297,57 @@ public sealed partial class RoomPage : Page
         {
             ViewModel.Remove(tile);
         }
+    });
+
+    private async void ControlPc(PcTile tile) => await Guarded(async () =>
+    {
+        if (_startingControl)
+        {
+            return;
+        }
+
+        IControlSession? session;
+        _startingControl = true;
+        try
+        {
+            session = await ViewModel.StartControlAsync(tile);
+        }
+        finally
+        {
+            _startingControl = false;
+        }
+
+        if (session is null)
+        {
+            return;
+        }
+
+        var deviceId = tile.DeviceId;
+        ControlWindow window;
+        try
+        {
+            window = new ControlWindow(session, tile.Name, AppWindow.GetFromWindowId(XamlRoot.ContentIslandEnvironment.AppWindowId));
+        }
+        catch (Exception e)
+        {
+            // Without the window nothing would end the session, and the other PC would stay blocked.
+            Trace.TraceError("The control window for {0} could not be opened: {1}", tile.Name, e);
+            await session.DisposeAsync();
+            ViewModel.ControlEnded(deviceId, lost: false);
+            return;
+        }
+
+        window.Ended += lost =>
+        {
+            if (_controlWindow == window)
+            {
+                _controlWindow = null;
+            }
+
+            ViewModel.ControlEnded(deviceId, lost);
+        };
+        _controlWindow = window;
+        window.Activate();
     });
 
     /// <summary>Runs a handler's work so that nothing it throws reaches the dispatcher.</summary>

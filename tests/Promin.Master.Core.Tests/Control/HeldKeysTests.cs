@@ -20,6 +20,17 @@ public class HeldKeysTests
     }
 
     [Fact]
+    public void Up_SaysWhetherTheKeyWasDown()
+    {
+        var held = new HeldKeys();
+        held.Down(Key(0x41, true));
+
+        Assert.True(held.Up(Key(0x41, false)));
+        Assert.False(held.Up(Key(0x41, false)));
+        Assert.False(held.Up(Key(0x42, false)));
+    }
+
+    [Fact]
     public void ARepeatedDown_IsReleasedOnce()
     {
         var held = new HeldKeys();
