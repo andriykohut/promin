@@ -28,6 +28,13 @@ public partial class App : Application
             Trace.AutoFlush = true;
         }
 
+        // Three sources, because each sees crashes the others do not: the UI thread, any other thread, and a
+        // task nobody awaited. None of them stops the crash.
+        UnhandledException += (_, e) => Trace.TraceError("Unhandled exception on the UI thread: {0}", e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Trace.TraceError("Unhandled exception: {0}", e.ExceptionObject);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+            Trace.TraceError("A task failed and nobody was waiting for it: {0}", e.Exception);
+
         Trace.TraceInformation("Promin console {0} started.", typeof(App).Assembly.GetName().Version);
 
         // Before anything builds a text: the language holds for the whole run.
