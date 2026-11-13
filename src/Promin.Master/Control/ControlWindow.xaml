@@ -45,10 +45,14 @@
                 Style="{StaticResource AccentButtonStyle}" />
         </Grid>
 
-        <!-- The other PC's screen. Its own pointer is drawn into the picture, so this PC's is hidden over it. -->
+        <!--
+            The other PC's screen. Its own pointer is drawn into the picture, so this PC's is hidden over it. The
+            transparent background makes the panel hit-testable: without one it gets no pointer events at all.
+        -->
         <SwapChainPanel
             x:Name="Picture"
             Grid.Row="1"
+            Background="Transparent"
             CompositionScaleChanged="Picture_CompositionScaleChanged"
             PointerCaptureLost="Picture_PointerCaptureLost"
             PointerEntered="Picture_PointerEntered"
