@@ -4,6 +4,7 @@ using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
 using Promin.Master.Core.Tests.TestDoubles;
 using Promin.Master.Core.Wall;
+using Promin.Protocol.Messages;
 
 namespace Promin.Master.Core.Tests.Wall;
 
@@ -12,19 +13,22 @@ public sealed class RoomConnectionsTests
     private sealed class FakeConnection : IPcConnection
     {
         private readonly Channel<byte[]> _pictures = Channel.CreateUnbounded<byte[]>();
-        private readonly Channel<bool> _states = Channel.CreateUnbounded<bool>();
+        private readonly Channel<ControlMessage> _states = Channel.CreateUnbounded<ControlMessage>();
 
         public bool Disposed { get; private set; }
         public bool NeverCloses { get; init; }
         public bool FailSends { get; init; }
         public List<string> Locks { get; } = [];
         public int Unlocks { get; private set; }
+        public List<PowerAction> Powers { get; } = [];
         public IControlSession? Session { get; init; }
         public bool RefuseControl { get; init; }
 
         public void Send(byte[] picture) => _pictures.Writer.TryWrite(picture);
 
-        public void SendReport(bool locked) => _states.Writer.TryWrite(locked);
+        public void SendReport(bool locked) => _states.Writer.TryWrite(new LockState(locked));
+
+        public void SendPowerAnswer(bool accepted) => _states.Writer.TryWrite(new PowerState(accepted));
 
         public void EndLockStream() => _states.Writer.TryComplete();
 
@@ -32,7 +36,7 @@ public sealed class RoomConnectionsTests
 
         public ValueTask<byte[]> ReceivePictureAsync(CancellationToken ct) => _pictures.Reader.ReadAsync(ct);
 
-        public Task<bool> ReceiveLockStateAsync(CancellationToken ct) => _states.Reader.ReadAsync(ct).AsTask();
+        public Task<ControlMessage> ReceiveLockStreamAsync(CancellationToken ct) => _states.Reader.ReadAsync(ct).AsTask();
 
         public Task SendLockAsync(string message, CancellationToken ct)
         {
@@ -56,6 +60,16 @@ public sealed class RoomConnectionsTests
             return Task.CompletedTask;
         }
 
+        public Task SendPowerAsync(PowerAction action, CancellationToken ct)
+        {
+            lock (Powers)
+            {
+                Powers.Add(action);
+            }
+
+            return Task.CompletedTask;
+        }
+
         public Task<IControlSession> StartControlAsync(CancellationToken ct) =>
             RefuseControl ? throw new ControlRefusedException() : Task.FromResult(Session!);
 
@@ -74,6 +88,7 @@ public sealed class RoomConnectionsTests
     private readonly List<string> _ended = [];
     private readonly List<(string Id, byte[] Picture)> _pictures = [];
     private readonly List<(string Id, bool Locked)> _lockReports = [];
+    private readonly List<(string Id, bool Accepted)> _powerAnswers = [];
     private Func<RoomMember, Task<FakeConnection>> _answer = _ => Task.FromResult(new FakeConnection());
 
     private RoomConnections<FakeConnection> Build()
@@ -109,6 +124,13 @@ public sealed class RoomConnectionsTests
             lock (_lockReports)
             {
                 _lockReports.Add((id, locked));
+            }
+        };
+        connections.PowerAnswered += (id, accepted) =>
+        {
+            lock (_powerAnswers)
+            {
+                _powerAnswers.Add((id, accepted));
             }
         };
         return connections;
@@ -266,6 +288,48 @@ public sealed class RoomConnectionsTests
         await Eventually(() => connection.Locks.Count == 1, "the lock sent");
         Assert.Equal(["Back in five"], connection.Locks);
         Assert.Equal(1, connection.Unlocks);
+    }
+
+    [Fact]
+    public async Task APowerAnswer_IsRaisedWithThePcsId_BetweenLockReports()
+    {
+        var connection = new FakeConnection();
+        _answer = _ => Task.FromResult(connection);
+        await using var connections = Build();
+        connections.Want(Pc());
+
+        connection.SendReport(true);
+        connection.SendPowerAnswer(true);
+        connection.SendReport(false);
+
+        await Eventually(() => _lockReports.Count == 2 && _powerAnswers.Count == 1, "two lock reports and a power answer");
+        Assert.Equal([("device-01", true)], _powerAnswers);
+        Assert.Equal([("device-01", true), ("device-01", false)], _lockReports);
+    }
+
+    [Fact]
+    public async Task Power_GoesToThePcsConnection()
+    {
+        var connection = new FakeConnection();
+        _answer = _ => Task.FromResult(connection);
+        await using var connections = Build();
+        connections.Want(Pc());
+        await connections.GetAsync(Pc(), CancellationToken.None);
+
+        connections.Power("device-01", PowerAction.Restart);
+
+        await Eventually(() => connection.Powers.Count == 1, "the order sent");
+        Assert.Equal([PowerAction.Restart], connection.Powers);
+    }
+
+    [Fact]
+    public async Task Power_WithNoConnection_DoesNothing()
+    {
+        await using var connections = Build();
+
+        connections.Power("device-01", PowerAction.ShutDown);
+
+        Assert.Empty(_dials);
     }
 
     [Fact]

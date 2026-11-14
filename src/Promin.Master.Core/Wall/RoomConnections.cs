@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
+using Promin.Protocol.Messages;
 
 namespace Promin.Master.Core.Wall;
 
@@ -10,14 +11,20 @@ public interface IPcConnection : IAsyncDisposable
     /// <summary>The next screen picture: JPEG bytes, or empty when the PC's screen is not available. Throws once the connection has ended.</summary>
     ValueTask<byte[]> ReceivePictureAsync(CancellationToken ct);
 
-    /// <summary>The next lock state the PC reports: true when it is locked. Opens the lock stream on first use. Throws once the stream or the connection has ended.</summary>
-    Task<bool> ReceiveLockStateAsync(CancellationToken ct);
+    /// <summary>
+    /// The next <see cref="LockState"/> or <see cref="PowerState"/> the PC sends on the lock stream. Opens the lock stream on
+    /// first use. Throws once the stream or the connection has ended.
+    /// </summary>
+    Task<ControlMessage> ReceiveLockStreamAsync(CancellationToken ct);
 
     /// <summary>Asks the PC to lock, showing <paramref name="message"/>. Opens the lock stream on first use.</summary>
     Task SendLockAsync(string message, CancellationToken ct);
 
     /// <summary>Asks the PC to unlock. Opens the lock stream on first use.</summary>
     Task SendUnlockAsync(CancellationToken ct);
+
+    /// <summary>Orders the PC to shut down or restart. Opens the lock stream on first use.</summary>
+    Task SendPowerAsync(PowerAction action, CancellationToken ct);
 
     /// <summary>Opens a remote stream and starts controlling the PC. Throws <see cref="ControlRefusedException"/> when the PC refuses and <see cref="TimeoutException"/> when it does not answer within 10 seconds.</summary>
     Task<IControlSession> StartControlAsync(CancellationToken ct);
@@ -35,6 +42,9 @@ public interface IRoomConnections
     /// <summary>Raised on any thread with a PC's id and whether it reports itself locked: after it connects, after each lock or unlock it was sent, and when a lock comes back by itself.</summary>
     event Action<string, bool>? LockReported;
 
+    /// <summary>Raised on any thread with a PC's id and its answer to <see cref="Power"/>: true when Windows took the order.</summary>
+    event Action<string, bool>? PowerAnswered;
+
     /// <summary>The PC is online at this address: dial it, unless it is connected, being dialled, or was tried less than five seconds ago.</summary>
     void Want(RoomMember pc);
 
@@ -46,6 +56,9 @@ public interface IRoomConnections
 
     /// <summary>Asks the PC to unlock. Completes without effect when the PC has no open connection, and never throws.</summary>
     Task UnlockAsync(string deviceId);
+
+    /// <summary>Orders the PC to shut down or restart. Does nothing when the PC has no open connection, and never throws; the answer is <see cref="PowerAnswered"/>.</summary>
+    void Power(string deviceId, PowerAction action);
 
     /// <summary>Starts controlling the PC. Null when the PC has no open connection, refuses, or does not answer; never throws.</summary>
     Task<IControlSession?> StartControlAsync(string deviceId);
@@ -91,6 +104,8 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
     public event Action<string>? Ended;
 
     public event Action<string, bool>? LockReported;
+
+    public event Action<string, bool>? PowerAnswered;
 
     public void Want(RoomMember pc)
     {
@@ -166,6 +181,9 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
 
     public Task UnlockAsync(string deviceId) =>
         SendAsync(deviceId, (connection, ct) => connection.SendUnlockAsync(ct));
+
+    public void Power(string deviceId, PowerAction action) =>
+        _ = SendAsync(deviceId, (connection, ct) => connection.SendPowerAsync(action, ct));
 
     public async Task<IControlSession?> StartControlAsync(string deviceId)
     {
@@ -305,8 +323,15 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
         {
             while (true)
             {
-                var locked = await connection.ReceiveLockStateAsync(entry.Cts.Token).ConfigureAwait(false);
-                LockReported?.Invoke(deviceId, locked);
+                switch (await connection.ReceiveLockStreamAsync(entry.Cts.Token).ConfigureAwait(false))
+                {
+                    case LockState { Locked: var locked }:
+                        LockReported?.Invoke(deviceId, locked);
+                        break;
+                    case PowerState { Accepted: var accepted }:
+                        PowerAnswered?.Invoke(deviceId, accepted);
+                        break;
+                }
             }
         }
         catch (Exception)
