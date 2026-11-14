@@ -8,11 +8,13 @@ namespace Promin.Agent;
 /// <summary>
 /// The lock stream of one console PC's connection: the console PC's lock and unlock messages are applied to this
 /// PC, and the state is sent back after the first connect, after each message and when the lock changes without a message
-/// (<see cref="ScreenLock.Changed"/>). The lock outlives the stream.
+/// (<see cref="ScreenLock.Changed"/>). The lock outlives the stream. The stream also carries the console PC's orders to
+/// shut down or restart (<see cref="PowerPc"/>), each answered with a <see cref="PowerState"/> before the lock state.
 /// </summary>
-/// <param name="mayLock">False when the console PC runs on this PC: it can unlock, never lock.</param>
+/// <param name="mayLock">False when the console PC runs on this PC: it can unlock, never lock, shut down or restart.</param>
+/// <param name="power">Asks Windows to shut down or restart; true when Windows took the order. Never throws.</param>
 /// <param name="log">Gets a line for each refused message, never its text.</param>
-internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Action<string> log)
+internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Func<PowerAction, bool> power, Action<string> log)
 {
     /// <summary>Runs until the stream or the connection ends or <paramref name="ct"/> is cancelled. Throws nothing; a failure that is not the end of the stream or connection is logged.</summary>
     public async Task RunAsync(IAgentConnection connection, CancellationToken ct)
@@ -49,7 +51,11 @@ internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Action<strin
                 await stream.SendAsync(new LockState(screenLock.IsLocked), ending.Token).ConfigureAwait(false);
                 if (await Task.WhenAny(received, report).ConfigureAwait(false) == received)
                 {
-                    Obey(await received.ConfigureAwait(false));
+                    if (Obey(await received.ConfigureAwait(false)) is { } answer)
+                    {
+                        await stream.SendAsync(answer, ending.Token).ConfigureAwait(false);
+                    }
+
                     received = stream.ReceiveAsync(ending.Token);
                 }
                 else
@@ -69,7 +75,8 @@ internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Action<strin
         }
     }
 
-    private void Obey(ControlMessage received)
+    /// <summary>Applies the message; returns the answer to send for it, or null when it has none.</summary>
+    private PowerState? Obey(ControlMessage received)
     {
         switch (received)
         {
@@ -84,6 +91,23 @@ internal sealed class LockLink(ScreenLock screenLock, bool mayLock, Action<strin
             case UnlockPc:
                 screenLock.Unlock();
                 break;
+            case PowerPc { Action: var action } when !mayLock || !Enum.IsDefined(action):
+                log(mayLock
+                    ? "An order to shut down or restart with an unknown action was refused."
+                    : "An order to shut down or restart from the console PC on this PC was refused.");
+                return new PowerState(Accepted: false);
+            case PowerPc { Action: var action }:
+                var accepted = power(action);
+                if (accepted)
+                {
+                    log(action == PowerAction.ShutDown
+                        ? "Shutting down at the console PC's request."
+                        : "Restarting at the console PC's request.");
+                }
+
+                return new PowerState(accepted);
         }
+
+        return null;
     }
 }

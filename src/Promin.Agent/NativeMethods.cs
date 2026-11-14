@@ -511,6 +511,52 @@ internal static class NativeMethods
     // TOKEN_INFORMATION_CLASS.TokenSessionId: retargets a duplicated token to another session.
     public const int TokenSessionId = 12;
 
+    // Switching on a privilege this process's token holds: TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY.
+    public const uint TOKEN_FOR_PRIVILEGE = 0x0020 | 0x0008;
+    public const uint SE_PRIVILEGE_ENABLED = 0x00000002;
+    public const string SE_SHUTDOWN_NAME = "SeShutdownPrivilege";
+
+    /// <summary>AdjustTokenPrivileges succeeds with this last error when the token does not hold the privilege.</summary>
+    public const int ERROR_NOT_ALL_ASSIGNED = 1300;
+
+    public const uint SHUTDOWN_FORCE_OTHERS = 0x00000001;
+    public const uint SHUTDOWN_FORCE_SELF = 0x00000002;
+    public const uint SHUTDOWN_RESTART = 0x00000004;
+    public const uint SHUTDOWN_POWEROFF = 0x00000008;
+    public const uint SHUTDOWN_INSTALL_UPDATES = 0x00000040;
+
+    // SHTDN_REASON_MAJOR_OTHER | SHTDN_REASON_MINOR_OTHER | SHTDN_REASON_FLAG_PLANNED: "Other (Planned)" in the event log.
+    public const uint SHTDN_REASON_OTHER_PLANNED = 0x80000000;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Luid
+    {
+        public uint LowPart;
+        public int HighPart;
+    }
+
+    /// <summary>TOKEN_PRIVILEGES holding exactly one privilege.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TokenPrivilege
+    {
+        public uint Count;
+        public Luid Luid;
+        public uint Attributes;
+    }
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool LookupPrivilegeValueW(string? systemName, string name, out Luid luid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AdjustTokenPrivileges(
+        nint token, [MarshalAs(UnmanagedType.Bool)] bool disableAll, ref TokenPrivilege newState, uint bufferLength, nint previousState, nint returnLength);
+
+    /// <summary>Returns 0 (ERROR_SUCCESS) when Windows took the order, or a Win32 error code.</summary>
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    public static extern uint InitiateShutdownW(string? machineName, string? message, uint gracePeriod, uint flags, uint reason);
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct StartupInfo
     {

@@ -38,7 +38,7 @@ public class LockLinkTests
         private readonly List<string> _calls = [];
         private readonly List<string> _log = [];
 
-        public Rig(bool mayLock = true, bool locked = false, Action? onShow = null)
+        public Rig(bool mayLock = true, bool locked = false, Action? onShow = null, bool powerAnswer = true)
         {
             Window = new FakeScreen(_calls) { OnShow = onShow };
             Screen = new ScreenLock(new LockFile(Path.Combine(_dir.Path, "lock"), _log.Add), Window, new FakeInput(_calls), new LockLog(_log.Add));
@@ -47,18 +47,33 @@ public class LockLinkTests
                 Screen.Lock("x");
             }
 
-            Running = new LockLink(Screen, mayLock, _log.Add).RunAsync(new FakeConnection(Channel), _stop.Token);
+            bool Power(PowerAction action)
+            {
+                Powers.Add(action);
+                return powerAnswer;
+            }
+
+            Running = new LockLink(Screen, mayLock, Power, _log.Add).RunAsync(new FakeConnection(Channel), _stop.Token);
         }
 
         public FakeChannel Channel { get; } = new();
         public FakeScreen Window { get; }
         public ScreenLock Screen { get; }
         public Task Running { get; }
+        public List<PowerAction> Powers { get; } = [];
         public IReadOnlyList<string> Calls => _calls;
         public IReadOnlyList<string> Log => _log;
 
         public async Task<LockState> NextStateAsync() =>
             Assert.IsType<LockState>(await Channel.ToConsole.Reader.ReadAsync(_stop.Token));
+
+        /// <summary>Reads the opening state, sends the order, and returns the answer that follows it.</summary>
+        public async Task<PowerState> SendPowerAsync(PowerPc order)
+        {
+            await NextStateAsync();
+            await Channel.FromConsole.Writer.WriteAsync(order);
+            return Assert.IsType<PowerState>(await Channel.ToConsole.Reader.ReadAsync(_stop.Token));
+        }
 
         public async Task<LockState> SendAsync(ControlMessage message)
         {
@@ -140,6 +155,54 @@ public class LockLinkTests
 
         Assert.False((await rig.SendAsync(new UnlockPc())).Locked);
         Assert.False(rig.Screen.IsLocked);
+    }
+
+    [Fact]
+    public async Task PowerPc_AsksWindows_AndAnswersYes()
+    {
+        using var rig = new Rig();
+
+        Assert.True((await rig.SendPowerAsync(new PowerPc(PowerAction.ShutDown))).Accepted);
+        Assert.Equal([PowerAction.ShutDown], rig.Powers);
+    }
+
+    [Fact]
+    public async Task PowerPc_WhenWindowsRefuses_AnswersNo()
+    {
+        using var rig = new Rig(powerAnswer: false);
+
+        Assert.False((await rig.SendPowerAsync(new PowerPc(PowerAction.Restart))).Accepted);
+        Assert.Equal([PowerAction.Restart], rig.Powers);
+    }
+
+    [Fact]
+    public async Task PowerPc_FromTheConsoleOnThisPc_IsRefused()
+    {
+        using var rig = new Rig(mayLock: false);
+
+        Assert.False((await rig.SendPowerAsync(new PowerPc(PowerAction.ShutDown))).Accepted);
+        Assert.Empty(rig.Powers);
+        Assert.Contains(rig.Log, line => line.Contains("refused"));
+    }
+
+    [Fact]
+    public async Task PowerPc_WithAnUnknownAction_IsRefused()
+    {
+        using var rig = new Rig();
+
+        Assert.False((await rig.SendPowerAsync(new PowerPc((PowerAction)7))).Accepted);
+        Assert.Empty(rig.Powers);
+        Assert.Contains(rig.Log, line => line.Contains("refused"));
+    }
+
+    [Fact]
+    public async Task PowerPc_IsFollowedByTheLockState()
+    {
+        using var rig = new Rig(locked: true);
+
+        await rig.SendPowerAsync(new PowerPc(PowerAction.Restart));
+
+        Assert.True((await rig.NextStateAsync()).Locked);
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Promin.MediaPipeline.Pictures;
 using Promin.Protocol;
 using Promin.Protocol.Discovery;
+using Promin.Protocol.Messages;
 using Promin.Protocol.Pairing;
 using Promin.Protocol.Transport;
 
@@ -41,7 +42,8 @@ internal sealed class QuicAgentListenerAdapter(QuicAgentListener listener) : IAg
 /// <c>OpenScreenPictures</c> is null in tests, which then take no pictures; <c>Person</c> is null in tests, which then
 /// never act as the signed-in person; <c>OpenScreenLock</c> is null in tests, which then never lock. <c>Time</c> is set
 /// in tests, which then move the clock themselves, and null on a PC, which uses the system clock. <c>Remote</c> is null
-/// in tests and on a windowed agent, which then refuse every remote stream.
+/// in tests and on a windowed agent, which then refuse every remote stream. <c>Power</c> is null in tests and on a windowed
+/// agent, which then refuse every order to shut down or restart.
 /// </summary>
 internal sealed record AgentServices(
     Action EnsureQuicSupported,
@@ -52,7 +54,8 @@ internal sealed record AgentServices(
     Func<ISignedInPerson>? Person = null,
     Func<AgentPaths, AgentLog, ScreenLock>? OpenScreenLock = null,
     TimeProvider? Time = null,
-    RemoteParts? Remote = null)
+    RemoteParts? Remote = null,
+    Func<PowerAction, bool>? Power = null)
 {
     public static AgentServices ForThisMachine(AgentLog log, bool windowed) => new(
         QuicTransportSettings.EnsureSupported,
@@ -86,7 +89,8 @@ internal sealed record AgentServices(
             () => new ClipboardWatch(log.Write),
             InputInjector.ForThisPc(),
             InputDesktop.IsDefault,
-            TimeSpan.FromMilliseconds(500)));
+            TimeSpan.FromMilliseconds(500)),
+        Power: windowed ? null : action => WindowsPower.Request(action, log.Write));
 }
 
 /// <summary>
@@ -244,7 +248,7 @@ internal static class AgentHost
 
             var pairingLoop = pairing.RunAsync(shutdown.Token);
             var acceptLoop = AcceptConsolePcsAsync(
-                listener, connections, command.Windowed, services.OpenScreenPictures, services.Person, services.Remote, screenLock, log, shutdown.Token);
+                listener, connections, command.Windowed, services.OpenScreenPictures, services.Person, services.Remote, screenLock, services.Power, log, shutdown.Token);
             var restoreLoop = screenLock is null
                 ? Task.CompletedTask
                 : RestoreLockAsync(screenLock, services.Time ?? TimeProvider.System, shutdown.Token);
@@ -294,6 +298,7 @@ internal static class AgentHost
         Func<ISignedInPerson>? person,
         RemoteParts? remote,
         ScreenLock? screenLock,
+        Func<PowerAction, bool>? power,
         AgentLog log,
         CancellationToken ct)
     {
@@ -332,7 +337,7 @@ internal static class AgentHost
                     using var stopLockLink = CancellationTokenSource.CreateLinkedTokenSource(token);
                     var lockLink = screenLock is null
                         ? Task.CompletedTask
-                        : new LockLink(screenLock, mayLock: !onThisPc, log.Write).RunAsync(connection, stopLockLink.Token);
+                        : new LockLink(screenLock, mayLock: !onThisPc, power ?? (_ => false), log.Write).RunAsync(connection, stopLockLink.Token);
                     using var stopRemote = CancellationTokenSource.CreateLinkedTokenSource(token);
                     var remoteLink = new RemoteLink(remote, screenLock, previews, mayControl: !onThisPc, log.Write)
                         .RunAsync(connection, (frame, sendCt) => channel.SendVideoFrameAsync(frame, sendCt), stopRemote.Token);
