@@ -45,6 +45,12 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     /// <summary>How long after a Lock or Unlock a PC may take to report the change before the bar names it.</summary>
     private static readonly TimeSpan LockReportWait = TimeSpan.FromSeconds(5);
 
+    /// <summary>How long after a Shut down or Restart a PC may take to answer before the bar names it.</summary>
+    private static readonly TimeSpan PowerAnswerWait = TimeSpan.FromSeconds(5);
+
+    /// <summary>The longest a PC that said yes to a Shut down or Restart reads Offline while it still announces itself.</summary>
+    private static readonly TimeSpan GoingDownWait = TimeSpan.FromSeconds(60);
+
     /// <summary>How long removing a locked PC waits for its unlock to be sent before the connection is dropped.</summary>
     private static readonly TimeSpan UnlockBeforeDropWait = TimeSpan.FromSeconds(1);
 
@@ -88,6 +94,15 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private List<string> _didNotLock = [];
     private List<string> _didNotUnlock = [];
 
+    // Each PC a Shut down or Restart went to and has not answered: the order, and when to give up waiting.
+    private readonly Dictionary<string, (PowerAction Action, DateTimeOffset Deadline)> _powerAsked = new(StringComparer.Ordinal);
+
+    // The PCs that said yes to a Shut down or Restart, and until when at most: offline to the wall, and not dialled, until
+    // they stop announcing themselves. Windows can take a few seconds to end the agent, which announces until then.
+    private readonly Dictionary<string, DateTimeOffset> _goingDown = new(StringComparer.Ordinal);
+    private List<string> _didNotShutDown = [];
+    private List<string> _didNotRestart = [];
+
     // Cancelled when the broadcast ends, so a PC still connecting is let go instead of being left waiting for a picture.
     private CancellationTokenSource _rejoins = new();
 
@@ -129,6 +144,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private bool _lockButtonUnlocks;
     private string _lockPanelTitle = string.Empty;
     private string _lockPanelOfflineLine = string.Empty;
+    private bool _canPower;
+    private string _shutDownMenuText = string.Empty;
+    private string _restartMenuText = string.Empty;
 
     public RoomWallViewModel(
         IRoomStore store,
@@ -261,6 +279,20 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     /// <summary>Says the offline PCs will not be locked; empty when none is offline.</summary>
     public string LockPanelOfflineLine => _lockPanelOfflineLine;
 
+    /// <summary>Whether the power button is enabled: off air, with a ticked PC online.</summary>
+    public bool CanPower => _canPower;
+
+    /// <summary>The power menu's lines, counting the ticked online PCs.</summary>
+    public string ShutDownMenuText => _shutDownMenuText;
+
+    public string RestartMenuText => _restartMenuText;
+
+    /// <summary>What a Shut down or Restart asks before it goes: the ticked online PC's name, or how many there are.</summary>
+    public string PowerConfirmTitle(PowerAction action) => WallText.PowerConfirmTitle(action, TickedOnline().Select(m => m.DisplayName).ToList());
+
+    /// <summary>The confirmation's warning that unsaved work on the ticked online PCs will be lost.</summary>
+    public string PowerConfirmText => WallText.PowerConfirmText(TickedOnline().Count);
+
     public WallMessage? Message => _message;
 
     // The bar binds these, never Message itself: a binding through a null object is never re-evaluated.
@@ -290,6 +322,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             _connections.PictureArrived += OnPictureAnyThread;
             _connections.Ended += OnEndedAnyThread;
             _connections.LockReported += OnLockReportedAnyThread;
+            _connections.PowerAnswered += OnPowerAnsweredAnyThread;
         }
 
         try
@@ -313,7 +346,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         var now = _now();
-        var targets = _members.Where(m => m.Selected && _presence.IsOnline(m.DeviceId, now)).Select(AsDialled).ToList();
+        var targets = _members.Where(m => m.Selected && IsOnline(m.DeviceId, now)).Select(AsDialled).ToList();
 
         _starting = true;
         _lostWhileStarting.Clear();
@@ -416,6 +449,37 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
         var text = LockLimits.Clean(message);
         AskForLock(targets, locked: true, send: id => _connections.Lock(id, text));
+    }
+
+    /// <summary>
+    /// Orders the ticked online PCs to shut down or restart. Does nothing while <see cref="CanPower"/> is false. Control of
+    /// one of them ends first. A PC that says yes reads Offline at once; one that says no, or has not answered 5 s later, is
+    /// named in the bar until the next order.
+    /// </summary>
+    public void Power(PowerAction action)
+    {
+        var targets = TickedOnline();
+        if (!_canPower || targets.Count == 0)
+        {
+            return;
+        }
+
+        if (targets.Any(m => m.DeviceId == _controlledId))
+        {
+            ControlMustEnd?.Invoke();
+            ClearControl();
+        }
+
+        _didNotShutDown = [];
+        _didNotRestart = [];
+        var deadline = _now() + PowerAnswerWait;
+        foreach (var target in targets)
+        {
+            _powerAsked[target.DeviceId] = (action, deadline);
+            _connections.Power(target.DeviceId, action);
+        }
+
+        Refresh();
     }
 
     /// <summary>
@@ -530,7 +594,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private List<RoomMember> TickedOnline()
     {
         var now = _now();
-        return _members.Where(m => m.Selected && _presence.IsOnline(m.DeviceId, now)).ToList();
+        return _members.Where(m => m.Selected && IsOnline(m.DeviceId, now)).ToList();
     }
 
     /// <summary>
@@ -543,7 +607,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     {
         var now = _now();
         var all = _members
-            .Select(m => new SendTarget(AsDialled(m), m.DisplayName, _sendingTo.Contains(m.DeviceId) || _presence.IsOnline(m.DeviceId, now)))
+            .Select(m => new SendTarget(AsDialled(m), m.DisplayName, _sendingTo.Contains(m.DeviceId) || IsOnline(m.DeviceId, now)))
             .ToList();
         var selected = all.Where(t => _onAir ? _sendingTo.Contains(t.Member.DeviceId) : t.Member.Selected && t.Online).ToList();
         return new SendTargets(selected, all);
@@ -660,15 +724,23 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     {
         var now = _now();
 
+        foreach (var (id, until) in _goingDown.ToList())
+        {
+            if (!_presence.IsOnline(id, now) || now >= until)
+            {
+                _goingDown.Remove(id);
+            }
+        }
+
         // Every online PC has a standing connection: its screen pictures come on it, and a broadcast uses it.
-        foreach (var member in _members.Where(m => _presence.IsOnline(m.DeviceId, now)))
+        foreach (var member in _members.Where(m => IsOnline(m.DeviceId, now)))
         {
             _connections.Want(AsDialled(member));
         }
 
         foreach (var member in _members.Where(m => IsWanted(m) && !_sendingTo.Contains(m.DeviceId)).ToList())
         {
-            if (_presence.IsOnline(member.DeviceId, now)
+            if (IsOnline(member.DeviceId, now)
                 && !_rejoining.Contains(member.DeviceId)
                 && !(_rejoinTriedAt.TryGetValue(member.DeviceId, out var triedAt) && now - triedAt < RejoinInterval))
             {
@@ -779,6 +851,8 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     private void OnLockReportedAnyThread(string deviceId, bool locked) => _runOnUiThread(() => OnLockReported(deviceId, locked));
 
+    private void OnPowerAnsweredAnyThread(string deviceId, bool accepted) => _runOnUiThread(() => OnPowerAnswered(deviceId, accepted));
+
     private void OnPictureAnyThread(string deviceId, byte[] picture) => _runOnUiThread(() => OnPicture(deviceId, picture));
 
     private void OnEndedAnyThread(string deviceId) => _runOnUiThread(() => OnEnded(deviceId));
@@ -792,6 +866,33 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         else
         {
             _locked.Remove(deviceId);
+        }
+
+        Refresh();
+    }
+
+    /// <summary>
+    /// A yes takes the PC offline at once, even after its name went to the bar: the connection is dropped (never through
+    /// <see cref="LetGo"/>, which would unlock a locked PC first). A no in time names the PC; a late no is named already.
+    /// </summary>
+    private void OnPowerAnswered(string deviceId, bool accepted)
+    {
+        var asked = _powerAsked.Remove(deviceId, out var ask);
+        if (Tiles.FirstOrDefault(t => t.DeviceId == deviceId) is not { } tile)
+        {
+            return;
+        }
+
+        if (accepted)
+        {
+            _didNotShutDown.Remove(tile.Name);
+            _didNotRestart.Remove(tile.Name);
+            _goingDown[deviceId] = _now() + GoingDownWait;
+            _connections.Drop(deviceId);
+        }
+        else if (asked)
+        {
+            (ask.Action == PowerAction.Restart ? _didNotRestart : _didNotShutDown).Add(tile.Name);
         }
 
         Refresh();
@@ -996,10 +1097,13 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _ = ended.CancelAsync();
     }
 
+    /// <summary>Seen recently, and not a PC that said yes to a Shut down or Restart.</summary>
+    private bool IsOnline(string deviceId, DateTimeOffset now) => _presence.IsOnline(deviceId, now) && !_goingDown.ContainsKey(deviceId);
+
     private List<RoomMember> OnlineMembers()
     {
         var now = _now();
-        return _members.Where(m => _presence.IsOnline(m.DeviceId, now)).ToList();
+        return _members.Where(m => IsOnline(m.DeviceId, now)).ToList();
     }
 
     /// <summary>Sets the remembered flag of each member and saves once. Off air only; a failed save changes nothing.</summary>
@@ -1116,7 +1220,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         foreach (var tile in Tiles)
         {
             var member = MemberOf(tile.DeviceId)!;
-            var online = _presence.IsOnline(tile.DeviceId, now);
+            var online = IsOnline(tile.DeviceId, now);
             anyOnline |= online;
 
             if (_onAir && _sendingTo.Contains(tile.DeviceId))
@@ -1150,6 +1254,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             }
 
             ResolveLockAsk(tile, now);
+            ResolvePowerAsk(tile, now);
 
             tile.StatusText = WallText.Status(state, tile.FramesDropped);
             tile.DetailSentence = WallText.DetailSentence(state, tile.SendDetail);
@@ -1216,6 +1321,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
         Set(ref _lockPanelTitle, WallText.LockPanelTitle(tickedNotLocked), nameof(LockPanelTitle));
         Set(ref _lockPanelOfflineLine, WallText.LockOfflineLine(offlineNames), nameof(LockPanelOfflineLine));
+        Set(ref _canPower, selectable && tickedOnline > 0, nameof(CanPower));
+        Set(ref _shutDownMenuText, WallText.ShutDownMenu(tickedOnline), nameof(ShutDownMenuText));
+        Set(ref _restartMenuText, WallText.RestartMenu(tickedOnline), nameof(RestartMenuText));
         Set(ref _onAirShown, _onAir, nameof(IsOnAir));
 
         if (Set(ref _message, _roomUnreadable ? WallMessage.RoomUnreadable
@@ -1270,6 +1378,16 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Past its deadline, names a PC that has not answered a Shut down or Restart in the bar.</summary>
+    private void ResolvePowerAsk(PcTile tile, DateTimeOffset now)
+    {
+        if (_powerAsked.TryGetValue(tile.DeviceId, out var ask) && now >= ask.Deadline)
+        {
+            _powerAsked.Remove(tile.DeviceId);
+            (ask.Action == PowerAction.Restart ? _didNotRestart : _didNotShutDown).Add(tile.Name);
+        }
+    }
+
     private string OffAirLine2(IReadOnlyList<string> offlineNames)
     {
         if (_controlLine.Length > 0)
@@ -1277,7 +1395,13 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             return _controlLine;
         }
 
-        var failed = string.Join(' ', new[] { WallText.DidNotLockLine(_didNotLock), WallText.DidNotUnlockLine(_didNotUnlock) }.Where(l => l.Length > 0));
+        var failed = string.Join(' ', new[]
+        {
+            WallText.DidNotLockLine(_didNotLock),
+            WallText.DidNotUnlockLine(_didNotUnlock),
+            WallText.DidNotShutDownLine(_didNotShutDown),
+            WallText.DidNotRestartLine(_didNotRestart),
+        }.Where(l => l.Length > 0));
         return failed.Length > 0 ? failed : WallText.OfflineLine(offlineNames);
     }
 

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Promin.Master.Core.Wall;
+using Promin.Protocol.Messages;
 
 namespace Promin.Master.Core.Tests;
 
@@ -63,6 +64,16 @@ public sealed class StringsTests
         Assert.Equal("PC-03 не вдалося заблокувати", In(Ukrainian, () => WallText.DidNotLockLine(["PC-03"])));
         Assert.Equal("2 ПК не вдалося розблокувати", In(Ukrainian, () => WallText.DidNotUnlockLine(["a", "b"])));
         Assert.Equal("Заблоковано", In(Ukrainian, () => WallText.Status(PcTileState.Locked, 0)));
+    }
+
+    [Fact]
+    public void UkrainianPowerLines_AreAsTheSpecHasThem()
+    {
+        Assert.Equal("Вимкнути 2 ПК", In(Ukrainian, () => WallText.ShutDownMenu(2)));
+        Assert.Equal("Перезавантажити PC-03?", In(Ukrainian, () => WallText.PowerConfirmTitle(PowerAction.Restart, ["PC-03"])));
+        Assert.Equal("Незбережену роботу на них буде втрачено.", In(Ukrainian, () => WallText.PowerConfirmText(2)));
+        Assert.Equal("PC-03 не вдалося перезавантажити", In(Ukrainian, () => WallText.DidNotRestartLine(["PC-03"])));
+        Assert.Equal("2 ПК не вдалося вимкнути", In(Ukrainian, () => WallText.DidNotShutDownLine(["a", "b"])));
     }
 
     [Theory]
