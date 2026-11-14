@@ -20,6 +20,8 @@ namespace Promin.Protocol.Messages;
 [JsonDerivedType(typeof(LockPc), "lockPc")]
 [JsonDerivedType(typeof(UnlockPc), "unlockPc")]
 [JsonDerivedType(typeof(LockState), "lockState")]
+[JsonDerivedType(typeof(PowerPc), "powerPc")]
+[JsonDerivedType(typeof(PowerState), "powerState")]
 [JsonDerivedType(typeof(StartControl), "startControl")]
 [JsonDerivedType(typeof(ControlState), "controlState")]
 [JsonDerivedType(typeof(PointerMove), "pointerMove")]
@@ -140,6 +142,14 @@ public sealed record UnlockPc : ControlMessage;
 
 /// <summary>The agent PC's report on the lock stream: whether it is locked now.</summary>
 public sealed record LockState(bool Locked) : ControlMessage;
+
+public enum PowerAction { ShutDown, Restart }
+
+/// <summary>The console PC's order to shut down or restart the agent PC, on the lock stream.</summary>
+public sealed record PowerPc(PowerAction Action) : ControlMessage;
+
+/// <summary>The agent PC's answer to a <see cref="PowerPc"/> on the lock stream: whether Windows took the order.</summary>
+public sealed record PowerState(bool Accepted) : ControlMessage;
 
 /// <summary>The console PC's first message on the remote stream: from here it controls the agent PC, which reports on the same stream.</summary>
 public sealed record StartControl : ControlMessage;

@@ -83,6 +83,13 @@ public class ControlMessageCodecTests
     }
 
     [Fact]
+    public void EncodeThenDecode_RoundTripsThePowerMessages()
+    {
+        Assert.Equal(PowerAction.Restart, Assert.IsType<PowerPc>(RoundTrip(new PowerPc(PowerAction.Restart))).Action);
+        Assert.True(Assert.IsType<PowerState>(RoundTrip(new PowerState(Accepted: true))).Accepted);
+    }
+
+    [Fact]
     public void EncodeThenDecode_RoundTripsTheControlMessages()
     {
         Assert.IsType<StartControl>(RoundTrip(new StartControl()));
