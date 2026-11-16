@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using Promin.Master.Control;
 using Promin.Master.Controls;
+using Promin.Master.Core;
 using Promin.Master.Core.Control;
 using Promin.Master.Core.Sending;
 using Promin.Master.Core.Wall;
@@ -196,6 +197,18 @@ public sealed partial class RoomPage : Page
     private void StripAction_Click(object sender, RoutedEventArgs e) => Sending.StripAction();
 
     private void SendStrip_CloseButtonClick(InfoBar sender, object args) => Sending.CloseStrip();
+
+    private void ShutDown_Click(object sender, RoutedEventArgs e) => _ = PowerAsync(PowerAction.ShutDown, Strings.Power_ShutDown);
+
+    private void Restart_Click(object sender, RoutedEventArgs e) => _ = PowerAsync(PowerAction.Restart, Strings.Power_Restart);
+
+    private async Task PowerAsync(PowerAction action, string confirm)
+    {
+        if (await RoomDialogs.ConfirmPowerAsync(XamlRoot, ViewModel.PowerConfirmTitle(action), ViewModel.PowerConfirmText, confirm))
+        {
+            ViewModel.Power(action);
+        }
+    }
 
     // The lock: the button unlocks at once or opens the panel; the panel locks from its button or Enter.
 

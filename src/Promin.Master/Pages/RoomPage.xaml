@@ -232,6 +232,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <StackPanel VerticalAlignment="Center">
@@ -330,12 +331,38 @@
                     Visibility="{x:Bind ViewModel.IsOnAir, Mode=OneWay}" />
             </StackPanel>
 
+            <!-- Shut down or restart the ticked PCs: each menu line asks for confirmation first. -->
+            <DropDownButton
+                Grid.Column="2"
+                Padding="14,10"
+                AutomationProperties.Name="{x:Bind core:Strings.Power_Button}"
+                FontSize="15"
+                IsEnabled="{x:Bind ViewModel.CanPower, Mode=OneWay}"
+                ToolTipService.ToolTip="{x:Bind core:Strings.Power_Button}"
+                Visibility="{x:Bind Not(ViewModel.IsEmptyRoom), Mode=OneWay}">
+                <FontIcon FontSize="14" Glyph="&#xE7E8;" />
+                <DropDownButton.Flyout>
+                    <MenuFlyout Placement="Top">
+                        <MenuFlyoutItem Click="ShutDown_Click" Text="{x:Bind ViewModel.ShutDownMenuText, Mode=OneWay}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE7E8;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Click="Restart_Click" Text="{x:Bind ViewModel.RestartMenuText, Mode=OneWay}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE777;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                    </MenuFlyout>
+                </DropDownButton.Flyout>
+            </DropDownButton>
+
             <!--
                 Lock, or Unlock when every ticked PC is locked. Unlock acts at once; Lock opens the panel, so the
                 flyout is attached rather than the button's own, which would open on every click.
             -->
             <Button
-                Grid.Column="2"
+                Grid.Column="3"
                 Padding="24,10"
                 FontSize="15"
                 FontWeight="SemiBold"
@@ -378,7 +405,7 @@
 
             <!-- One send at a time: the button waits while one runs. -->
             <Button
-                Grid.Column="3"
+                Grid.Column="4"
                 Padding="24,10"
                 FontSize="15"
                 FontWeight="SemiBold"
@@ -390,7 +417,7 @@
                 </StackPanel>
             </Button>
             <Button
-                Grid.Column="4"
+                Grid.Column="5"
                 Padding="24,10"
                 FontSize="15"
                 FontWeight="SemiBold"
@@ -404,7 +431,7 @@
                 </StackPanel>
             </Button>
             <Button
-                Grid.Column="4"
+                Grid.Column="5"
                 Padding="24,10"
                 FontSize="15"
                 FontWeight="SemiBold"
