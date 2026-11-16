@@ -32,6 +32,10 @@ public class InputBlockTests
         Assert.True(InputBlock.LetsThrough(0x0100, InputBlock.OwnTag));
 
     [Fact]
+    public void LetsThrough_OurTagAsTheMouseHookSeesIt() =>
+        Assert.True(InputBlock.LetsThrough(0x0200, (nint)(uint)InputBlock.OwnTag));
+
+    [Fact]
     public void LetsThrough_InputCarryingAnotherTag_IsTreatedAsLocal() =>
         Assert.False(InputBlock.LetsThrough(0x0100, InputBlock.OwnTag ^ 1));
 

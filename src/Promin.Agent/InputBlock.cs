@@ -106,9 +106,12 @@ internal sealed class InputBlock(Action<string> log) : IInputBlock
     /// stuck Shift, a drag that never ends.
     /// </summary>
     /// <param name="message">The window message a low-level hook gets as its <c>wParam</c>, which names only the kind of event.</param>
-    /// <param name="extraInfo">The event's <c>dwExtraInfo</c>, which is <see cref="OwnTag"/> on input this process sent.</param>
+    /// <param name="extraInfo">
+    /// The event's <c>dwExtraInfo</c>, which is <see cref="OwnTag"/> on input this process sent. Only the low 32 bits are
+    /// compared: a mouse hook gets no more of the value <c>SendInput</c> was given, though a keyboard hook gets all 64.
+    /// </param>
     internal static bool LetsThrough(nint message, nint extraInfo) =>
-        extraInfo == OwnTag
+        (uint)extraInfo == (uint)OwnTag
         || (uint)message is WM_KEYUP or WM_SYSKEYUP or WM_LBUTTONUP or WM_RBUTTONUP or WM_MBUTTONUP or WM_XBUTTONUP;
 
     /// <summary>
