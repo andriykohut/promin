@@ -3,6 +3,7 @@
     x:Class="Promin.Master.Control.ControlWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:control="using:Promin.Master.Control"
     xmlns:core="using:Promin.Master.Core"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -50,13 +51,11 @@
             pointer events are taken by a grid around the panel: a SwapChainPanel is not hit-tested, and it refuses
             the background that would make it so (setting one fails the whole window's markup).
         -->
-        <Grid
+        <control:HiddenPointerArea
             x:Name="PointerArea"
             Grid.Row="1"
             Background="Transparent"
             PointerCaptureLost="Picture_PointerCaptureLost"
-            PointerEntered="Picture_PointerEntered"
-            PointerExited="Picture_PointerExited"
             PointerMoved="Picture_Pointer"
             PointerPressed="Picture_Pointer"
             PointerReleased="Picture_Pointer"
@@ -65,7 +64,7 @@
                 x:Name="Picture"
                 CompositionScaleChanged="Picture_CompositionScaleChanged"
                 SizeChanged="Picture_SizeChanged" />
-        </Grid>
+        </control:HiddenPointerArea>
 
         <!-- A protected Windows screen on the other PC: its last picture stays, dimmed, under the reason. -->
         <Border

@@ -52,7 +52,6 @@ internal sealed partial class ControlWindow : Window
 
     private Task _videoRun = Task.CompletedTask;
     private bool _focused;
-    private bool _pointerHidden;
     private bool _finished;
     private bool _mayClose;
 
@@ -223,7 +222,6 @@ internal sealed partial class ControlWindow : Window
         }
 
         Step(_video.Dispose);
-        Step(() => ShowPointer(true));
         Step(() =>
         {
             _mayClose = true;
@@ -441,20 +439,6 @@ internal sealed partial class ControlWindow : Window
     private void ResizePicture() =>
         _video.Resize(Picture.ActualWidth, Picture.ActualHeight, Picture.CompositionScaleX, Picture.CompositionScaleY);
 
-    private void Picture_PointerEntered(object sender, PointerRoutedEventArgs e) => ShowPointer(false);
-
-    private void Picture_PointerExited(object sender, PointerRoutedEventArgs e) => ShowPointer(true);
-
-    // ShowCursor keeps a count, so each hide is matched by exactly one show.
-    private void ShowPointer(bool show)
-    {
-        if (_pointerHidden == show)
-        {
-            ShowCursor(show);
-            _pointerHidden = !show;
-        }
-    }
-
     // Pressed, moved and released alike: a second button pressed or released while another is down comes as a move.
     private void Picture_Pointer(object sender, PointerRoutedEventArgs e)
     {
@@ -533,7 +517,4 @@ internal sealed partial class ControlWindow : Window
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(nint hwnd);
-
-    [DllImport("user32.dll")]
-    private static extern int ShowCursor([MarshalAs(UnmanagedType.Bool)] bool show);
 }
