@@ -62,7 +62,7 @@ public sealed class RoomWallPowerTests
     private RoomWallViewModel ThreeSaidYes()
     {
         var vm = OnlyTicked(3);
-        vm.Power(PowerAction.Restart);
+        vm.Power(PowerAction.Restart, vm.PowerTargets());
         _connections.RaisePower(Id(3), true);
         return vm;
     }
@@ -112,7 +112,7 @@ public sealed class RoomWallPowerTests
     public void Power_SendsTheOrderToEachTickedOnlinePc()
     {
         var vm = TenWithSevenOffline();
-        vm.Power(PowerAction.ShutDown);
+        vm.Power(PowerAction.ShutDown, vm.PowerTargets());
         Assert.Equal(
             new[] { 1, 2, 3, 4, 5, 6, 8, 9, 10 }.Select(n => (Id(n), PowerAction.ShutDown)),
             _connections.PowersSent);
@@ -182,7 +182,7 @@ public sealed class RoomWallPowerTests
     public void ANo_NamesThePcAtOnce()
     {
         var vm = OnlyTicked(3);
-        vm.Power(PowerAction.ShutDown);
+        vm.Power(PowerAction.ShutDown, vm.PowerTargets());
 
         _connections.RaisePower(Id(3), false);
 
@@ -194,7 +194,7 @@ public sealed class RoomWallPowerTests
     public void NoAnswerInFiveSeconds_NamesThePc()
     {
         var vm = OnlyTicked(3);
-        vm.Power(PowerAction.Restart);
+        vm.Power(PowerAction.Restart, vm.PowerTargets());
 
         _now += TimeSpan.FromSeconds(5);
         vm.Tick();
@@ -206,7 +206,7 @@ public sealed class RoomWallPowerTests
     public void ALateYes_TakesThePcOffline_AndClearsItsName()
     {
         var vm = OnlyTicked(3);
-        vm.Power(PowerAction.ShutDown);
+        vm.Power(PowerAction.ShutDown, vm.PowerTargets());
         _now += TimeSpan.FromSeconds(5);
         vm.Tick();
         Assert.Equal("PC-03 did not shut down", vm.BarLine2);
@@ -224,7 +224,7 @@ public sealed class RoomWallPowerTests
         _connections.RaiseLock(Id(3), true);
         vm.Tick();
 
-        vm.Power(PowerAction.ShutDown);
+        vm.Power(PowerAction.ShutDown, vm.PowerTargets());
         _connections.RaisePower(Id(3), true);
 
         Assert.Empty(_connections.UnlocksSent);
@@ -240,7 +240,7 @@ public sealed class RoomWallPowerTests
         var ordersWhenEnded = -1;
         vm.ControlMustEnd += () => ordersWhenEnded = _connections.PowersSent.Count;
 
-        vm.Power(PowerAction.Restart);
+        vm.Power(PowerAction.Restart, vm.PowerTargets());
         _connections.RaisePower(Id(1), true);
 
         Assert.Equal(0, ordersWhenEnded);
@@ -252,12 +252,38 @@ public sealed class RoomWallPowerTests
     public void TheNextOrder_ClearsTheLine()
     {
         var vm = OnlyTicked(3);
-        vm.Power(PowerAction.ShutDown);
+        vm.Power(PowerAction.ShutDown, vm.PowerTargets());
         _connections.RaisePower(Id(3), false);
         Assert.Equal("PC-03 did not shut down", vm.BarLine2);
 
-        vm.Power(PowerAction.ShutDown);
+        vm.Power(PowerAction.ShutDown, vm.PowerTargets());
 
         Assert.DoesNotContain("did not", vm.BarLine2, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void APcThatComesOnlineDuringTheConfirmation_IsNotSentTheOrder()
+    {
+        var vm = TenWithSevenOffline();
+        var confirmed = vm.PowerTargets();
+
+        See(7);
+        vm.Tick();
+        vm.Power(PowerAction.ShutDown, confirmed);
+
+        Assert.Equal(confirmed.Select(id => (id, PowerAction.ShutDown)), _connections.PowersSent);
+    }
+
+    [Fact]
+    public async Task AnOrder_ClearsAnEarlierControlFailure_SoItsAnswerShows()
+    {
+        var vm = OnlyTicked(3);
+        Assert.Null(await vm.StartControlAsync(Tile(vm, 5)));
+        Assert.Equal("Could not start controlling PC-05.", vm.BarLine2);
+
+        vm.Power(PowerAction.ShutDown, vm.PowerTargets());
+        _connections.RaisePower(Id(3), false);
+
+        Assert.Equal("PC-03 did not shut down", vm.BarLine2);
     }
 }

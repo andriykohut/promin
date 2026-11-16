@@ -204,9 +204,10 @@ public sealed partial class RoomPage : Page
 
     private async Task PowerAsync(PowerAction action, string confirm)
     {
+        var targets = ViewModel.PowerTargets();
         if (await RoomDialogs.ConfirmPowerAsync(XamlRoot, ViewModel.PowerConfirmTitle(action), ViewModel.PowerConfirmText, confirm))
         {
-            ViewModel.Power(action);
+            ViewModel.Power(action, targets);
         }
     }
 

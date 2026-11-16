@@ -451,14 +451,19 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         AskForLock(targets, locked: true, send: id => _connections.Lock(id, text));
     }
 
+    /// <summary>The ticked online PCs a Shut down or Restart would go to now, to read as the confirmation opens.</summary>
+    public IReadOnlyList<string> PowerTargets() => TickedOnline().Select(m => m.DeviceId).ToList();
+
     /// <summary>
-    /// Orders the ticked online PCs to shut down or restart. Does nothing while <see cref="CanPower"/> is false. Control of
-    /// one of them ends first. A PC that says yes reads Offline at once; one that says no, or has not answered 5 s later, is
-    /// named in the bar until the next order.
+    /// Orders the <paramref name="confirmed"/> PCs (from <see cref="PowerTargets"/>) that are still ticked and online to
+    /// shut down or restart; a PC that came online since is left alone. Does nothing while <see cref="CanPower"/> is false.
+    /// Control of one of them ends first. A PC that says yes reads Offline at once; one that says no, or has not answered
+    /// 5 s later, is named in the bar until the next order.
     /// </summary>
-    public void Power(PowerAction action)
+    public void Power(PowerAction action, IReadOnlyCollection<string> confirmed)
     {
-        var targets = TickedOnline();
+        ArgumentNullException.ThrowIfNull(confirmed);
+        var targets = TickedOnline().Where(m => confirmed.Contains(m.DeviceId)).ToList();
         if (!_canPower || targets.Count == 0)
         {
             return;
@@ -470,6 +475,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             ClearControl();
         }
 
+        _controlLine = string.Empty;
         _didNotShutDown = [];
         _didNotRestart = [];
         var deadline = _now() + PowerAnswerWait;
