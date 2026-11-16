@@ -47,21 +47,25 @@
 
         <!--
             The other PC's screen. Its own pointer is drawn into the picture, so this PC's is hidden over it. The
-            transparent background makes the panel hit-testable: without one it gets no pointer events at all.
+            pointer events are taken by a grid around the panel: a SwapChainPanel is not hit-tested, and it refuses
+            the background that would make it so (setting one fails the whole window's markup).
         -->
-        <SwapChainPanel
-            x:Name="Picture"
+        <Grid
+            x:Name="PointerArea"
             Grid.Row="1"
             Background="Transparent"
-            CompositionScaleChanged="Picture_CompositionScaleChanged"
             PointerCaptureLost="Picture_PointerCaptureLost"
             PointerEntered="Picture_PointerEntered"
             PointerExited="Picture_PointerExited"
             PointerMoved="Picture_Pointer"
             PointerPressed="Picture_Pointer"
             PointerReleased="Picture_Pointer"
-            PointerWheelChanged="Picture_PointerWheelChanged"
-            SizeChanged="Picture_SizeChanged" />
+            PointerWheelChanged="Picture_PointerWheelChanged">
+            <SwapChainPanel
+                x:Name="Picture"
+                CompositionScaleChanged="Picture_CompositionScaleChanged"
+                SizeChanged="Picture_SizeChanged" />
+        </Grid>
 
         <!-- A protected Windows screen on the other PC: its last picture stays, dimmed, under the reason. -->
         <Border

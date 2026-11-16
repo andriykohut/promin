@@ -475,7 +475,7 @@ internal sealed partial class ControlWindow : Window
         {
             if (change.Down)
             {
-                Picture.CapturePointer(e.Pointer);
+                PointerArea.CapturePointer(e.Pointer);
                 _buttonsDown.Add(change.Button);
             }
             else
