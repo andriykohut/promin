@@ -1,6 +1,7 @@
 using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
 using Promin.Master.Core.Wall;
+using Promin.Protocol.Messages;
 
 namespace Promin.Master.Core.Tests.TestDoubles;
 
@@ -12,6 +13,8 @@ public sealed class FakeRoomConnections : IRoomConnections
 
     public event Action<string, bool>? LockReported;
 
+    public event Action<string, bool>? PowerAnswered;
+
     public List<RoomMember> Wanted { get; } = [];
 
     public List<string> Dropped { get; } = [];
@@ -19,6 +22,8 @@ public sealed class FakeRoomConnections : IRoomConnections
     public List<(string Id, string Message)> LocksSent { get; } = [];
 
     public List<string> UnlocksSent { get; } = [];
+
+    public List<(string Id, PowerAction Action)> PowersSent { get; } = [];
 
     public List<string> ControlStarts { get; } = [];
 
@@ -49,6 +54,8 @@ public sealed class FakeRoomConnections : IRoomConnections
         return Task.CompletedTask;
     }
 
+    public void Power(string deviceId, PowerAction action) => PowersSent.Add((deviceId, action));
+
     public Task<IControlSession?> StartControlAsync(string deviceId)
     {
         ControlStarts.Add(deviceId);
@@ -56,6 +63,8 @@ public sealed class FakeRoomConnections : IRoomConnections
     }
 
     public void RaiseLock(string deviceId, bool locked) => LockReported?.Invoke(deviceId, locked);
+
+    public void RaisePower(string deviceId, bool accepted) => PowerAnswered?.Invoke(deviceId, accepted);
 
     private TaskCompletionSource DropSource(string deviceId)
     {

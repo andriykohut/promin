@@ -1,5 +1,6 @@
 using System.Globalization;
 using Promin.Master.Core.Sending;
+using Promin.Protocol.Messages;
 using Promin.Protocol.Video;
 
 namespace Promin.Master.Core.Wall;
@@ -59,6 +60,21 @@ public static class WallText
     public static string DidNotLockLine(IReadOnlyList<string> names) => NamesLine(names, Strings.Lock_DidNotLockOne, Strings.Lock_DidNotLockMany);
 
     public static string DidNotUnlockLine(IReadOnlyList<string> names) => NamesLine(names, Strings.Lock_DidNotUnlockOne, Strings.Lock_DidNotUnlockMany);
+
+    public static string ShutDownMenu(int count) => Phrase.Format(Strings.Power_ShutDownMenu, ("count", count));
+
+    public static string RestartMenu(int count) => Phrase.Format(Strings.Power_RestartMenu, ("count", count));
+
+    /// <summary>The confirmation's title for the PCs the order goes to: the name for one, the count for several.</summary>
+    public static string PowerConfirmTitle(PowerAction action, IReadOnlyList<string> names) => action == PowerAction.Restart
+        ? NamesLine(names, Strings.Power_RestartTitleOne, Strings.Power_RestartTitleMany)
+        : NamesLine(names, Strings.Power_ShutDownTitleOne, Strings.Power_ShutDownTitleMany);
+
+    public static string PowerConfirmText(int count) => count == 1 ? Strings.Power_LostWorkOne : Strings.Power_LostWorkMany;
+
+    public static string DidNotShutDownLine(IReadOnlyList<string> names) => NamesLine(names, Strings.Power_DidNotShutDownOne, Strings.Power_DidNotShutDownMany);
+
+    public static string DidNotRestartLine(IReadOnlyList<string> names) => NamesLine(names, Strings.Power_DidNotRestartOne, Strings.Power_DidNotRestartMany);
 
     public static string CouldNotControlLine(string name) => Phrase.Format(Strings.Control_CouldNotStart, ("name", name));
 

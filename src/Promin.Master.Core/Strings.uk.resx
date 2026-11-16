@@ -600,4 +600,49 @@
   <data name="Control_WindowTitle" xml:space="preserve">
     <value>{name} — Promin</value>
   </data>
+  <data name="Power_Button" xml:space="preserve">
+    <value>Живлення</value>
+  </data>
+  <data name="Power_ShutDownMenu" xml:space="preserve">
+    <value>Вимкнути {count} ПК</value>
+  </data>
+  <data name="Power_RestartMenu" xml:space="preserve">
+    <value>Перезавантажити {count} ПК</value>
+  </data>
+  <data name="Power_ShutDownTitleOne" xml:space="preserve">
+    <value>Вимкнути {name}?</value>
+  </data>
+  <data name="Power_ShutDownTitleMany" xml:space="preserve">
+    <value>Вимкнути {count} ПК?</value>
+  </data>
+  <data name="Power_RestartTitleOne" xml:space="preserve">
+    <value>Перезавантажити {name}?</value>
+  </data>
+  <data name="Power_RestartTitleMany" xml:space="preserve">
+    <value>Перезавантажити {count} ПК?</value>
+  </data>
+  <data name="Power_LostWorkOne" xml:space="preserve">
+    <value>Незбережену роботу на ньому буде втрачено.</value>
+  </data>
+  <data name="Power_LostWorkMany" xml:space="preserve">
+    <value>Незбережену роботу на них буде втрачено.</value>
+  </data>
+  <data name="Power_ShutDown" xml:space="preserve">
+    <value>Вимкнути</value>
+  </data>
+  <data name="Power_Restart" xml:space="preserve">
+    <value>Перезавантажити</value>
+  </data>
+  <data name="Power_DidNotShutDownOne" xml:space="preserve">
+    <value>{name} не вдалося вимкнути</value>
+  </data>
+  <data name="Power_DidNotShutDownMany" xml:space="preserve">
+    <value>{count} ПК не вдалося вимкнути</value>
+  </data>
+  <data name="Power_DidNotRestartOne" xml:space="preserve">
+    <value>{name} не вдалося перезавантажити</value>
+  </data>
+  <data name="Power_DidNotRestartMany" xml:space="preserve">
+    <value>{count} ПК не вдалося перезавантажити</value>
+  </data>
 </root>

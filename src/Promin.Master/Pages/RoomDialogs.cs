@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace Promin.Master.Pages;
 
-/// <summary>The Rename and Remove dialogs, the same on Set up devices and on the room wall.</summary>
+/// <summary>The Rename and Remove dialogs, the same on Set up devices and on the room wall, and the room wall's power confirmation.</summary>
 internal static class RoomDialogs
 {
     /// <summary>Asks for a new name. Null when cancelled.</summary>
@@ -35,6 +35,22 @@ internal static class RoomDialogs
             Title = Phrase.Format(Strings.Dialog_RemoveTitle, ("name", name)),
             Content = Strings.Dialog_RemoveText,
             PrimaryButtonText = Strings.Remove,
+            CloseButtonText = Strings.Cancel,
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    /// <summary>Asks whether to shut down or restart; <paramref name="confirm"/> names the button that goes ahead. Cancel is the default.</summary>
+    public static async Task<bool> ConfirmPowerAsync(XamlRoot xamlRoot, string title, string text, string confirm)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = xamlRoot,
+            Title = title,
+            Content = text,
+            PrimaryButtonText = confirm,
             CloseButtonText = Strings.Cancel,
             DefaultButton = ContentDialogButton.Close,
         };

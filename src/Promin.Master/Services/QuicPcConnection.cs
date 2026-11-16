@@ -8,7 +8,7 @@ namespace Promin.Master.Services;
 
 /// <summary>
 /// One agent PC's standing connection: its screen pictures, the control stream a broadcast opens on first use and
-/// keeps for the connection's life, and the lock stream opened the same way by the first lock message or report.
+/// keeps for the connection's life, and the lock stream opened the same way by the first lock or power message or report.
 /// </summary>
 public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
 {
@@ -36,15 +36,15 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
         }
     }
 
-    /// <summary>The next <see cref="LockState"/> on the lock stream; anything else the agent sends there is skipped.</summary>
-    public async Task<bool> ReceiveLockStateAsync(CancellationToken ct)
+    /// <summary>The next <see cref="LockState"/> or <see cref="PowerState"/> on the lock stream; anything else the agent sends there is skipped.</summary>
+    public async Task<ControlMessage> ReceiveLockStreamAsync(CancellationToken ct)
     {
         var stream = await LockStreamAsync().ConfigureAwait(false);
         while (true)
         {
-            if (await stream.ReceiveAsync(ct).ConfigureAwait(false) is LockState state)
+            if (await stream.ReceiveAsync(ct).ConfigureAwait(false) is var message and (LockState or PowerState))
             {
-                return state.Locked;
+                return message;
             }
         }
     }
@@ -54,6 +54,9 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
 
     public async Task SendUnlockAsync(CancellationToken ct) =>
         await (await LockStreamAsync().ConfigureAwait(false)).SendAsync(new UnlockPc(), ct).ConfigureAwait(false);
+
+    public async Task SendPowerAsync(PowerAction action, CancellationToken ct) =>
+        await (await LockStreamAsync().ConfigureAwait(false)).SendAsync(new PowerPc(action), ct).ConfigureAwait(false);
 
     /// <summary>
     /// Opens a stream for this control session and waits for the agent's answer to <see cref="StartControl"/>. The

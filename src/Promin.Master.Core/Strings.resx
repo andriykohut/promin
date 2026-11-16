@@ -620,4 +620,53 @@
   <data name="Control_WindowTitle" xml:space="preserve">
     <value>{name} — Promin</value>
   </data>
+  <data name="Power_Button" xml:space="preserve">
+    <value>Power</value>
+  </data>
+  <data name="Power_ShutDownMenu" xml:space="preserve">
+    <value>{count, plural, one {Shut down 1 PC} other {Shut down {count} PCs}}</value>
+  </data>
+  <data name="Power_RestartMenu" xml:space="preserve">
+    <value>{count, plural, one {Restart 1 PC} other {Restart {count} PCs}}</value>
+  </data>
+  <data name="Power_ShutDownTitleOne" xml:space="preserve">
+    <value>Shut down {name}?</value>
+  </data>
+  <data name="Power_ShutDownTitleMany" xml:space="preserve">
+    <value>Shut down {count} PCs?</value>
+    <comment>count is 2 or more.</comment>
+  </data>
+  <data name="Power_RestartTitleOne" xml:space="preserve">
+    <value>Restart {name}?</value>
+  </data>
+  <data name="Power_RestartTitleMany" xml:space="preserve">
+    <value>Restart {count} PCs?</value>
+    <comment>count is 2 or more.</comment>
+  </data>
+  <data name="Power_LostWorkOne" xml:space="preserve">
+    <value>Unsaved work on it will be lost.</value>
+  </data>
+  <data name="Power_LostWorkMany" xml:space="preserve">
+    <value>Unsaved work on them will be lost.</value>
+  </data>
+  <data name="Power_ShutDown" xml:space="preserve">
+    <value>Shut down</value>
+  </data>
+  <data name="Power_Restart" xml:space="preserve">
+    <value>Restart</value>
+  </data>
+  <data name="Power_DidNotShutDownOne" xml:space="preserve">
+    <value>{name} did not shut down</value>
+  </data>
+  <data name="Power_DidNotShutDownMany" xml:space="preserve">
+    <value>{count} PCs did not shut down</value>
+    <comment>count is 2 or more.</comment>
+  </data>
+  <data name="Power_DidNotRestartOne" xml:space="preserve">
+    <value>{name} did not restart</value>
+  </data>
+  <data name="Power_DidNotRestartMany" xml:space="preserve">
+    <value>{count} PCs did not restart</value>
+    <comment>count is 2 or more.</comment>
+  </data>
 </root>
