@@ -1,0 +1,96 @@
+---
+/**
+ * A drawn monitor in the site's room illustrations. `state` picks what its screen shows:
+ * the shared broadcast picture, one of three ordinary screens of its own, the lock screen,
+ * a received folder, the remote-control tab, or switched off.
+ */
+interface Props {
+  state: 'shared' | 'own-a' | 'own-b' | 'own-c' | 'locked' | 'files' | 'controlled' | 'off';
+  style?: string;
+}
+
+const { state, style } = Astro.props;
+---
+
+<div class="pc" style={style}><div class={`screen ${state}`}></div></div>
+
+<style>
+  /* Windows 11's rounded window corners, shrunk to monitor size. */
+  .pc {
+    aspect-ratio: 16 / 10;
+    padding: clamp(3px, 0.5vw, 5px);
+    border-radius: 6px;
+    background: var(--slate);
+  }
+
+  .screen {
+    position: relative;
+    height: 100%;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .shared {
+    background:
+      linear-gradient(var(--night), var(--night)) 82% 28% / 40% 9% no-repeat,
+      linear-gradient(var(--haze), var(--haze)) 74% 50% / 24% 9% no-repeat,
+      radial-gradient(circle at 20% 105%, var(--beam) 0 30%, transparent 31%),
+      var(--fog);
+  }
+
+  .own-a {
+    background:
+      linear-gradient(var(--haze), var(--haze)) 14% 20% / 46% 8% no-repeat,
+      linear-gradient(var(--beam), var(--beam)) 14% 40% / 28% 8% no-repeat,
+      linear-gradient(var(--haze), var(--haze)) 14% 60% / 58% 8% no-repeat,
+      linear-gradient(var(--steel), var(--steel)) 14% 80% / 36% 8% no-repeat,
+      #20232a;
+  }
+
+  .own-b {
+    background:
+      linear-gradient(var(--steel), var(--steel)) 0 0 / 100% 16% no-repeat,
+      linear-gradient(var(--haze), var(--haze)) 12% 62% / 34% 46% no-repeat,
+      linear-gradient(var(--night), var(--night)) 88% 40% / 36% 8% no-repeat,
+      linear-gradient(var(--haze), var(--haze)) 88% 58% / 36% 8% no-repeat,
+      var(--fog);
+  }
+
+  .own-c {
+    background:
+      repeating-linear-gradient(to bottom, transparent 0 18%, rgb(91 100 112 / 0.5) 18% 21%),
+      repeating-linear-gradient(to right, transparent 0 24%, rgb(91 100 112 / 0.5) 24% 26%),
+      #f7f7f3;
+  }
+
+  .locked {
+    background:
+      radial-gradient(circle at 50% 30%, transparent 0 7%, var(--beam) 7.5% 11%, transparent 11.5%) 0 0 / 100% 100% no-repeat,
+      linear-gradient(var(--beam), var(--beam)) 50% 44% / 16% 20% no-repeat,
+      linear-gradient(var(--fog), var(--fog)) 50% 78% / 52% 7% no-repeat,
+      #0f1013;
+  }
+
+  .files {
+    background:
+      linear-gradient(var(--beam), var(--beam)) 16% 22% / 12% 8% no-repeat,
+      linear-gradient(var(--beam), var(--beam)) 20% 40% / 26% 30% no-repeat,
+      linear-gradient(var(--night), var(--night)) 18% 74% / 22% 6% no-repeat,
+      var(--fog);
+  }
+
+  .controlled {
+    background:
+      linear-gradient(var(--beam), var(--beam)) 50% 0 / 44% 12% no-repeat,
+      linear-gradient(var(--haze), var(--haze)) 14% 46% / 46% 8% no-repeat,
+      linear-gradient(var(--steel), var(--steel)) 14% 64% / 30% 8% no-repeat,
+      #20232a;
+  }
+
+  .off {
+    background:
+      radial-gradient(circle at 50% 52%, transparent 0 13%, #3a3d44 14% 18%, transparent 19%),
+      linear-gradient(#3a3d44, #3a3d44) 50% 30% / 4% 20% no-repeat,
+      #0d0e10;
+  }
+</style>

@@ -1,0 +1,124 @@
+---
+import Pc from '../components/Pc.astro';
+import Base from '../layouts/Base.astro';
+import { strings, type Lang } from '../strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang];
+
+// Four PCs per feature, showing what that feature does to a room.
+const rooms = {
+  broadcast: ['shared', 'shared', 'shared', 'shared'],
+  screens: ['own-a', 'own-b', 'own-c', 'own-b'],
+  lock: ['locked', 'locked', 'own-a', 'locked'],
+  files: ['files', 'files', 'files', 'own-c'],
+  control: ['own-b', 'controlled', 'own-c', 'own-a'],
+  power: ['off', 'off', 'off', 'off'],
+} as const;
+---
+
+<Base lang={lang} path="features/" title={`${t.nav.features}: ${t.title}`} description={t.featuresPage.lead}>
+  <div class="wrap intro" slot="masthead">
+    <h1>{t.featuresPage.title}</h1>
+    <p class="lead">{t.featuresPage.lead}</p>
+  </div>
+
+  <div class="wrap">
+    {
+      t.features.items.map((item) => (
+        <section class="feature" id={item.id}>
+          <div class="room" aria-hidden="true">
+            {rooms[item.id as keyof typeof rooms].map((state) => (
+              <Pc state={state} />
+            ))}
+          </div>
+          <div>
+            <h2>{item.name}</h2>
+            <p class="feature-text">{item.text}</p>
+            <ul>
+              {item.details.map((detail) => (
+                <li>{detail}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      ))
+    }
+  </div>
+</Base>
+
+<style>
+  .intro {
+    padding-top: clamp(2rem, 6vw, 4.5rem);
+    padding-bottom: clamp(3rem, 7vw, 5.5rem);
+  }
+
+  .intro .lead {
+    margin-top: 1.5rem;
+  }
+
+  .feature {
+    display: grid;
+    gap: 2rem;
+    padding-block: clamp(3rem, 7vw, 5.5rem);
+    scroll-margin-top: 1rem;
+  }
+
+  .feature + .feature {
+    border-top: 1px solid rgb(20 21 24 / 0.12);
+  }
+
+  @media (min-width: 50rem) {
+    .feature {
+      grid-template-columns: minmax(14rem, 22rem) 1fr;
+      gap: clamp(2.5rem, 6vw, 5rem);
+      align-items: start;
+    }
+  }
+
+  .room {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    max-width: 22rem;
+    padding: 1.25rem;
+    border-radius: 10px;
+    background: var(--night);
+  }
+
+  .feature-text {
+    margin-top: 1rem;
+    font-size: 1.1875rem;
+    max-width: 40ch;
+  }
+
+  ul {
+    margin: 1.5rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 0.75rem;
+    color: var(--steel);
+    max-width: 60ch;
+  }
+
+  li {
+    position: relative;
+    padding-left: 1.25rem;
+  }
+
+  /* A short ray, after the beacon's. */
+  li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.75em;
+    width: 0.625rem;
+    height: 2px;
+    background: var(--beam);
+  }
+</style>
