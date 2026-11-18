@@ -41,6 +41,14 @@ public partial class App : Application
         AppLanguage.Apply(new JsonWallSettings(AppServices.SettingsPath).Language);
 
         Services = AppServices.Create();
+        var restartArguments = string.Empty;
+#if DEBUG
+        if (Environment.GetCommandLineArgs().Contains("--demo"))
+        {
+            Services.UseDemoRoom();
+            restartArguments = "--demo";
+        }
+#endif
 
         var window = new MainWindow(Services.Health);
         window.Closed += (_, _) =>
@@ -48,7 +56,7 @@ public partial class App : Application
             Services.Dispose();
             if (window.RestartRequested)
             {
-                Microsoft.Windows.AppLifecycle.AppInstance.Restart(string.Empty);
+                Microsoft.Windows.AppLifecycle.AppInstance.Restart(restartArguments);
             }
         };
         _window = window;

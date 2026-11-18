@@ -1,0 +1,253 @@
+<!doctype html>
+<!--
+  The made-up screens the console's demo mode (--demo, Debug builds) shows on its tiles.
+  Each screen is the element whose id follows the # in the address, drawn at 1920 x 1080.
+  To redraw one, open screens.html#doc (or another id) at 1920 x 1080 and save it as a
+  480 x 270 JPEG named after the id, beside this file.
+-->
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; font-family: "Segoe UI", sans-serif; }
+  .screen { display: none; position: relative; width: 1920px; height: 1080px; }
+  .screen:target { display: block; }
+
+  .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; background: #eef0f4; border-top: 1px solid #d6d9df; display: flex; justify-content: center; align-items: center; gap: 10px; }
+  .taskbar i { width: 30px; height: 30px; border-radius: 7px; background: var(--c); }
+  .dark-bar .taskbar { background: #1f2126; border-top-color: #2c2f36; }
+  .window { position: absolute; inset: 0 0 48px 0; display: flex; flex-direction: column; }
+  .titlebar { height: 40px; flex: none; display: flex; align-items: center; padding: 0 16px; gap: 12px; font-size: 14px; color: #333; }
+  .titlebar::after { content: '—   ☐   ✕'; margin-left: auto; letter-spacing: 6px; color: #555; }
+  .toolbar { height: 96px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 24px; }
+  .toolbar b { width: 34px; height: 34px; border-radius: 6px; background: #d4d8de; }
+  .toolbar b.wide { width: 110px; }
+
+  /* A document */
+  #doc .window { background: #e6e6e6; }
+  #doc .titlebar, #doc .toolbar { background: #f7f7f7; }
+  #doc .toolbar { border-bottom: 1px solid #ddd; }
+  .page { width: 860px; margin: 28px auto 0; flex: 1; background: #fff; padding: 90px 100px; box-shadow: 0 0 0 1px #d0d0d0; }
+  .page h1 { font-size: 40px; margin-bottom: 26px; color: #1d2b4f; font-family: Georgia, serif; }
+  .page h2 { font-size: 24px; margin: 26px 0 12px; color: #1d2b4f; }
+  .page p { font-size: 19px; line-height: 1.6; color: #333; margin-bottom: 12px; font-family: Georgia, serif; }
+
+  /* A spreadsheet */
+  #sheet .window { background: #fff; }
+  #sheet .titlebar { background: #1e6b45; color: #fff; }
+  #sheet .titlebar::after { color: #d8efe2; }
+  #sheet .toolbar { background: #f3f6f4; border-bottom: 1px solid #d5ddd8; }
+  .grid { flex: 1; display: grid; grid-template-columns: 50px repeat(9, 1fr); grid-auto-rows: 34px; font-size: 16px; position: relative; }
+  .grid span { border-right: 1px solid #e1e4e2; border-bottom: 1px solid #e1e4e2; padding: 6px 10px; color: #222; white-space: nowrap; overflow: hidden; }
+  .grid span.h { background: #f1f3f2; color: #666; text-align: center; }
+  .grid span.n { text-align: right; }
+  .chart { position: absolute; right: 70px; top: 120px; width: 640px; height: 380px; background: #fff; border: 1px solid #c8cfcb; padding: 30px 40px 40px; display: flex; align-items: flex-end; gap: 28px; box-shadow: 0 6px 18px rgb(0 0 0 / 0.12); }
+  .chart i { flex: 1; background: #2f8f5b; height: var(--h); }
+  .chart i:nth-child(even) { background: #f0a43a; }
+
+  /* Slides */
+  #slides .window { background: #e9e5e2; }
+  #slides .titlebar { background: #b5472d; color: #fff; }
+  #slides .titlebar::after { color: #f6d9d1; }
+  #slides .toolbar { background: #f6f2ef; border-bottom: 1px solid #ddd5cf; }
+  .slides { flex: 1; display: flex; gap: 30px; padding: 26px; }
+  .thumbs { width: 220px; display: grid; gap: 18px; align-content: start; }
+  .thumbs i { aspect-ratio: 16 / 9; background: #fff; border: 2px solid transparent; }
+  .thumbs i:first-child { border-color: #b5472d; background: linear-gradient(135deg, #12355b 60%, #ff8c42 60%); }
+  .slide { flex: 1; align-self: center; aspect-ratio: 16 / 9; max-height: 100%; background: linear-gradient(135deg, #12355b 0 62%, #ff8c42 62%); color: #fff; padding: 90px; display: flex; flex-direction: column; justify-content: center; }
+  .slide h1 { font-size: 78px; line-height: 1.05; max-width: 12ch; }
+  .slide p { font-size: 30px; margin-top: 26px; opacity: 0.85; }
+
+  /* Code */
+  #code .window { background: #1e1f24; }
+  #code .titlebar { background: #18191d; color: #bbb; }
+  #code .titlebar::after { color: #888; }
+  .editor { flex: 1; display: flex; font: 17px/1.75 Consolas, monospace; }
+  .tree { width: 290px; background: #191a1f; color: #9aa0aa; padding: 20px; font-family: "Segoe UI", sans-serif; font-size: 16px; line-height: 2; }
+  .tree .on { color: #fff; background: #2b2e36; margin: 0 -20px; padding: 0 20px; }
+  .lines { padding: 24px 32px; color: #d4d4d4; white-space: pre; }
+  .k { color: #c792ea; } .s { color: #c3e88d; } .f { color: #82aaff; } .c { color: #6b7280; } .t { color: #ffcb6b; }
+
+  /* A map in a browser */
+  .browser .titlebar { background: #dfe3ea; }
+  .address { height: 52px; flex: none; background: #f4f6f9; display: flex; align-items: center; padding: 0 20px; gap: 14px; border-bottom: 1px solid #d5dae2; }
+  .address span { flex: 1; height: 34px; border-radius: 17px; background: #fff; border: 1px solid #d0d6df; padding: 6px 18px; font-size: 15px; color: #555; }
+  .map { flex: 1; position: relative; overflow: hidden; background: #f2efe6; }
+  .map .park { position: absolute; background: #c8e6b8; border-radius: 40% 60% 50% 45%; }
+  .map .river { position: absolute; left: -100px; top: 380px; width: 2300px; height: 90px; background: #a9d3f0; transform: rotate(-12deg); border-radius: 50px; }
+  .map .road { position: absolute; background: #fff; box-shadow: 0 0 0 2px #e2ddd0; }
+  .map .major { background: #ffd66e; box-shadow: 0 0 0 2px #e6b84a; }
+  .map .pin { position: absolute; left: 1080px; top: 330px; width: 54px; height: 54px; background: #e0403a; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); box-shadow: 0 4px 10px rgb(0 0 0 / 0.3); }
+  .map .panel { position: absolute; left: 24px; top: 24px; width: 420px; height: 560px; background: #fff; border-radius: 12px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.18); padding: 26px; }
+  .panel h2 { font-size: 26px; margin-bottom: 10px; color: #222; }
+  .panel p { font-size: 17px; color: #555; line-height: 1.6; }
+  .panel .photo { height: 200px; border-radius: 8px; margin: 18px 0; background: linear-gradient(#8ec5ea, #d7ecf7 60%, #6aa86b 60%); }
+
+  /* An article in a browser */
+  .article { flex: 1; background: #fff; overflow: hidden; }
+  .article .hero { height: 380px; background: linear-gradient(170deg, #253b6e 0 30%, #5a7bb5 30% 46%, #94b3d8 46% 60%, #2f5d3a 60%); }
+  .article .body { width: 1000px; margin: 0 auto; padding: 50px 0; display: grid; grid-template-columns: 2fr 1fr; gap: 50px; }
+  .article h1 { font-size: 46px; color: #111; grid-column: 1 / -1; font-family: Georgia, serif; }
+  .article p { font-size: 20px; line-height: 1.65; color: #333; margin-bottom: 14px; font-family: Georgia, serif; }
+  .article aside { background: #f3f5f8; border-radius: 10px; padding: 24px; font-size: 17px; color: #444; line-height: 1.7; }
+
+  /* A drawing */
+  #paint .window { background: #d9dce2; }
+  #paint .titlebar, #paint .toolbar { background: #f2f3f5; }
+  .canvas { flex: 1; margin: 30px auto; width: 1400px; background: #fff; position: relative; overflow: hidden; box-shadow: 0 0 0 1px #c5c9d0; }
+  .canvas .sun { position: absolute; left: 1050px; top: 70px; width: 170px; height: 170px; border-radius: 50%; background: #ffc531; }
+  .canvas .hill { position: absolute; left: -200px; right: -200px; bottom: -380px; height: 640px; border-radius: 50%; background: #74b95b; }
+  .canvas .house { position: absolute; left: 360px; bottom: 150px; width: 300px; height: 230px; background: #e8743b; }
+  .canvas .roof { position: absolute; left: 330px; bottom: 380px; border-left: 180px solid transparent; border-right: 180px solid transparent; border-bottom: 150px solid #8b3a25; }
+  .canvas .door { position: absolute; left: 470px; bottom: 150px; width: 80px; height: 130px; background: #5b3420; }
+  .canvas .tree1 { position: absolute; left: 820px; bottom: 170px; width: 160px; height: 220px; border-radius: 50%; background: #2f7d3a; }
+  .palette { display: flex; gap: 10px; }
+  .palette i { width: 34px; height: 34px; border-radius: 50%; background: var(--c); }
+
+  /* A desktop */
+  #desktop { background: radial-gradient(ellipse at 30% 110%, #f39b5c 0 20%, transparent 50%), linear-gradient(160deg, #1b2b55, #3f5aa8 55%, #9db7e8); }
+  #desktop .wave { position: absolute; left: -200px; right: -200px; bottom: 140px; height: 360px; border-radius: 50%; background: rgb(255 255 255 / 0.08); }
+  #desktop .wave + .wave { bottom: 40px; height: 300px; background: rgb(255 255 255 / 0.12); }
+  .icons { position: absolute; left: 30px; top: 30px; display: grid; gap: 36px; }
+  .icons i { width: 56px; height: 56px; border-radius: 10px; background: var(--c); }
+
+</style>
+</head>
+<body>
+
+<section class="screen" id="doc">
+  <div class="window">
+    <div class="titlebar">Есей.docx</div>
+    <div class="toolbar"><b></b><b></b><b class="wide"></b><b></b><b></b><b></b><b class="wide"></b><b></b><b></b></div>
+    <div class="page">
+      <h1>Як рослини живляться світлом</h1>
+      <p>Фотосинтез — це процес, під час якого зелені рослини з вуглекислого газу й води утворюють цукри, використовуючи енергію сонячного світла. Побічним продуктом цього процесу є кисень, яким ми дихаємо.</p>
+      <p>Головну роль відіграє хлорофіл: саме він поглинає червоне й синє світло та відбиває зелене, тому листя здається нам зеленим.</p>
+      <h2>Світлова й темнова фази</h2>
+      <p>У світловій фазі енергія світла розщеплює воду, а в темновій із вуглекислого газу утворюється глюкоза. Обидві фази відбуваються в хлоропластах.</p>
+      <p>Без фотосинтезу на Землі не було б ні кисню в повітрі, ні більшості їжі, яку ми споживаємо щодня.</p>
+    </div>
+  </div>
+  <div class="taskbar"><i style="--c:#3b82f6"></i><i style="--c:#f59e0b"></i><i style="--c:#2563eb"></i><i style="--c:#16a34a"></i><i style="--c:#ef4444"></i></div>
+</section>
+
+<section class="screen" id="sheet">
+  <div class="window">
+    <div class="titlebar">Бюджет поїздки.xlsx</div>
+    <div class="toolbar"><b></b><b></b><b class="wide"></b><b></b><b></b><b class="wide"></b><b></b></div>
+    <div class="grid">
+      <span class="h"></span><span class="h">A</span><span class="h">B</span><span class="h">C</span><span class="h">D</span><span class="h">E</span><span class="h">F</span><span class="h">G</span><span class="h">H</span><span class="h">I</span>
+      <span class="h">1</span><span><b>Стаття</b></span><span class="n"><b>План</b></span><span class="n"><b>Факт</b></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">2</span><span>Квитки</span><span class="n">4 200</span><span class="n">3 980</span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">3</span><span>Житло</span><span class="n">6 500</span><span class="n">6 900</span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">4</span><span>Харчування</span><span class="n">3 000</span><span class="n">2 740</span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">5</span><span>Музеї</span><span class="n">900</span><span class="n">1 150</span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">6</span><span>Транспорт</span><span class="n">1 200</span><span class="n">860</span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">7</span><span>Сувеніри</span><span class="n">600</span><span class="n">720</span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">8</span><span><b>Разом</b></span><span class="n"><b>16 400</b></span><span class="n"><b>16 350</b></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">9</span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">10</span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">11</span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <span class="h">12</span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      <div class="chart"><i style="--h:60%"></i><i style="--h:56%"></i><i style="--h:92%"></i><i style="--h:98%"></i><i style="--h:42%"></i><i style="--h:38%"></i><i style="--h:22%"></i><i style="--h:26%"></i></div>
+    </div>
+  </div>
+  <div class="taskbar"><i style="--c:#3b82f6"></i><i style="--c:#f59e0b"></i><i style="--c:#16a34a"></i><i style="--c:#ef4444"></i></div>
+</section>
+
+<section class="screen" id="slides">
+  <div class="window">
+    <div class="titlebar">Сонячна система.pptx</div>
+    <div class="toolbar"><b></b><b class="wide"></b><b></b><b></b><b></b><b class="wide"></b></div>
+    <div class="slides">
+      <div class="thumbs"><i></i><i></i><i></i><i></i></div>
+      <div class="slide"><h1>Сонячна система</h1><p>Вісім планет і одна зоря</p></div>
+    </div>
+  </div>
+  <div class="taskbar"><i style="--c:#3b82f6"></i><i style="--c:#b5472d"></i><i style="--c:#16a34a"></i></div>
+</section>
+
+<section class="screen dark-bar" id="code">
+  <div class="window">
+    <div class="titlebar">game.py</div>
+    <div class="editor">
+      <div class="tree">project<br><span class="on">game.py</span><br>player.py<br>levels.json<br>README.md</div>
+      <div class="lines"><span class="k">import</span> random
+
+<span class="k">class</span> <span class="t">Game</span>:
+    <span class="k">def</span> <span class="f">__init__</span>(self, size=<span class="s">10</span>):
+        self.size = size
+        self.score = <span class="s">0</span>
+        self.target = random.randint(<span class="s">1</span>, size)
+
+    <span class="k">def</span> <span class="f">guess</span>(self, number):
+        <span class="c"># Closer guesses score more points</span>
+        <span class="k">if</span> number == self.target:
+            self.score += <span class="s">10</span>
+            <span class="k">return</span> <span class="s">"Correct!"</span>
+        <span class="k">return</span> <span class="s">"Higher"</span> <span class="k">if</span> number &lt; self.target <span class="k">else</span> <span class="s">"Lower"</span>
+
+<span class="k">if</span> __name__ == <span class="s">"__main__"</span>:
+    game = <span class="t">Game</span>()
+    print(game.guess(<span class="s">5</span>))</div>
+    </div>
+  </div>
+  <div class="taskbar"><i style="--c:#3b82f6"></i><i style="--c:#7c3aed"></i><i style="--c:#f59e0b"></i></div>
+</section>
+
+<section class="screen browser" id="map">
+  <div class="window">
+    <div class="titlebar">Карта</div>
+    <div class="address"><span>maps.example/kyiv</span></div>
+    <div class="map">
+      <div class="park" style="left:300px;top:60px;width:420px;height:260px"></div>
+      <div class="park" style="left:1350px;top:560px;width:380px;height:220px"></div>
+      <div class="river"></div>
+      <div class="road major" style="left:0;top:220px;width:1920px;height:16px"></div>
+      <div class="road" style="left:0;top:640px;width:1920px;height:10px"></div>
+      <div class="road major" style="left:900px;top:0;width:16px;height:1000px"></div>
+      <div class="road" style="left:560px;top:0;width:10px;height:1000px"></div>
+      <div class="road" style="left:1300px;top:0;width:10px;height:1000px"></div>
+      <div class="road" style="left:1600px;top:0;width:10px;height:1000px"></div>
+      <div class="pin"></div>
+      <div class="panel"><h2>Ботанічний сад</h2><p>Відкрито до 20:00</p><div class="photo"></div><p>Понад 13 тисяч видів рослин, оранжереї та розарій.</p></div>
+    </div>
+  </div>
+  <div class="taskbar"><i style="--c:#3b82f6"></i><i style="--c:#0ea5e9"></i><i style="--c:#16a34a"></i></div>
+</section>
+
+<section class="screen browser" id="article">
+  <div class="window">
+    <div class="titlebar">Карпати</div>
+    <div class="address"><span>encyclopedia.example/karpaty</span></div>
+    <div class="article">
+      <div class="hero"></div>
+      <div class="body">
+        <h1>Українські Карпати</h1>
+        <div><p>Карпати — гірська система в Центральній Європі. Українська частина тягнеться на 280 кілометрів, а найвища вершина, Говерла, сягає 2061 метра.</p><p>Тут беруть початок Дністер, Прут і Тиса, а ліси вкривають понад половину території.</p></div>
+        <aside>Найвища точка: Говерла, 2061 м<br>Довжина в Україні: 280 км<br>Головні річки: Дністер, Прут, Тиса</aside>
+      </div>
+    </div>
+  </div>
+  <div class="taskbar"><i style="--c:#3b82f6"></i><i style="--c:#0ea5e9"></i><i style="--c:#f59e0b"></i></div>
+</section>
+
+<section class="screen" id="paint">
+  <div class="window">
+    <div class="titlebar">Малюнок.png</div>
+    <div class="toolbar"><b></b><b></b><b></b><div class="palette"><i style="--c:#111"></i><i style="--c:#e8743b"></i><i style="--c:#ffc531"></i><i style="--c:#74b95b"></i><i style="--c:#2f7d3a"></i><i style="--c:#3b82f6"></i><i style="--c:#8b3a25"></i></div></div>
+    <div class="canvas"><div class="sun"></div><div class="hill"></div><div class="roof"></div><div class="house"></div><div class="door"></div><div class="tree1"></div></div>
+  </div>
+  <div class="taskbar"><i style="--c:#3b82f6"></i><i style="--c:#e8743b"></i></div>
+</section>
+
+<section class="screen" id="desktop">
+  <div class="wave"></div><div class="wave"></div>
+  <div class="icons"><i style="--c:#f59e0b"></i><i style="--c:#3b82f6"></i><i style="--c:#16a34a"></i><i style="--c:#e5e7eb"></i></div>
+  <div class="taskbar"><i style="--c:#3b82f6"></i><i style="--c:#f59e0b"></i><i style="--c:#16a34a"></i><i style="--c:#ef4444"></i></div>
+</section>
+
+
+</body>
+</html>

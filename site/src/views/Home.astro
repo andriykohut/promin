@@ -1,7 +1,8 @@
 ---
 import { Image } from 'astro:assets';
 import Beacon from '../../../assets/brand/promin-beacon-dark.svg';
-import screenshot from '../../../assets/screenshots/console-room.png';
+import roomEn from '../../../assets/screenshots/room-en.png';
+import roomUk from '../../../assets/screenshots/room-uk.png';
 import Pc from '../components/Pc.astro';
 import Base from '../layouts/Base.astro';
 import { link, repo, strings, type Lang } from '../strings';
@@ -12,6 +13,7 @@ interface Props {
 
 const { lang } = Astro.props;
 const t = strings[lang];
+const screenshot = lang === 'uk' ? roomUk : roomEn;
 
 // Each PC lights up when the sweeping beam reaches it, so its delay follows its angle from the beacon.
 const pcs = Array.from({ length: 12 }, (_, i) => {
@@ -37,7 +39,7 @@ const pcs = Array.from({ length: 12 }, (_, i) => {
       <Beacon class="beacon" />
       <div class="beam"></div>
       <div class="desks">
-        {pcs.map((delay) => <Pc state="shared" style={`--delay: ${delay}s`} />)}
+        {pcs.map((delay) => <Pc style={`--delay: ${delay}s`} />)}
       </div>
     </div>
   </div>
@@ -46,7 +48,7 @@ const pcs = Array.from({ length: 12 }, (_, i) => {
     <div class="wrap">
       <h2>{t.features.title}</h2>
       <div class="features-grid">
-        <Image class="shot" src={screenshot} alt={t.features.screenshotAlt} widths={[640, 1002]} sizes="(min-width: 60rem) 34rem, 100vw" />
+        <Image class="shot" src={screenshot} alt={t.features.screenshotAlt} widths={[640, 1264]} sizes="(min-width: 60rem) 34rem, 100vw" />
         <div>
           <dl class="feature-list">
             {
@@ -162,7 +164,6 @@ const pcs = Array.from({ length: 12 }, (_, i) => {
     background: var(--fog);
   }
 
-  /* The room: a beacon at the front, twelve PCs facing it, one sweep of light on load. */
   .room {
     position: relative;
     padding-top: clamp(5.5rem, 11vw, 8rem);
@@ -289,7 +290,6 @@ const pcs = Array.from({ length: 12 }, (_, i) => {
     outline: 1px solid rgb(20 21 24 / 0.15);
   }
 
-  /* Two columns only where a long Ukrainian name such as «перезавантаження» still fits in one. */
   .feature-list {
     margin: 0;
     display: grid;

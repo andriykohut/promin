@@ -1,5 +1,5 @@
 ---
-import Pc from '../components/Pc.astro';
+import { Image } from 'astro:assets';
 import Base from '../layouts/Base.astro';
 import { strings, type Lang } from '../strings';
 
@@ -10,15 +10,9 @@ interface Props {
 const { lang } = Astro.props;
 const t = strings[lang];
 
-// Four PCs per feature, showing what that feature does to a room.
-const rooms = {
-  broadcast: ['shared', 'shared', 'shared', 'shared'],
-  screens: ['own-a', 'own-b', 'own-c', 'own-b'],
-  lock: ['locked', 'locked', 'own-a', 'locked'],
-  files: ['files', 'files', 'files', 'own-c'],
-  control: ['own-b', 'controlled', 'own-c', 'own-a'],
-  power: ['off', 'off', 'off', 'off'],
-} as const;
+const shots = import.meta.glob<{ default: ImageMetadata }>('../../../assets/screenshots/*.png', { eager: true });
+const shotNames: Record<string, string> = { screens: 'room' };
+const shotOf = (id: string) => shots[`../../../assets/screenshots/${shotNames[id] ?? id}-${lang}.png`].default;
 ---
 
 <Base lang={lang} path="features/" title={`${t.nav.features}: ${t.title}`} description={t.featuresPage.lead}>
@@ -31,11 +25,6 @@ const rooms = {
     {
       t.features.items.map((item) => (
         <section class="feature" id={item.id}>
-          <div class="room" aria-hidden="true">
-            {rooms[item.id as keyof typeof rooms].map((state) => (
-              <Pc state={state} />
-            ))}
-          </div>
           <div>
             <h2>{item.name}</h2>
             <p class="feature-text">{item.text}</p>
@@ -45,6 +34,7 @@ const rooms = {
               ))}
             </ul>
           </div>
+          <Image class="shot" src={shotOf(item.id)} alt={item.shotAlt} widths={[640, 960, 1264]} sizes="(min-width: 60rem) 42rem, 100vw" />
         </section>
       ))
     }
@@ -72,22 +62,21 @@ const rooms = {
     border-top: 1px solid rgb(20 21 24 / 0.12);
   }
 
-  @media (min-width: 50rem) {
+  @media (min-width: 60rem) {
     .feature {
-      grid-template-columns: minmax(14rem, 22rem) 1fr;
-      gap: clamp(2.5rem, 6vw, 5rem);
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      gap: clamp(2.5rem, 5vw, 4rem);
       align-items: start;
     }
   }
 
-  .room {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-    max-width: 22rem;
-    padding: 1.25rem;
-    border-radius: 10px;
-    background: var(--night);
+  .feature h2 {
+    font-size: clamp(1.5rem, 2.2vw, 2rem);
+  }
+
+  .shot {
+    width: 100%;
+    height: auto;
   }
 
   .feature-text {
@@ -111,7 +100,6 @@ const rooms = {
     padding-left: 1.25rem;
   }
 
-  /* A short ray, after the beacon's. */
   li::before {
     content: '';
     position: absolute;

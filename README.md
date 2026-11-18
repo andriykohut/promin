@@ -9,7 +9,7 @@ Promin shows one PC's screen on every other PC in the room, over the local netwo
 
 The name is Ukrainian: промінь, a beam of light.
 
-![The Promin console: a tile for each PC in the room, with Lock, Send files and Start broadcast along the bottom](assets/screenshots/console-room.png)
+![The Promin console: a tile for each PC in the room, with Lock, Send files and Start broadcast along the bottom](assets/screenshots/room-en.png)
 
 **[Website](https://andriykohut.github.io/promin/)** · [What it does](https://andriykohut.github.io/promin/features/) · [Setting up a room](https://andriykohut.github.io/promin/docs/) · [Security](https://andriykohut.github.io/promin/docs/security/) · [Українською](https://andriykohut.github.io/promin/ua/)
 

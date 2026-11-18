@@ -22,6 +22,7 @@ const en = {
       {
         id: 'broadcast',
         name: 'Broadcast',
+        shotAlt: 'The console on air: all 11 PCs receiving the same slides.',
         text: 'Your screen covers every other display, and their keyboards and mice wait until you stop.',
         details: [
           'The console lets you choose the picture quality and its sharpness.',
@@ -33,6 +34,7 @@ const en = {
       {
         id: 'screens',
         name: 'See every screen',
+        shotAlt: 'The console’s room: a tile with a picture of each PC’s screen, and one PC offline.',
         text: 'Each PC has a tile with a picture of its screen, refreshed about once a second.',
         details: [
           'The pictures keep coming during a broadcast too.',
@@ -43,6 +45,7 @@ const en = {
       {
         id: 'lock',
         name: 'Lock',
+        shotAlt: 'Three PCs ticked and the lock panel open, with the message “10-minute break”.',
         text: 'Lock one PC, a few or all of them, with a message of up to 100 characters. The lock holds through a restart, and one click lifts it.',
         details: [
           'The lock is kept on the PC itself, so it survives a restart, a sign-out and the console being closed. It comes back a moment after sign-in.',
@@ -53,6 +56,7 @@ const en = {
       {
         id: 'files',
         name: 'Send files',
+        shotAlt: 'A presentation on its way to 11 PCs, each tile showing 60%.',
         text: 'Send files and folders to the ticked PCs, and open them there as soon as they arrive.',
         details: [
           'They go to a Promin folder on the desktop of whoever is signed in.',
@@ -63,6 +67,7 @@ const en = {
       {
         id: 'control',
         name: 'Control a PC',
+        shotAlt: 'A PC’s panel open, with its address and the Control this PC button.',
         text: 'Work on another PC full screen, with your own keyboard and mouse. Copy and paste goes both ways.',
         details: [
           'Double-click a tile, or open its ⋯ panel and choose Control this PC.',
@@ -76,6 +81,7 @@ const en = {
       {
         id: 'power',
         name: 'Shut down and restart',
+        shotAlt: 'The power menu for 11 ticked PCs: shut down or restart.',
         text: 'Turn off or restart the ticked PCs at the end of the day, after one confirmation.',
         details: [
           'It happens at once: every app on them closes without saving.',
@@ -161,6 +167,7 @@ const uk: Strings = {
       {
         id: 'broadcast',
         name: 'Трансляція',
+        shotAlt: 'Консоль у ефірі: усі 11 ПК отримують ті самі слайди.',
         text: 'Ваш екран заповнює всі інші дисплеї, а їхні клавіатури й миші не працюють, доки ви не зупините трансляцію.',
         details: [
           'У консолі можна вибрати якість картинки та її чіткість.',
@@ -172,6 +179,7 @@ const uk: Strings = {
       {
         id: 'screens',
         name: 'Усі екрани перед очима',
+        shotAlt: 'Кімната в консолі: плитка з картинкою екрана кожного ПК, один ПК не в мережі.',
         text: 'Кожен ПК має плитку з картинкою свого екрана, яка оновлюється приблизно щосекунди.',
         details: [
           'Картинки оновлюються й під час трансляції.',
@@ -182,6 +190,7 @@ const uk: Strings = {
       {
         id: 'lock',
         name: 'Блокування',
+        shotAlt: 'Позначено три ПК, відкрито панель блокування з повідомленням «Перерва 10 хвилин».',
         text: 'Заблокуйте один ПК, кілька чи всі, з повідомленням до 100 символів. Блокування тримається навіть після перезавантаження, а зняти його можна одним клацанням.',
         details: [
           'Блокування зберігається на самому ПК, тож воно не зникає після перезавантаження, виходу із системи чи закриття консолі. Після входу в систему воно повертається за мить.',
@@ -192,6 +201,7 @@ const uk: Strings = {
       {
         id: 'files',
         name: 'Надсилання файлів',
+        shotAlt: 'Презентація надсилається на 11 ПК, на кожній плитці 60%.',
         text: 'Надсилайте файли й папки на позначені ПК і відкривайте їх там, щойно вони надійдуть.',
         details: [
           'Вони потрапляють до папки Promin на робочому столі того, хто увійшов у систему.',
@@ -202,6 +212,7 @@ const uk: Strings = {
       {
         id: 'control',
         name: 'Керування ПК',
+        shotAlt: 'Відкрита панель ПК з його адресою та кнопкою «Керувати цим ПК».',
         text: 'Працюйте на іншому ПК на весь екран своєю клавіатурою й мишею. Копіювання та вставлення працює в обидва боки.',
         details: [
           'Двічі клацніть плитку або відкрийте її панель ⋯ і виберіть «Керувати цим ПК».',
@@ -215,6 +226,7 @@ const uk: Strings = {
       {
         id: 'power',
         name: 'Вимкнення й перезавантаження',
+        shotAlt: 'Меню живлення для 11 позначених ПК: вимкнути або перезавантажити.',
         text: 'Вимикайте чи перезавантажуйте позначені ПК наприкінці дня після одного підтвердження.',
         details: [
           'Це відбувається одразу: усі програми на них закриваються без збереження.',
