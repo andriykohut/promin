@@ -30,10 +30,10 @@ A program sent to a PC is saved but never run, even when **Open them on each PC 
 
 ## If the console is lost or a PC is stuck
 
-Only the paired console can unlock a PC. If the console is lost or a PC is stuck, an administrator starts that PC in Safe Mode, opens a terminal in the agent's folder (`C:\Program Files\Promin\Agent`) and runs:
+Only the paired console can unlock a PC. If the console is lost or a PC is stuck, an administrator starts that PC in Safe Mode, opens a terminal with **Run as administrator**, goes to the agent's folder (`C:\Program Files\Promin\Agent`) and runs:
 
 ```
 .\Promin.Agent.exe --reset-pairing | Out-Host
 ```
 
-This also removes the lock. The PC must then be paired again.
+This also removes the lock. Restart the PC normally, then pair it again.

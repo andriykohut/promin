@@ -28,7 +28,7 @@ Run `Promin.Agent.exe` in its folder with one of these:
 | `--install` | Registers the agent as a service that starts with Windows, adds its firewall rule, and locks the data folder (administrator terminal) |
 | `--uninstall` | Removes the service and its firewall rule, leaving the pairing, identity and lock files |
 | `--windowed` | Shows the broadcast in an ordinary window instead of covering the display |
-| `--reset-pairing` | Forgets the paired console and removes the lock, so the PC can be paired again |
+| `--reset-pairing` | Forgets the paired console and removes the lock, so the PC can be paired again. A running agent keeps both until it restarts, so restart the PC afterwards (administrator terminal) |
 
 ## Network ports
 

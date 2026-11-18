@@ -271,7 +271,7 @@ const pcs = Array.from({ length: 12 }, (_, i) => {
 
   @media (min-width: 60rem) {
     .features-grid {
-      grid-template-columns: 34rem 1fr;
+      grid-template-columns: 34rem minmax(0, 1fr);
       align-items: start;
       gap: 4rem;
     }
@@ -289,16 +289,12 @@ const pcs = Array.from({ length: 12 }, (_, i) => {
     outline: 1px solid rgb(20 21 24 / 0.15);
   }
 
+  /* Two columns only where a long Ukrainian name such as «перезавантаження» still fits in one. */
   .feature-list {
     margin: 0;
     display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
     gap: 2.25rem;
-  }
-
-  @media (min-width: 40rem) {
-    .feature-list {
-      grid-template-columns: 1fr 1fr;
-    }
   }
 
   dt {
