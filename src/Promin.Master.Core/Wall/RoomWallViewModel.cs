@@ -135,8 +135,12 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private string _qualityButtonText = string.Empty;
     private string _qualityPickerName = string.Empty;
     private string _networkLoadText = string.Empty;
-    // The PC being controlled, from the moment its start is asked for until control ends.
+    // The PC being viewed or controlled, from the moment its start is asked for until the session ends.
     private string? _controlledId;
+
+    // Whether the session on _controlledId is only viewing, with no control asked for: its tile looks as usual, and a
+    // lock leaves the session on.
+    private bool _viewOnly;
 
     // What the bar says off air about the last control that did not start or was lost; empty until the next start, lock or unlock.
     private string _controlLine = string.Empty;
@@ -189,8 +193,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>
-    /// Raised when the controlled PC can no longer be controlled (its connection ended, it is being locked or removed, or
-    /// another PC is to be controlled). The page ends the session and calls <see cref="ControlEnded"/>.
+    /// Raised when the viewed or controlled PC's session must end (its connection ended, it is being locked while
+    /// controlled, shut down or removed, or another PC is to be viewed or controlled). The view model has already let
+    /// the session go; the page only ends it.
     /// </summary>
     public event Action? ControlMustEnd;
 
@@ -204,7 +209,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     public bool CanStart => _canStart;
 
-    /// <summary>The name of the PC being controlled; null when none is.</summary>
+    /// <summary>The name of the PC being viewed or controlled; null when none is.</summary>
     public string? ControlledName => Tiles.FirstOrDefault(t => t.DeviceId == _controlledId)?.Name;
 
     public string BarLine1 => _barLine1;
@@ -441,7 +446,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (targets.Any(m => m.DeviceId == _controlledId))
+        if (!_viewOnly && targets.Any(m => m.DeviceId == _controlledId))
         {
             ControlMustEnd?.Invoke();
             ClearControl();
@@ -504,11 +509,43 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Starts a control session on the PC. Null, with the failure in the bar, when the PC cannot be controlled or the
-    /// session did not start; null, unchanged, when it is already the controlled PC; null, with the session disposed,
-    /// when control of it ended while it started (the PC locked, removed or lost). Control of another PC ends first.
+    /// Starts a session on the PC for control: the session opens viewing, and the caller sends
+    /// <see cref="TakeControl"/> on it at once. Null, with the failure in the bar, when the PC cannot be controlled or
+    /// the session did not start; null, unchanged, when the PC already has a session (see <see cref="IsViewing"/>);
+    /// null, with the session disposed, when it ended while it started (the PC locked, removed or lost). A session on
+    /// another PC ends first.
     /// </summary>
-    public async Task<IControlSession?> StartControlAsync(PcTile tile)
+    public Task<IControlSession?> StartControlAsync(PcTile tile) => StartSessionAsync(tile, viewOnly: false);
+
+    /// <summary>
+    /// Starts viewing the PC, which shows nothing on it, as <see cref="StartControlAsync"/> starts a session for control.
+    /// <see cref="TakingControl"/> follows if the person takes control from the view.
+    /// </summary>
+    public Task<IControlSession?> StartViewingAsync(PcTile tile) => StartSessionAsync(tile, viewOnly: true);
+
+    /// <summary>Whether the PC is being viewed, with no control asked for.</summary>
+    public bool IsViewing(PcTile tile)
+    {
+        ArgumentNullException.ThrowIfNull(tile);
+        return _viewOnly && tile.DeviceId == _controlledId;
+    }
+
+    /// <summary>
+    /// Control of the viewed PC has been asked for: from now its tile shows control, and a lock ends the session first,
+    /// as for a PC under control. A refusal comes back through <see cref="ControlEnded"/>. Ignored for any other PC.
+    /// </summary>
+    public void TakingControl(string deviceId)
+    {
+        if (deviceId != _controlledId)
+        {
+            return;
+        }
+
+        _viewOnly = false;
+        Refresh();
+    }
+
+    private async Task<IControlSession?> StartSessionAsync(PcTile tile, bool viewOnly)
     {
         ArgumentNullException.ThrowIfNull(tile);
         if (!tile.CanControl || tile.DeviceId == _controlledId)
@@ -523,13 +560,14 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         _controlledId = tile.DeviceId;
+        _viewOnly = viewOnly;
         _controlLine = string.Empty;
         Refresh();
 
         IControlSession? session;
         try
         {
-            session = await _connections.StartControlAsync(tile.DeviceId).ConfigureAwait(true);
+            session = await _connections.StartViewingAsync(tile.DeviceId).ConfigureAwait(true);
         }
         catch (Exception)
         {
@@ -545,7 +583,8 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         if (session is null && _controlledId == tile.DeviceId)
         {
             _controlledId = null;
-            _controlLine = WallText.CouldNotControlLine(tile.Name);
+            _viewOnly = false;
+            _controlLine = viewOnly ? WallText.CouldNotViewLine(tile.Name) : WallText.CouldNotControlLine(tile.Name);
             Refresh();
         }
 
@@ -553,24 +592,31 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Control of <paramref name="deviceId"/> has ended, as asked by <see cref="ControlMustEnd"/> or by the person. When it
-    /// was lost, the bar says so. Ignored when that PC is not the controlled one, as when a window already replaced by a
-    /// later control reports in late.
+    /// The session on <paramref name="deviceId"/> has ended, as asked by <see cref="ControlMustEnd"/> or by the person.
+    /// When it was lost, or control was refused, the bar says so. Ignored when that PC is not the one viewed or
+    /// controlled, as when a window already replaced by a later session reports in late.
     /// </summary>
-    public void ControlEnded(string deviceId, bool lost)
+    public void ControlEnded(string deviceId, ControlEnd how)
     {
         if (deviceId != _controlledId)
         {
             return;
         }
 
-        var name = ControlledName;
+        var line = ControlledName is { } name ? EndLine(name, how) : string.Empty;
         ClearControl();
-        _controlLine = lost && name is not null ? WallText.ControlLostLine(name) : string.Empty;
+        _controlLine = line;
         Refresh();
     }
 
-    /// <summary>Forgets the controlled PC; its tile shows the newest picture received meanwhile.</summary>
+    private string EndLine(string name, ControlEnd how) => how switch
+    {
+        ControlEnd.Lost => _viewOnly ? WallText.ViewLostLine(name) : WallText.ControlLostLine(name),
+        ControlEnd.Refused => WallText.CouldNotControlLine(name),
+        _ => string.Empty,
+    };
+
+    /// <summary>Forgets the viewed or controlled PC; its tile shows the newest picture received meanwhile.</summary>
     private void ClearControl()
     {
         if (Tiles.FirstOrDefault(t => t.DeviceId == _controlledId) is { } tile && _pictures.TryGetValue(tile.DeviceId, out var picture))
@@ -579,6 +625,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         _controlledId = null;
+        _viewOnly = false;
         _controlLine = string.Empty;
     }
 
@@ -914,6 +961,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         {
             ControlMustEnd?.Invoke();
             _controlledId = null;
+            _viewOnly = false;
         }
 
         _lockAsked.Remove(deviceId);
@@ -950,10 +998,10 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         if (deviceId == _controlledId)
         {
             // Set here, not left to ControlEnded: the window cannot always tell a lost connection from an end it was asked for.
-            var name = ControlledName;
+            var line = ControlledName is { } name ? EndLine(name, ControlEnd.Lost) : string.Empty;
             ControlMustEnd?.Invoke();
             ClearControl();
-            _controlLine = name is null ? string.Empty : WallText.ControlLostLine(name);
+            _controlLine = line;
             Refresh();
         }
     }
@@ -1187,7 +1235,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             }
         }
 
-        if (online && member.DeviceId == _controlledId)
+        if (online && member.DeviceId == _controlledId && !_viewOnly)
         {
             return PcTileState.Controlled;
         }

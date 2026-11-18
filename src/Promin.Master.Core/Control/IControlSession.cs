@@ -2,12 +2,12 @@ using Promin.Protocol.Messages;
 
 namespace Promin.Master.Core.Control;
 
-/// <summary>The agent PC refused to be controlled.</summary>
-public sealed class ControlRefusedException() : Exception("The PC refused to be controlled.");
+/// <summary>The agent PC refused to be viewed.</summary>
+public sealed class ControlRefusedException() : Exception("The PC refused to be viewed.");
 
 /// <summary>
-/// The console PC's control of one agent PC: its screen as video, and the messages both ways on the remote stream.
-/// Disposing closes the remote stream, which ends control.
+/// The console PC's view of one agent PC, and control of it once <see cref="TakeControl"/> is sent and answered: its
+/// screen as video, and the messages both ways on the remote stream. Disposing closes the remote stream, which ends both.
 /// </summary>
 public interface IControlSession : IAsyncDisposable
 {

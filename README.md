@@ -13,7 +13,7 @@ The name is Ukrainian: промінь, a beam of light.
 
 **[Website](https://andriykohut.github.io/promin/)** · [What it does](https://andriykohut.github.io/promin/features/) · [Setting up a room](https://andriykohut.github.io/promin/docs/) · [Security](https://andriykohut.github.io/promin/docs/security/) · [Українською](https://andriykohut.github.io/promin/ua/)
 
-Two apps make up Promin. The **console** (`Promin.Master`) runs on the PC whose screen is shown: it broadcasts that screen, shows a picture of every PC's screen, locks PCs, sends them files, controls one PC at a time, and shuts them down or restarts them. The **agent** (`Promin.Agent`) runs as a Windows service on every other PC. The setups for both are on the [releases page](https://github.com/andriykohut/promin/releases/latest).
+Two apps make up Promin. The **console** (`Promin.Master`) runs on the PC whose screen is shown: it broadcasts that screen, shows a picture of every PC's screen, locks PCs, sends them files, views or controls one PC at a time, and shuts them down or restarts them. The **agent** (`Promin.Agent`) runs as a Windows service on every other PC. The setups for both are on the [releases page](https://github.com/andriykohut/promin/releases/latest).
 
 ## Status
 

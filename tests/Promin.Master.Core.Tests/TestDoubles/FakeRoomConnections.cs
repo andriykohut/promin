@@ -25,12 +25,12 @@ public sealed class FakeRoomConnections : IRoomConnections
 
     public List<(string Id, PowerAction Action)> PowersSent { get; } = [];
 
-    public List<string> ControlStarts { get; } = [];
+    public List<string> SessionStarts { get; } = [];
 
-    /// <summary>What <see cref="StartControlAsync"/> hands out; null makes the start fail.</summary>
+    /// <summary>What <see cref="StartViewingAsync"/> hands out; null makes the start fail.</summary>
     public IControlSession? NextSession { get; set; }
 
-    /// <summary>When set, what <see cref="StartControlAsync"/> returns in place of <see cref="NextSession"/>, for a start still under way.</summary>
+    /// <summary>When set, what <see cref="StartViewingAsync"/> returns in place of <see cref="NextSession"/>, for a start still under way.</summary>
     public Task<IControlSession?>? NextStart { get; set; }
 
     private readonly Dictionary<string, TaskCompletionSource> _drops = new(StringComparer.Ordinal);
@@ -56,9 +56,9 @@ public sealed class FakeRoomConnections : IRoomConnections
 
     public void Power(string deviceId, PowerAction action) => PowersSent.Add((deviceId, action));
 
-    public Task<IControlSession?> StartControlAsync(string deviceId)
+    public Task<IControlSession?> StartViewingAsync(string deviceId)
     {
-        ControlStarts.Add(deviceId);
+        SessionStarts.Add(deviceId);
         return NextStart ?? Task.FromResult(NextSession);
     }
 

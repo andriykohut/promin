@@ -6,7 +6,7 @@ using WinRT;
 
 namespace Promin.Master.Control;
 
-/// <summary>A grid that hides this PC's pointer while the pointer is over it or captured by it.</summary>
+/// <summary>A grid that hides this PC's pointer while the pointer is over it or captured by it, unless <see cref="HidesPointer"/> is off.</summary>
 public sealed partial class HiddenPointerArea : Grid
 {
     private const int CursorSize = 32;
@@ -17,6 +17,13 @@ public sealed partial class HiddenPointerArea : Grid
     private static readonly Lazy<InputCursor> Blank = new(CreateBlankCursor);
 
     public HiddenPointerArea() => ProtectedCursor = Blank.Value;
+
+    /// <summary>Whether this PC's pointer is hidden over the grid; on from the start. Off, the usual pointer shows.</summary>
+    public bool HidesPointer
+    {
+        get => ProtectedCursor is not null;
+        set => ProtectedCursor = value ? Blank.Value : null;
+    }
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int CreateFromHCursorMethod(nint self, nint cursor, out nint result);

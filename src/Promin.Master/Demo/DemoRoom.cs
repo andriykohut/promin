@@ -69,7 +69,7 @@ internal sealed class DemoRoom
 
         public IReadOnlyList<RoomMember> Load() => _members;
 
-        public void Save(IReadOnlyList<RoomMember> members) => _members = [.. members];
+        public void Save(IReadOnlyList<RoomMember> members) => _members = members.ToArray();
     }
 
     private sealed class DemoDiscovery(ConcurrentDictionary<string, RoomMember> on) : IDiscovery
@@ -181,7 +181,7 @@ internal sealed class DemoRoom
             }
         }
 
-        public Task<IControlSession?> StartControlAsync(string deviceId) => Task.FromResult<IControlSession?>(null);
+        public Task<IControlSession?> StartViewingAsync(string deviceId) => Task.FromResult<IControlSession?>(null);
 
         private byte[] PictureOf(string deviceId) => receiving.ContainsKey(deviceId) ? broadcastScreen : screens[deviceId];
 

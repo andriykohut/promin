@@ -399,13 +399,13 @@
                             </Grid>
                             <Button
                                 Margin="0,8,0,0"
-                                Click="Control_Click"
+                                Click="View_Click"
                                 FontSize="13"
                                 IsEnabled="{x:Bind Tile.CanControl, Mode=OneWay}"
                                 Style="{StaticResource AccentButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <FontIcon FontSize="14" Glyph="&#xE7F4;" />
-                                    <TextBlock Text="{x:Bind core:Strings.Control_Button}" />
+                                    <FontIcon FontSize="14" Glyph="&#xE890;" />
+                                    <TextBlock Text="{x:Bind core:Strings.View_Button}" />
                                 </StackPanel>
                             </Button>
                             <TextBlock
@@ -414,6 +414,16 @@
                                 Style="{StaticResource CaptionTextBlockStyle}"
                                 Text="{x:Bind core:Strings.Control_Hint}"
                                 TextWrapping="Wrap" />
+                            <Button
+                                Margin="0,8,0,0"
+                                Click="Control_Click"
+                                FontSize="13"
+                                IsEnabled="{x:Bind Tile.CanControl, Mode=OneWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon FontSize="14" Glyph="&#xE7F4;" />
+                                    <TextBlock Text="{x:Bind core:Strings.Control_Button}" />
+                                </StackPanel>
+                            </Button>
                             <StackPanel Margin="-8,8,-8,0">
                                 <Button
                                     Click="StopSending_Click"

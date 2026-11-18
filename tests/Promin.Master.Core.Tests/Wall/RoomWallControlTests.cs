@@ -59,6 +59,14 @@ public sealed class RoomWallControlTests
         return vm;
     }
 
+    private async Task<RoomWallViewModel> Viewing(int n)
+    {
+        var vm = TenWithSevenOffline();
+        _connections.NextSession = new FakeControlSession();
+        Assert.NotNull(await vm.StartViewingAsync(Tile(vm, n)));
+        return vm;
+    }
+
     [Fact]
     public void CanControl_AnOnlinePc() => Assert.True(Tile(TenWithSevenOffline(), 1).CanControl);
 
@@ -120,11 +128,11 @@ public sealed class RoomWallControlTests
     {
         var vm = await Controlling(1);
         var startsWhenEnded = -1;
-        vm.ControlMustEnd += () => startsWhenEnded = _connections.ControlStarts.Count;
+        vm.ControlMustEnd += () => startsWhenEnded = _connections.SessionStarts.Count;
         _connections.NextSession = new FakeControlSession();
         Assert.NotNull(await vm.StartControlAsync(Tile(vm, 2)));
         Assert.Equal(1, startsWhenEnded);
-        Assert.Equal(2, _connections.ControlStarts.Count);
+        Assert.Equal([Id(1), Id(2)], _connections.SessionStarts);
         Assert.Equal(PcTileState.Ready, Tile(vm, 1).State);
         Assert.Equal(PcTileState.Controlled, Tile(vm, 2).State);
         Assert.Equal("PC-02", vm.ControlledName);
@@ -140,7 +148,7 @@ public sealed class RoomWallControlTests
         vm.ControlMustEnd += () => ended++;
         _connections.NextSession = new FakeControlSession();
         await vm.StartControlAsync(Tile(vm, 2));
-        vm.ControlEnded(Id(1), lost);
+        vm.ControlEnded(Id(1), lost ? ControlEnd.Lost : ControlEnd.Closed);
         Assert.Equal(1, ended);
         Assert.Equal(PcTileState.Controlled, Tile(vm, 2).State);
         Assert.Equal("PC-02", vm.ControlledName);
@@ -162,7 +170,7 @@ public sealed class RoomWallControlTests
     public async Task ControlEnded_ReturnsTheTileToReady()
     {
         var vm = await Controlling(1);
-        vm.ControlEnded(Id(1), lost: false);
+        vm.ControlEnded(Id(1), ControlEnd.Closed);
         Assert.Equal(PcTileState.Ready, Tile(vm, 1).State);
         Assert.Null(vm.ControlledName);
         Assert.True(vm.CanStart);
@@ -177,7 +185,7 @@ public sealed class RoomWallControlTests
         vm.ControlMustEnd += () => ended++;
         _connections.RaiseEnded(Id(1));
         Assert.Equal(1, ended);
-        vm.ControlEnded(Id(1), lost: false);
+        vm.ControlEnded(Id(1), ControlEnd.Closed);
         Assert.Equal("Lost the connection to PC-01. Control has ended.", vm.BarLine2);
     }
 
@@ -186,7 +194,7 @@ public sealed class RoomWallControlTests
     {
         var vm = await Controlling(1);
         _connections.RaiseEnded(Id(1));
-        vm.ControlEnded(Id(1), lost: true);
+        vm.ControlEnded(Id(1), ControlEnd.Lost);
         See(1);
         vm.Tick();
         _connections.NextSession = new FakeControlSession();
@@ -206,7 +214,7 @@ public sealed class RoomWallControlTests
         byte[] newer = [0xFF, 0xD8, 2];
         _connections.RaisePicture(Id(1), newer);
         Assert.Equal(Picture1, Tile(vm, 1).Picture);
-        vm.ControlEnded(Id(1), lost: false);
+        vm.ControlEnded(Id(1), ControlEnd.Closed);
         Assert.Equal(newer, Tile(vm, 1).Picture);
     }
 
@@ -271,7 +279,137 @@ public sealed class RoomWallControlTests
         await vm.StartControlAsync(Tile(vm, 1));
         Assert.Equal(PcTileState.Controlled, Tile(vm, 1).State);
         _connections.RaiseLock(Id(1), false);
-        vm.ControlEnded(Id(1), lost: false);
+        vm.ControlEnded(Id(1), ControlEnd.Closed);
         Assert.Equal(PcTileState.Ready, Tile(vm, 1).State);
+    }
+
+    [Fact]
+    public async Task StartViewing_LeavesTheTileAsItIs_AndGreysStart()
+    {
+        var vm = await Viewing(1);
+        Assert.Equal([Id(1)], _connections.SessionStarts);
+        Assert.True(vm.IsViewing(Tile(vm, 1)));
+        Assert.Equal(PcTileState.Ready, Tile(vm, 1).State);
+        Assert.False(vm.CanStart);
+    }
+
+    [Fact]
+    public async Task StartViewing_ThatFails_SaysSo()
+    {
+        var vm = TenWithSevenOffline();
+        _connections.NextSession = null;
+        Assert.Null(await vm.StartViewingAsync(Tile(vm, 1)));
+        Assert.True(vm.CanStart);
+        Assert.Equal("Could not show PC-01's screen.", vm.BarLine2);
+    }
+
+    [Fact]
+    public async Task TakingControl_MarksTheViewedTile()
+    {
+        var vm = await Viewing(1);
+        vm.TakingControl(Id(1));
+        Assert.Equal(PcTileState.Controlled, Tile(vm, 1).State);
+        Assert.False(vm.IsViewing(Tile(vm, 1)));
+    }
+
+    [Fact]
+    public async Task TakingControl_ForAnotherPc_IsIgnored()
+    {
+        var vm = await Viewing(1);
+        vm.TakingControl(Id(2));
+        Assert.Equal(PcTileState.Ready, Tile(vm, 1).State);
+        Assert.Equal(PcTileState.Ready, Tile(vm, 2).State);
+    }
+
+    [Fact]
+    public async Task LockingTheViewedPc_AfterControlWasAsked_EndsTheSessionFirst()
+    {
+        var vm = await Viewing(1);
+        vm.TakingControl(Id(1));
+        var locksWhenEnded = -1;
+        vm.ControlMustEnd += () => locksWhenEnded = _connections.LocksSent.Count;
+        vm.Lock("Back soon");
+        Assert.Equal(0, locksWhenEnded);
+        Assert.Null(vm.ControlledName);
+    }
+
+    [Fact]
+    public async Task ARefusedTakeOver_EndsViewing_AndSaysControlDidNotStart()
+    {
+        var vm = await Viewing(1);
+        vm.ControlEnded(Id(1), ControlEnd.Refused);
+        Assert.Equal(PcTileState.Ready, Tile(vm, 1).State);
+        Assert.True(vm.CanStart);
+        Assert.Equal("Could not start controlling PC-01.", vm.BarLine2);
+    }
+
+    [Fact]
+    public async Task TheConnectionEnding_WhileViewing_SaysViewingHasEnded()
+    {
+        var vm = await Viewing(1);
+        var ended = 0;
+        vm.ControlMustEnd += () => ended++;
+        _connections.RaiseEnded(Id(1));
+        Assert.Equal(1, ended);
+        vm.ControlEnded(Id(1), ControlEnd.Closed);
+        Assert.Equal("Lost the connection to PC-01. Viewing has ended.", vm.BarLine2);
+    }
+
+    [Fact]
+    public async Task AViewingLost_SaysViewingHasEnded_AndAControlTakenThenLost_SaysControl()
+    {
+        var vm = await Viewing(1);
+        vm.ControlEnded(Id(1), ControlEnd.Lost);
+        Assert.Equal("Lost the connection to PC-01. Viewing has ended.", vm.BarLine2);
+
+        _connections.NextSession = new FakeControlSession();
+        Assert.NotNull(await vm.StartViewingAsync(Tile(vm, 1)));
+        vm.TakingControl(Id(1));
+        vm.ControlEnded(Id(1), ControlEnd.Lost);
+        Assert.Equal("Lost the connection to PC-01. Control has ended.", vm.BarLine2);
+    }
+
+    [Fact]
+    public async Task LockingTheViewedPc_KeepsViewing()
+    {
+        var vm = await Viewing(1);
+        var ended = 0;
+        vm.ControlMustEnd += () => ended++;
+        vm.Lock("Back soon");
+        Assert.Equal(0, ended);
+        Assert.Contains(_connections.LocksSent, l => l.Id == Id(1));
+    }
+
+    [Fact]
+    public async Task StartingAgain_OnTheViewedPc_LeavesItsSessionAlone()
+    {
+        var vm = await Viewing(1);
+        var ended = 0;
+        vm.ControlMustEnd += () => ended++;
+        Assert.Null(await vm.StartViewingAsync(Tile(vm, 1)));
+        Assert.Null(await vm.StartControlAsync(Tile(vm, 1)));
+        Assert.Equal(0, ended);
+        Assert.Single(_connections.SessionStarts);
+        Assert.True(vm.IsViewing(Tile(vm, 1)));
+    }
+
+    [Fact]
+    public async Task AControlledPc_IsNotViewing()
+    {
+        var vm = await Controlling(1);
+        Assert.False(vm.IsViewing(Tile(vm, 1)));
+        Assert.False(vm.IsViewing(Tile(vm, 2)));
+    }
+
+    [Fact]
+    public async Task StartViewing_OnASecondPc_EndsTheFirst()
+    {
+        var vm = await Viewing(1);
+        var ended = 0;
+        vm.ControlMustEnd += () => ended++;
+        _connections.NextSession = new FakeControlSession();
+        Assert.NotNull(await vm.StartViewingAsync(Tile(vm, 2)));
+        Assert.Equal(1, ended);
+        Assert.Equal("PC-02", vm.ControlledName);
     }
 }

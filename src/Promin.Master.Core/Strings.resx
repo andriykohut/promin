@@ -617,6 +617,24 @@
   <data name="Status_Controlled" xml:space="preserve">
     <value>Being controlled</value>
   </data>
+  <data name="View_Button" xml:space="preserve">
+    <value>View screen</value>
+  </data>
+  <data name="View_TakeControl" xml:space="preserve">
+    <value>Take control</value>
+  </data>
+  <data name="View_Stop" xml:space="preserve">
+    <value>Stop viewing</value>
+  </data>
+  <data name="View_ProtectedScreen" xml:space="preserve">
+    <value>This PC is showing a protected Windows screen (the lock screen or a permission prompt). Viewing continues as soon as it closes.</value>
+  </data>
+  <data name="View_Lost" xml:space="preserve">
+    <value>Lost the connection to {name}. Viewing has ended.</value>
+  </data>
+  <data name="View_CouldNotStart" xml:space="preserve">
+    <value>Could not show {name}'s screen.</value>
+  </data>
   <data name="Control_WindowTitle" xml:space="preserve">
     <value>{name} — Promin</value>
   </data>

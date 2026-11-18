@@ -57,7 +57,10 @@ public sealed partial class PcTileControl : UserControl
 
     public event Action<PcTile>? RemoveRequested;
 
-    /// <summary>The presenter asked to control the PC, from the details panel or by double-clicking a tile that <see cref="PcTile.CanControl"/>.</summary>
+    /// <summary>The presenter asked to view the PC's screen, from the details panel or by double-clicking a tile that <see cref="PcTile.CanControl"/>.</summary>
+    public event Action<PcTile>? ViewRequested;
+
+    /// <summary>The presenter asked to control the PC, from the details panel.</summary>
     public event Action<PcTile>? ControlRequested;
 
     /// <summary>The moment a broadcast starts: the screen area fades and scales in, after <paramref name="delay"/>.</summary>
@@ -243,7 +246,7 @@ public sealed partial class PcTileControl : UserControl
 
         if (tile.CanControl)
         {
-            ControlRequested?.Invoke(tile);
+            ViewRequested?.Invoke(tile);
         }
     }
 
@@ -282,6 +285,8 @@ public sealed partial class PcTileControl : UserControl
     private void Rename_Click(object sender, RoutedEventArgs e) => Ask(RenameRequested);
 
     private void Remove_Click(object sender, RoutedEventArgs e) => Ask(RemoveRequested);
+
+    private void View_Click(object sender, RoutedEventArgs e) => Ask(ViewRequested);
 
     private void Control_Click(object sender, RoutedEventArgs e) => Ask(ControlRequested);
 

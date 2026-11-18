@@ -8,7 +8,7 @@ namespace Promin.Agent;
 /// <summary>
 /// <see cref="IAgentConnection"/> over a pinned console PC's <see cref="QuicChannel"/>. The console PC opens every
 /// bidirectional stream and speaks first on it, and its first message says what the stream is: a send begins with
-/// <see cref="SendFiles"/>, the lock stream with <see cref="WatchLock"/>, a remote stream with <see cref="StartControl"/>,
+/// <see cref="SendFiles"/>, the lock stream with <see cref="WatchLock"/>, a remote stream with <see cref="StartViewing"/>,
 /// and the first stream to begin with anything else is the control stream. A connection has one control stream and one
 /// lock stream; the console PC may open a remote stream again after the previous one closed, and one that arrives
 /// while the previous is still waiting to be accepted is aborted. The wait for each kind fails with what ended the
@@ -136,7 +136,7 @@ internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnectio
                         _lockStreams.Writer.TryWrite(stream);
                         break;
 
-                    case StartControl:
+                    case StartViewing:
                         if (!_remoteStreams.Writer.TryWrite(stream))
                         {
                             stream.Abort(QuicControlChannel.CorruptFrameErrorCode);
@@ -145,7 +145,7 @@ internal sealed class QuicAgentConnection(QuicChannel channel) : IAgentConnectio
 
                         break;
 
-                    case { } first when first is not (WatchLock or StartControl) && _control is null:
+                    case { } first when first is not (WatchLock or StartViewing) && _control is null:
                         _control = stream;
                         _firstControlMessage.TrySetResult(first);
                         break;
