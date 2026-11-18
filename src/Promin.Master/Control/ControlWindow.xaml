@@ -64,6 +64,7 @@
             x:Name="PointerArea"
             Grid.Row="1"
             Background="Transparent"
+            IsTabStop="True"
             PointerCaptureLost="Picture_PointerCaptureLost"
             PointerMoved="Picture_Pointer"
             PointerPressed="Picture_Pointer"

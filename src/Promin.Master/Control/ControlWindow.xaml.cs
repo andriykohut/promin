@@ -97,6 +97,9 @@ internal sealed partial class ControlWindow : Window
         _tuck.Interval = TuckDelay;
         _tuck.IsRepeating = false;
         _tuck.Tick += (_, _) => Tuck(away: true);
+
+        // The window is first activated before its content has loaded, when nothing can take focus yet.
+        PointerArea.Loaded += (_, _) => PointerArea.Focus(FocusState.Programmatic);
         ShowMode();
     }
 
@@ -444,6 +447,8 @@ internal sealed partial class ControlWindow : Window
             return;
         }
 
+        // A window with nothing focused inside gets no key events in XAML, so Esc would never reach its accelerator.
+        PointerArea.Focus(FocusState.Programmatic);
         if (_controlling)
         {
             await StartInputAsync();
