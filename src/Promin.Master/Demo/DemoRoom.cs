@@ -69,7 +69,7 @@ internal sealed class DemoRoom
 
         public IReadOnlyList<RoomMember> Load() => _members;
 
-        public void Save(IReadOnlyList<RoomMember> members) => _members = [.. members];
+        public void Save(IReadOnlyList<RoomMember> members) => _members = members.ToArray();
     }
 
     private sealed class DemoDiscovery(ConcurrentDictionary<string, RoomMember> on) : IDiscovery
