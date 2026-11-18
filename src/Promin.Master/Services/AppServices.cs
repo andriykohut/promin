@@ -67,25 +67,42 @@ public sealed class AppServices : IDisposable
 
     public QuicMasterConnector Connector { get; }
 
-    public IRoomStore RoomStore { get; }
+    public IRoomStore RoomStore { get; private set; }
 
-    public IPairingClient Pairing { get; }
+    public IPairingClient Pairing { get; private set; }
 
-    public IDiscovery Discovery { get; }
+    public IDiscovery Discovery { get; private set; }
 
     public ConsoleHealth Health { get; } = new();
 
     public IWallSettings WallSettings { get; }
 
-    public IBroadcastController Broadcast { get; }
+    public IBroadcastController Broadcast { get; private set; }
 
     /// <summary>Every online agent PC's standing connection: its screen pictures, and the broadcast.</summary>
-    public IRoomConnections Connections { get; }
+    public IRoomConnections Connections { get; private set; }
 
     /// <summary>Sends files and folders to one PC over its standing connection.</summary>
-    public IFileSender Files { get; }
+    public IFileSender Files { get; private set; }
 
     public static AppServices Create() => new(RootDirectory);
+
+#if DEBUG
+    /// <summary>
+    /// Replaces the room's PCs, discovery, pairing, connections, broadcast and file sending with the made-up room in
+    /// <see cref="Demo.DemoRoom"/>, for screenshots. Debug builds only; the real parts are built but never used.
+    /// </summary>
+    public void UseDemoRoom()
+    {
+        var room = new Demo.DemoRoom();
+        RoomStore = room.Store;
+        Pairing = room.Pairing;
+        Discovery = room.Discovery;
+        Broadcast = room.Broadcast;
+        Connections = room.Connections;
+        Files = room.Files;
+    }
+#endif
 
     /// <summary>
     /// Proves, off the UI thread, that this PC can make the secure connections Promin uses and

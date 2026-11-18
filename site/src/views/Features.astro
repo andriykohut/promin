@@ -1,0 +1,112 @@
+---
+import { Image } from 'astro:assets';
+import Base from '../layouts/Base.astro';
+import { strings, type Lang } from '../strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang];
+
+const shots = import.meta.glob<{ default: ImageMetadata }>('../../../assets/screenshots/*.png', { eager: true });
+const shotNames: Record<string, string> = { screens: 'room' };
+const shotOf = (id: string) => shots[`../../../assets/screenshots/${shotNames[id] ?? id}-${lang}.png`].default;
+---
+
+<Base lang={lang} path="features/" title={`${t.nav.features}: ${t.title}`} description={t.featuresPage.lead}>
+  <div class="wrap intro" slot="masthead">
+    <h1>{t.featuresPage.title}</h1>
+    <p class="lead">{t.featuresPage.lead}</p>
+  </div>
+
+  <div class="wrap">
+    {
+      t.features.items.map((item) => (
+        <section class="feature" id={item.id}>
+          <div>
+            <h2>{item.name}</h2>
+            <p class="feature-text">{item.text}</p>
+            <ul>
+              {item.details.map((detail) => (
+                <li>{detail}</li>
+              ))}
+            </ul>
+          </div>
+          <Image class="shot" src={shotOf(item.id)} alt={item.shotAlt} widths={[640, 960, 1264]} sizes="(min-width: 60rem) 42rem, 100vw" />
+        </section>
+      ))
+    }
+  </div>
+</Base>
+
+<style>
+  .intro {
+    padding-top: clamp(2rem, 6vw, 4.5rem);
+    padding-bottom: clamp(3rem, 7vw, 5.5rem);
+  }
+
+  .intro .lead {
+    margin-top: 1.5rem;
+  }
+
+  .feature {
+    display: grid;
+    gap: 2rem;
+    padding-block: clamp(3rem, 7vw, 5.5rem);
+    scroll-margin-top: 1rem;
+  }
+
+  .feature + .feature {
+    border-top: 1px solid rgb(20 21 24 / 0.12);
+  }
+
+  @media (min-width: 60rem) {
+    .feature {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      gap: clamp(2.5rem, 5vw, 4rem);
+      align-items: start;
+    }
+  }
+
+  .feature h2 {
+    font-size: clamp(1.5rem, 2.2vw, 2rem);
+  }
+
+  .shot {
+    width: 100%;
+    height: auto;
+  }
+
+  .feature-text {
+    margin-top: 1rem;
+    font-size: 1.1875rem;
+    max-width: 40ch;
+  }
+
+  ul {
+    margin: 1.5rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 0.75rem;
+    color: var(--steel);
+    max-width: 60ch;
+  }
+
+  li {
+    position: relative;
+    padding-left: 1.25rem;
+  }
+
+  li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.75em;
+    width: 0.625rem;
+    height: 2px;
+    background: var(--beam);
+  }
+</style>

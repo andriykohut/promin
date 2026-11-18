@@ -1,0 +1,8 @@
+---
+import { docRoutes } from '../../../docs';
+import Doc from '../../../views/Doc.astro';
+
+export const getStaticPaths = () => docRoutes('uk');
+---
+
+<Doc lang="uk" doc={Astro.props.doc} />

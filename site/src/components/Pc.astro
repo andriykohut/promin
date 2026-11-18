@@ -1,0 +1,31 @@
+---
+/** A drawn monitor for the home page's room, its screen showing the broadcast picture. */
+interface Props {
+  style?: string;
+}
+
+const { style } = Astro.props;
+---
+
+<div class="pc" style={style}><div class="screen"></div></div>
+
+<style>
+  .pc {
+    aspect-ratio: 16 / 10;
+    padding: clamp(3px, 0.5vw, 5px);
+    border-radius: 6px;
+    background: var(--slate);
+  }
+
+  .screen {
+    position: relative;
+    height: 100%;
+    border-radius: 3px;
+    overflow: hidden;
+    background:
+      linear-gradient(var(--night), var(--night)) 82% 28% / 40% 9% no-repeat,
+      linear-gradient(var(--haze), var(--haze)) 74% 50% / 24% 9% no-repeat,
+      radial-gradient(circle at 20% 105%, var(--beam) 0 30%, transparent 31%),
+      var(--fog);
+  }
+</style>

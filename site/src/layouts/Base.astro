@@ -1,0 +1,221 @@
+---
+import { Font } from 'astro:assets';
+import Beacon from '../../../assets/brand/promin-beacon-dark.svg';
+import Lockup from '../../../assets/brand/promin-lockup-dark.svg';
+import favicon from '../../../assets/brand/promin-beacon-small-light.svg?url';
+import { link, repo, strings, type Lang } from '../strings';
+
+interface Props {
+  lang: Lang;
+  /** This page's path below the language prefix, such as `features/`; the same in every language. */
+  path: string;
+  title: string;
+  description: string;
+}
+
+const { lang, path, title, description } = Astro.props;
+const t = strings[lang];
+const other = t.otherLanguage.lang as Lang;
+const absolute = (l: Lang) => new URL(link(l, path), Astro.site).href;
+const current = (section: string) => (path.startsWith(section) ? 'page' : undefined);
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href={favicon} type="image/svg+xml" />
+    <link rel="canonical" href={absolute(lang)} />
+    <link rel="alternate" hreflang="en" href={absolute('en')} />
+    <link rel="alternate" hreflang="uk" href={absolute('uk')} />
+    <meta name="theme-color" content="#141518" />
+    <Font cssVariable="--font-display" preload />
+    <Font cssVariable="--font-body" preload />
+  </head>
+  <body>
+    <header class="masthead">
+      <nav class="wrap topbar">
+        <a href={link(lang)} class="home"><Lockup class="lockup" /></a>
+        <div class="topbar-links">
+          <a href={link(lang, 'features/')} aria-current={current('features/')}>{t.nav.features}</a>
+          <a href={link(lang, 'docs/')} aria-current={current('docs/')}>{t.nav.docs}</a>
+          <a href={link(lang) + '#download'}>{t.nav.download}</a>
+          <a href={link(other, path)} hreflang={other} lang={other}>{t.otherLanguage.label}</a>
+        </div>
+      </nav>
+      <slot name="masthead" />
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-body">
+        <Beacon class="footer-beacon" aria-hidden="true" />
+        <div>
+          <p>{t.footer.name}</p>
+          <p>{t.footer.licence} <a href={repo}>GitHub</a></p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --night: #141518;
+    --fog: #ecece6;
+    --beam: #ff5a1f;
+    --steel: #5b6470;
+    --haze: #9aa0a8;
+    --slate: #23262c;
+    --screen-off: #1b1d21;
+    --gutter: clamp(1rem, 4vw, 2.5rem);
+    --section: clamp(4rem, 9vw, 7.5rem);
+    color-scheme: light;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--fog);
+    color: var(--night);
+    font-family: var(--font-body);
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(2.25rem, 5.2vw, 4.25rem);
+    font-weight: 700;
+    line-height: 1.04;
+    letter-spacing: -0.02em;
+  }
+
+  h2 {
+    font-size: clamp(1.75rem, 3.4vw, 2.75rem);
+    font-weight: 500;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    max-width: 22ch;
+  }
+
+  h3 {
+    font-size: 1.125rem;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+
+  p {
+    margin: 0;
+  }
+
+  a {
+    color: inherit;
+    text-decoration-color: var(--beam);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.2em;
+  }
+
+  a:hover {
+    text-decoration-thickness: 4px;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--beam);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  .wrap {
+    max-width: 74rem;
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  .lead {
+    color: var(--haze);
+    font-size: 1.1875rem;
+    max-width: 34rem;
+  }
+</style>
+
+<style>
+  .masthead {
+    background: var(--night);
+    color: var(--fog);
+    overflow: clip;
+  }
+
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1.5rem;
+    padding-block: 1.25rem;
+  }
+
+  .home {
+    display: block;
+    line-height: 0;
+  }
+
+  .lockup {
+    height: 2.5rem;
+    width: auto;
+  }
+
+  .topbar-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    font-size: 0.9375rem;
+  }
+
+  .topbar-links a {
+    text-decoration-color: transparent;
+  }
+
+  .topbar-links a:hover,
+  .topbar-links a[aria-current='page'] {
+    text-decoration-color: var(--beam);
+  }
+
+  .footer {
+    background: var(--night);
+    color: var(--haze);
+    padding-block: 3rem;
+    font-size: 0.9375rem;
+  }
+
+  .footer-body {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  .footer-beacon {
+    flex: none;
+    width: 3.5rem;
+    height: auto;
+  }
+</style>
