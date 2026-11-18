@@ -59,10 +59,10 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
         await (await LockStreamAsync().ConfigureAwait(false)).SendAsync(new PowerPc(action), ct).ConfigureAwait(false);
 
     /// <summary>
-    /// Opens a stream for this control session and waits for the agent's answer to <see cref="StartControl"/>. The
-    /// agent's capture can take 5 seconds to start, so the wait is 10.
+    /// Opens a stream for this session and waits for the agent's answer to <see cref="StartViewing"/>. The agent's
+    /// capture can take 5 seconds to start, so the wait is 10.
     /// </summary>
-    public async Task<IControlSession> StartControlAsync(CancellationToken ct)
+    public async Task<IControlSession> StartViewingAsync(CancellationToken ct)
     {
         using var answering = CancellationTokenSource.CreateLinkedTokenSource(ct, _closing.Token);
         answering.CancelAfter(TimeSpan.FromSeconds(10));
@@ -70,7 +70,7 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
         try
         {
             stream = await channel.OpenControlChannelAsync(answering.Token).ConfigureAwait(false);
-            await stream.SendAsync(new StartControl(), answering.Token).ConfigureAwait(false);
+            await stream.SendAsync(new StartViewing(), answering.Token).ConfigureAwait(false);
             while (true)
             {
                 if (await stream.ReceiveAsync(answering.Token).ConfigureAwait(false) is not ControlState state)
@@ -92,7 +92,7 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
         catch (OperationCanceledException) when (!ct.IsCancellationRequested && !_closing.IsCancellationRequested)
         {
             await DisposeQuietlyAsync(stream).ConfigureAwait(false);
-            throw new TimeoutException("The PC did not answer the request to control it.");
+            throw new TimeoutException("The PC did not answer the request to view it.");
         }
         catch
         {

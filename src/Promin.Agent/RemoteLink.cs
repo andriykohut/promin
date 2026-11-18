@@ -15,11 +15,13 @@ internal sealed record RemoteParts(
     TimeSpan DesktopPoll);
 
 /// <summary>
-/// The agent's side of the remote stream: a console PC that sends <see cref="StartControl"/> sees this PC's screen as
-/// video, moves its pointer, presses its keys and shares its clipboard, until the stream or the connection ends or the
-/// video fails. One stream at a time. Whatever way it ends, input is released, the control tab goes and the previews
-/// come back, each step of that on its own so that one that fails does not stop the rest. Without <c>parts</c> (a
-/// windowed agent) every stream is refused. The log gets a line for each start and end, with the type of the failure, never a key or clipboard text.
+/// The agent's side of the remote stream: a console PC that sends <see cref="StartViewing"/> sees this PC's screen as
+/// video, with nothing on this PC to say so, until the stream or the connection ends or the video fails. After
+/// <see cref="TakeControl"/> it also moves the pointer, presses keys and shares the clipboard, under the control tab;
+/// a take-over that fails is refused and ends the stream. One stream at a time. Whatever way it ends, input is
+/// released, the control tab goes and the previews come back, each step of that on its own so that one that fails does
+/// not stop the rest. Without <c>parts</c> (a windowed agent) every stream is refused. The log gets a line for each
+/// start, take-over and end, with the type of the failure, never a key or clipboard text.
 /// </summary>
 internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPreviewSwitch previews, bool mayControl, Action<string> log)
 {
@@ -57,6 +59,24 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
         var paused = false;
         var started = false;
         var reason = "the stream ended";
+
+        // Run on TakeControl; null when a step failed. Whatever it took before failing, the finally below gives back.
+        IClipboardWatch? TakeOver()
+        {
+            try
+            {
+                tab = parts!.OpenTab();
+                controlled = tab.Show() && screenLock!.TryStartControl();
+                clipboard = controlled ? parts.OpenClipboard() : null;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                log($"Remote control could not start: {e.GetType().Name}.");
+            }
+
+            return clipboard;
+        }
+
         try
         {
             if (mayControl && screenLock is not null && parts is not null)
@@ -67,14 +87,11 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
                     paused = true;
                     await previews.PauseAsync().ConfigureAwait(false);
                     video = parts.OpenVideo(sendFrame, () => Interlocked.Increment(ref _nextFrameId) - 1);
-                    tab = parts.OpenTab();
-                    controlled = tab.Show() && screenLock.TryStartControl();
-                    clipboard = controlled ? parts.OpenClipboard() : null;
-                    started = clipboard is not null;
+                    started = true;
                 }
                 catch (Exception e) when (e is not OperationCanceledException)
                 {
-                    log($"Remote control could not start: {e.GetType().Name}.");
+                    log($"Remote viewing could not start: {e.GetType().Name}.");
                 }
             }
 
@@ -85,8 +102,8 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
                 return;
             }
 
-            log("Remote control started.");
-            reason = await ControlAsync(stream, video!, clipboard!, ct).ConfigureAwait(false);
+            log("Remote viewing started.");
+            reason = await ControlAsync(stream, video!, TakeOver, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -110,7 +127,7 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
 
             if (started)
             {
-                log($"Remote control ended: {reason}.");
+                log($"Remote {(controlled ? "control" : "viewing")} ended: {reason}.");
             }
 
             if (stream is IAsyncDisposable closing)
@@ -142,7 +159,7 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
 
     // Every send on the stream goes through one gate: the desktop poll and the clipboard report run on different tasks,
     // and a stream does not take two writers at once.
-    private async Task<string> ControlAsync(IControlChannel stream, IControlVideo video, IClipboardWatch clipboard, CancellationToken ct)
+    private async Task<string> ControlAsync(IControlChannel stream, IControlVideo video, Func<IClipboardWatch?> takeOver, CancellationToken ct)
     {
         using var ending = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var gate = new SemaphoreSlim(1, 1);
@@ -162,7 +179,39 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
         // The handler runs on the clipboard's thread, where a throw would end the agent, so it only queues.
         var copied = Channel.CreateUnbounded<string>();
         void OnCopied(string text) => copied.Writer.TryWrite(text);
-        clipboard.Copied += OnCopied;
+
+        // Set once control is taken. Control is taken on the receive loop, so no input after a TakeControl is read before it.
+        IClipboardWatch? clipboard = null;
+        var refused = false;
+        async Task ReceiveAsync()
+        {
+            while (true)
+            {
+                var message = await stream.ReceiveAsync(ending.Token).ConfigureAwait(false);
+                if (message is RequestKeyframe)
+                {
+                    video.RequestKeyframe();
+                }
+                else if (clipboard is not null)
+                {
+                    Apply(message, clipboard);
+                }
+                else if (message is TakeControl)
+                {
+                    if (takeOver() is not { } taken)
+                    {
+                        refused = true;
+                        await SendAsync(new ControlState(ControlStatus.Refused)).ConfigureAwait(false);
+                        return;
+                    }
+
+                    clipboard = taken;
+                    clipboard.Copied += OnCopied;
+                    log("Remote control started.");
+                    await SendAsync(new ControlState(ControlStatus.Started)).ConfigureAwait(false);
+                }
+            }
+        }
 
         var tasks = new Dictionary<Task, string>();
         try
@@ -171,10 +220,15 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
             // this one: on a still screen its loop waits out each tick in the source and goes round without yielding.
             await SendAsync(new ControlState(ControlStatus.Started)).ConfigureAwait(false);
             tasks[Task.Run(() => video.RunAsync(ending.Token), CancellationToken.None)] = "the video stopped";
-            tasks[Task.Run(() => ReceiveAsync(stream, video, clipboard, ending.Token), CancellationToken.None)] = "the stream ended";
+            tasks[Task.Run(ReceiveAsync, CancellationToken.None)] = "the stream ended";
             tasks[Task.Run(() => ReportCopiesAsync(copied.Reader, SendAsync, ending.Token), CancellationToken.None)] = "the clipboard report stopped";
             tasks[Task.Run(() => ReportDesktopAsync(SendAsync, ending.Token), CancellationToken.None)] = "the desktop report stopped";
             var first = await Task.WhenAny(tasks.Keys).ConfigureAwait(false);
+            if (refused)
+            {
+                return "control was refused";
+            }
+
             var failure = first.Exception?.GetBaseException();
             return failure is null || failure is OperationCanceledException
                 ? tasks[first]
@@ -186,25 +240,25 @@ internal sealed class RemoteLink(RemoteParts? parts, ScreenLock? screenLock, IPr
         }
         finally
         {
-            clipboard.Copied -= OnCopied;
+            // Drained before the clipboard is read: a take-over still running on the receive loop may yet set it.
             await ending.CancelAsync().ConfigureAwait(false);
             await Task.WhenAll(tasks.Keys).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            if (clipboard is not null)
+            {
+                clipboard.Copied -= OnCopied;
+            }
         }
     }
 
-    private async Task ReceiveAsync(IControlChannel stream, IControlVideo video, IClipboardWatch clipboard, CancellationToken ct)
+    private void Apply(ControlMessage message, IClipboardWatch clipboard)
     {
-        while (true)
+        switch (message)
         {
-            switch (await stream.ReceiveAsync(ct).ConfigureAwait(false))
-            {
-                case PointerMove m: parts!.Input.Move(m.X, m.Y); break;
-                case PointerButton b: parts!.Input.Button(b.Button, b.Down); break;
-                case PointerWheel w: parts!.Input.Wheel(w.Delta, w.Horizontal); break;
-                case KeyInput k: parts!.Input.Key(k.VirtualKey, k.ScanCode, k.Extended, k.Down); break;
-                case ClipboardText { Text.Length: <= ControlLimits.MaxClipboardChars } t: clipboard.Write(t.Text); break;
-                case RequestKeyframe: video.RequestKeyframe(); break;
-            }
+            case PointerMove m: parts!.Input.Move(m.X, m.Y); break;
+            case PointerButton b: parts!.Input.Button(b.Button, b.Down); break;
+            case PointerWheel w: parts!.Input.Wheel(w.Delta, w.Horizontal); break;
+            case KeyInput k: parts!.Input.Key(k.VirtualKey, k.ScanCode, k.Extended, k.Down); break;
+            case ClipboardText { Text.Length: <= ControlLimits.MaxClipboardChars } t: clipboard.Write(t.Text); break;
         }
     }
 

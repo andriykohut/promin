@@ -92,7 +92,8 @@ public class ControlMessageCodecTests
     [Fact]
     public void EncodeThenDecode_RoundTripsTheControlMessages()
     {
-        Assert.IsType<StartControl>(RoundTrip(new StartControl()));
+        Assert.IsType<StartViewing>(RoundTrip(new StartViewing()));
+        Assert.IsType<TakeControl>(RoundTrip(new TakeControl()));
         Assert.Equal(ControlStatus.ProtectedScreen, Assert.IsType<ControlState>(RoundTrip(new ControlState(ControlStatus.ProtectedScreen))).Status);
         Assert.Equal(new PointerMove(65535, 0), RoundTrip(new PointerMove(65535, 0)));
         Assert.Equal(new PointerButton(MouseButton.X2, true), RoundTrip(new PointerButton(MouseButton.X2, true)));

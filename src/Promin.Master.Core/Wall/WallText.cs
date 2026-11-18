@@ -80,6 +80,10 @@ public static class WallText
 
     public static string ControlLostLine(string name) => Phrase.Format(Strings.Control_Lost, ("name", name));
 
+    public static string CouldNotViewLine(string name) => Phrase.Format(Strings.View_CouldNotStart, ("name", name));
+
+    public static string ViewLostLine(string name) => Phrase.Format(Strings.View_Lost, ("name", name));
+
     public static string OnAirLine(int receiving, IReadOnlyList<string> dropping, IReadOnlyList<string> reconnecting)
     {
         var allWell = dropping.Count == 0 && reconnecting.Count == 0;

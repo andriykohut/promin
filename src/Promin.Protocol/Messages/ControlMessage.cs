@@ -22,7 +22,8 @@ namespace Promin.Protocol.Messages;
 [JsonDerivedType(typeof(LockState), "lockState")]
 [JsonDerivedType(typeof(PowerPc), "powerPc")]
 [JsonDerivedType(typeof(PowerState), "powerState")]
-[JsonDerivedType(typeof(StartControl), "startControl")]
+[JsonDerivedType(typeof(StartViewing), "startViewing")]
+[JsonDerivedType(typeof(TakeControl), "takeControl")]
 [JsonDerivedType(typeof(ControlState), "controlState")]
 [JsonDerivedType(typeof(PointerMove), "pointerMove")]
 [JsonDerivedType(typeof(PointerButton), "pointerButton")]
@@ -151,16 +152,22 @@ public sealed record PowerPc(PowerAction Action) : ControlMessage;
 /// <summary>The agent PC's answer to a <see cref="PowerPc"/> on the lock stream: whether Windows took the order.</summary>
 public sealed record PowerState(bool Accepted) : ControlMessage;
 
-/// <summary>The console PC's first message on the remote stream: from here it controls the agent PC, which reports on the same stream.</summary>
-public sealed record StartControl : ControlMessage;
+/// <summary>
+/// The console PC's first message on the remote stream: from here it sees the agent PC's screen, with nothing shown
+/// there to say so, and the agent PC reports on the same stream. Input and clipboard text wait for <see cref="TakeControl"/>.
+/// </summary>
+public sealed record StartViewing : ControlMessage;
+
+/// <summary>On a remote stream that is viewing, the console PC asks to control the agent PC too; it answers Started or Refused, and a refusal ends the stream.</summary>
+public sealed record TakeControl : ControlMessage;
 
 /// <summary>What the agent PC reports about remote control.</summary>
 public enum ControlStatus
 {
-    /// <summary>Control has begun.</summary>
+    /// <summary>Viewing has begun, as the answer to <see cref="StartViewing"/>; control has begun, as the answer to <see cref="TakeControl"/>.</summary>
     Started,
 
-    /// <summary>The agent PC will not be controlled now.</summary>
+    /// <summary>The agent PC will not be viewed or controlled now.</summary>
     Refused,
 
     /// <summary>A protected screen (such as the sign-in screen) is showing and cannot be shown or controlled.</summary>

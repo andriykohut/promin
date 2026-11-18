@@ -19,7 +19,7 @@ internal interface IAgentConnection
     Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct);
 
     /// <summary>
-    /// The next remote stream: the one the console PC opens with <see cref="StartControl"/>. Waits for it; the console PC
+    /// The next remote stream: the one the console PC opens with <see cref="StartViewing"/>. Waits for it; the console PC
     /// may open another after this one closes, one at a time. Throws when the connection has ended.
     /// </summary>
     Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct);

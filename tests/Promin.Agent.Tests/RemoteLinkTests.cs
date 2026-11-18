@@ -69,7 +69,7 @@ public class RemoteLinkTests
                 () =>
                 {
                     Calls.Add("clipboard");
-                    return Clipboard;
+                    return FailClipboardOpen ? throw new InvalidOperationException("no clipboard") : Clipboard;
                 },
                 Injector,
                 () => _onDesktop,
@@ -79,6 +79,7 @@ public class RemoteLinkTests
 
         public List<string> Calls { get; } = [];
         public bool FailVideoOpen { get; set; }
+        public bool FailClipboardOpen { get; set; }
         public List<Func<uint>> FrameIds { get; } = [];
         public FakeInput Input { get; }
         public ScreenLock Screen { get; }
@@ -115,6 +116,14 @@ public class RemoteLinkTests
             return channel;
         }
 
+        public async Task<FakeChannel> ControlledAsync()
+        {
+            var channel = await StartedAsync();
+            await channel.FromConsole.Writer.WriteAsync(new TakeControl(), _stop.Token);
+            Assert.Equal(ControlStatus.Started, (await NextStateAsync(channel)).Status);
+            return channel;
+        }
+
         public async Task WaitForAsync(Func<bool> condition)
         {
             for (var i = 0; i < 500 && !condition(); i++)
@@ -135,13 +144,72 @@ public class RemoteLinkTests
     }
 
     [Fact]
-    public async Task Start_PausesPreviews_OpensVideo_ShowsTheTab_HoldsInput_ThenReportsStarted()
+    public async Task Start_PausesPreviews_AndOpensVideo_AndNothingElse()
     {
         using var rig = new Rig();
 
         await rig.StartedAsync();
 
+        Assert.Equal(["pause", "video"], rig.Calls);
+        Assert.False(rig.Input.Held);
+        Assert.Contains("Remote viewing started.", rig.Log);
+    }
+
+    [Fact]
+    public async Task TakeControl_ShowsTheTab_HoldsInput_AndOpensTheClipboard()
+    {
+        using var rig = new Rig();
+
+        await rig.ControlledAsync();
+
         Assert.Equal(["pause", "video", "tab:show", "hold", "clipboard"], rig.Calls);
+        Assert.True(rig.Input.Held);
+        Assert.Contains("Remote control started.", rig.Log);
+    }
+
+    [Fact]
+    public async Task Viewing_LeavesALockedPcLocked()
+    {
+        using var rig = new Rig(locked: true);
+
+        await rig.StartedAsync();
+
+        Assert.True(rig.Screen.IsLocked);
+    }
+
+    [Fact]
+    public async Task Viewing_IgnoresInputAndClipboardText()
+    {
+        using var rig = new Rig();
+        var channel = await rig.StartedAsync();
+        rig.Calls.Clear();
+
+        foreach (var message in new ControlMessage[]
+        {
+            new PointerMove(1, 2), new PointerButton(MouseButton.Left, true), new PointerWheel(120, false), new KeyInput(65, 30, false, true),
+            new ClipboardText("hello"), new RequestKeyframe(),
+        })
+        {
+            await channel.FromConsole.Writer.WriteAsync(message, TestContext.Current.CancellationToken);
+        }
+
+        await rig.WaitForAsync(() => rig.Video.Keyframes == 1);
+        Assert.Empty(rig.Calls);
+        Assert.Empty(rig.Clipboard.Written);
+    }
+
+    [Fact]
+    public async Task ViewingThatEnds_LeavesInputAlone_AndResumesPreviews()
+    {
+        using var rig = new Rig();
+        var channel = await rig.StartedAsync();
+        rig.Calls.Clear();
+
+        channel.FromConsole.Writer.Complete();
+        await rig.WaitForAsync(() => rig.Calls.Contains("resume"));
+
+        Assert.Equal(["video:dispose", "resume"], rig.Calls);
+        Assert.Contains(rig.Log, line => line.StartsWith("Remote viewing ended", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -185,7 +253,7 @@ public class RemoteLinkTests
         using var rig = new Rig();
         rig.Injector.ThrowOnRelease = throwing == "injector";
         rig.Clipboard.ThrowOnDispose = throwing == "clipboard";
-        var channel = await rig.StartedAsync();
+        var channel = await rig.ControlledAsync();
         rig.Calls.Clear();
 
         channel.FromConsole.Writer.Complete();
@@ -199,36 +267,52 @@ public class RemoteLinkTests
     }
 
     [Fact]
-    public async Task Start_WithABroadcastOnScreen_IsRefused_AndUndoesTheRest()
+    public async Task TakeControl_WithABroadcastOnScreen_IsRefused_AndUndoesTheRest()
     {
         using var rig = new Rig(canHold: false);
-        rig.Start();
-        var channel = rig.Open();
+        var channel = await rig.StartedAsync();
+
+        await channel.FromConsole.Writer.WriteAsync(new TakeControl(), TestContext.Current.CancellationToken);
 
         Assert.Equal(ControlStatus.Refused, (await rig.NextStateAsync(channel)).Status);
         await rig.WaitForAsync(() => rig.Calls.Contains("resume"));
         Assert.Equal(["pause", "video", "tab:show", "hold", "tab:hide", "video:dispose", "resume"], rig.Calls);
     }
 
-    [Theory]
-    [InlineData("video")]
-    [InlineData("tab")]
-    public async Task Start_WhenAPartFails_IsRefused_AndUndoesWhatWasDone(string failing)
+    [Fact]
+    public async Task Start_WhenTheVideoFails_IsRefused_AndResumesPreviews()
     {
         using var rig = new Rig();
-        rig.FailVideoOpen = failing == "video";
-        rig.Tab.CanShow = failing != "tab";
+        rig.FailVideoOpen = true;
         rig.Start();
         var channel = rig.Open();
 
         Assert.Equal(ControlStatus.Refused, (await rig.NextStateAsync(channel)).Status);
         await rig.WaitForAsync(() => rig.Calls.Contains("resume"));
+        Assert.Equal(["pause", "video", "resume"], rig.Calls);
+    }
+
+    [Theory]
+    [InlineData("tab")]
+    [InlineData("clipboard")]
+    public async Task TakeControl_WhenAPartFails_IsRefused_GivesInputBack_AndEnds(string failing)
+    {
+        using var rig = new Rig();
+        rig.Tab.CanShow = failing != "tab";
+        rig.FailClipboardOpen = failing == "clipboard";
+        var channel = await rig.StartedAsync();
+
+        await channel.FromConsole.Writer.WriteAsync(new TakeControl(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ControlStatus.Refused, (await rig.NextStateAsync(channel)).Status);
+        await rig.WaitForAsync(() => rig.Calls.Contains("resume"));
         Assert.Equal(
-            failing == "video"
-                ? ["pause", "video", "resume"]
-                : ["pause", "video", "tab:show", "tab:hide", "video:dispose", "resume"],
+            failing == "tab"
+                ? ["pause", "video", "tab:show", "tab:hide", "video:dispose", "resume"]
+                : ["pause", "video", "tab:show", "hold", "clipboard", "release-all", "release", "tab:hide", "video:dispose", "resume"],
             rig.Calls);
         Assert.False(rig.Input.Held);
+        Assert.Contains(rig.Log, line => line.Contains("control was refused"));
     }
 
     [Fact]
@@ -253,7 +337,7 @@ public class RemoteLinkTests
     {
         using var rig = new Rig();
         rig.Video.Blocks = true;
-        var channel = await rig.StartedAsync();
+        var channel = await rig.ControlledAsync();
 
         await channel.FromConsole.Writer.WriteAsync(new PointerMove(1, 2), TestContext.Current.CancellationToken);
         await rig.WaitForAsync(() => rig.Calls.Contains("move:1,2"));
@@ -264,11 +348,11 @@ public class RemoteLinkTests
     }
 
     [Fact]
-    public async Task Start_OnALockedPc_Unlocks()
+    public async Task TakeControl_OnALockedPc_Unlocks()
     {
         using var rig = new Rig(locked: true);
 
-        await rig.StartedAsync();
+        await rig.ControlledAsync();
 
         Assert.False(rig.Screen.IsLocked);
     }
@@ -277,7 +361,7 @@ public class RemoteLinkTests
     public async Task Input_GoesToTheInjector()
     {
         using var rig = new Rig();
-        var channel = await rig.StartedAsync();
+        var channel = await rig.ControlledAsync();
         rig.Calls.Clear();
 
         foreach (var message in new ControlMessage[]
@@ -296,7 +380,7 @@ public class RemoteLinkTests
     public async Task ClipboardText_FromTheConsole_IsWritten()
     {
         using var rig = new Rig();
-        var channel = await rig.StartedAsync();
+        var channel = await rig.ControlledAsync();
 
         await channel.FromConsole.Writer.WriteAsync(new ClipboardText("hello"), TestContext.Current.CancellationToken);
 
@@ -308,7 +392,7 @@ public class RemoteLinkTests
     public async Task ClipboardText_LongerThanTheCap_IsIgnored()
     {
         using var rig = new Rig();
-        var channel = await rig.StartedAsync();
+        var channel = await rig.ControlledAsync();
 
         await channel.FromConsole.Writer.WriteAsync(new ClipboardText(new string('a', ControlLimits.MaxClipboardChars + 1)), TestContext.Current.CancellationToken);
         await channel.FromConsole.Writer.WriteAsync(new ClipboardText("after"), TestContext.Current.CancellationToken);
@@ -321,7 +405,7 @@ public class RemoteLinkTests
     public async Task TextCopiedOnThisPc_IsSentToTheConsole()
     {
         using var rig = new Rig();
-        var channel = await rig.StartedAsync();
+        var channel = await rig.ControlledAsync();
 
         rig.Clipboard.Copy("copied");
 
@@ -359,7 +443,7 @@ public class RemoteLinkTests
     public async Task EveryEnding_ReleasesKeys_HidesTheTab_EndsControl_AndResumesPreviews(string ending)
     {
         using var rig = new Rig();
-        var channel = await rig.StartedAsync();
+        var channel = await rig.ControlledAsync();
         rig.Calls.Clear();
 
         switch (ending)
@@ -409,7 +493,7 @@ public class RemoteLinkTests
     public async Task TheLog_NeverCarriesKeysOrClipboardText()
     {
         using var rig = new Rig();
-        var channel = await rig.StartedAsync();
+        var channel = await rig.ControlledAsync();
 
         await channel.FromConsole.Writer.WriteAsync(new KeyInput(65, 30, false, true), TestContext.Current.CancellationToken);
         await channel.FromConsole.Writer.WriteAsync(new ClipboardText("s3cret-text"), TestContext.Current.CancellationToken);

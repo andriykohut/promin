@@ -597,6 +597,24 @@
   <data name="Status_Controlled" xml:space="preserve">
     <value>Під керуванням</value>
   </data>
+  <data name="View_Button" xml:space="preserve">
+    <value>Переглянути екран</value>
+  </data>
+  <data name="View_TakeControl" xml:space="preserve">
+    <value>Керувати</value>
+  </data>
+  <data name="View_Stop" xml:space="preserve">
+    <value>Завершити перегляд</value>
+  </data>
+  <data name="View_ProtectedScreen" xml:space="preserve">
+    <value>Цей ПК показує захищений екран Windows (блокування або запит дозволу). Перегляд продовжиться, щойно він закриється.</value>
+  </data>
+  <data name="View_Lost" xml:space="preserve">
+    <value>Зв’язок із {name} втрачено. Перегляд завершено.</value>
+  </data>
+  <data name="View_CouldNotStart" xml:space="preserve">
+    <value>Не вдалося показати екран {name}.</value>
+  </data>
   <data name="Control_WindowTitle" xml:space="preserve">
     <value>{name} — Promin</value>
   </data>

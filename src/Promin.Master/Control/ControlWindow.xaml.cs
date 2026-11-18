@@ -20,11 +20,14 @@ using Windows.Graphics;
 namespace Promin.Master.Control;
 
 /// <summary>
-/// Shows the agent PC under control and passes it this PC's pointer, keys and clipboard text. It opens full screen
-/// on the monitor of the console's main window and switches to a window of its own and back without interrupting
-/// control; the window form's last place is kept in <see cref="Core.Wall.IWallSettings.ControlWindowPlacement"/>.
-/// The window owns the session: Stop controlling, closing the window, <see cref="End"/>, the main window closing and
-/// the session ending by itself all close the window and dispose the session, then raise <see cref="Ended"/> once.
+/// Shows the agent PC's screen, viewing it or under control. The session always opens viewing. While viewing, nothing
+/// of this PC's reaches the agent PC, Esc closes the view, and Take control (or a window opened for control) asks for
+/// control; once the agent PC agrees, the view passes it this PC's pointer, keys and clipboard text, and a refusal
+/// ends the session. It opens full screen on the monitor of the console's main
+/// window and switches to a window of its own and back without interrupting the session; the window form's last place
+/// is kept in <see cref="Core.Wall.IWallSettings.ControlWindowPlacement"/>. The window owns the session: Stop, closing
+/// the window, <see cref="End"/>, the main window closing and the session ending by itself all close the window and
+/// dispose the session, then raise <see cref="Ended"/> once.
 /// </summary>
 internal sealed partial class ControlWindow : Window
 {
@@ -51,6 +54,10 @@ internal sealed partial class ControlWindow : Window
     private readonly HashSet<MouseButton> _buttonsDown = [];
 
     private Task _videoRun = Task.CompletedTask;
+
+    // Asked for: the bar and the pointer show control. Agreed by the agent PC: input goes over.
+    private bool _controlAsked;
+    private bool _controlling;
     private bool _focused;
     private bool _finished;
     private bool _mayClose;
@@ -59,13 +66,15 @@ internal sealed partial class ControlWindow : Window
     private int _clipboardRead;
 
     /// <summary>
-    /// Builds the window on <paramref name="session"/>; nothing is shown or started until <see cref="Open"/>. Throws when
+    /// Builds the window on <paramref name="session"/>, a session that is viewing; unless <paramref name="viewOnly"/>,
+    /// <see cref="Open"/> asks for control at once. Nothing is shown or started until <see cref="Open"/>. Throws when
     /// the picture cannot be set up, leaving the session to the caller.
     /// </summary>
-    public ControlWindow(IControlSession session, string pcName, AppWindow mainWindow)
+    public ControlWindow(IControlSession session, string pcName, bool viewOnly, AppWindow mainWindow)
     {
         _session = session;
         _pcName = pcName;
+        _controlAsked = !viewOnly;
         _mainWindow = mainWindow;
         InitializeComponent();
 
@@ -88,18 +97,22 @@ internal sealed partial class ControlWindow : Window
         _tuck.Interval = TuckDelay;
         _tuck.IsRepeating = false;
         _tuck.Tick += (_, _) => Tuck(away: true);
+        ShowMode();
     }
 
-    /// <summary>Raised once, on the UI thread, after the window has closed and the session is disposed: true when the session ended by itself (its stream or the connection is gone).</summary>
-    public event Action<bool>? Ended;
+    /// <summary>Raised on the UI thread when Take control asks the agent PC for control; not raised for a window opened for control.</summary>
+    public event Action? TakingControl;
+
+    /// <summary>Raised once, on the UI thread, after the window has closed and the session is disposed, with how it ended.</summary>
+    public event Action<ControlEnd>? Ended;
 
     /// <summary>
-    /// Shows the window full screen on the monitor the main window is on and starts control. Call once, after
+    /// Shows the window full screen on the monitor the main window is on and starts the session. Call once, after
     /// subscribing to <see cref="Ended"/>: from here every end, a failure to show the window included, raises it.
     /// </summary>
     public void Open()
     {
-        Trace.TraceInformation("Controlling {0}.", _pcName);
+        Trace.TraceInformation("Viewing {0}.", _pcName);
         try
         {
             Activated += OnActivated;
@@ -114,12 +127,32 @@ internal sealed partial class ControlWindow : Window
         }
         catch (Exception e)
         {
-            Finish(lost: false, $"the window could not be shown ({e.GetType().Name})");
+            Finish(ControlEnd.Closed, $"the window could not be shown ({e.GetType().Name})");
             return;
+        }
+
+        if (_controlAsked)
+        {
+            Send(new TakeControl());
         }
 
         _ = Task.Run(SendAllAsync);
         Run();
+    }
+
+    /// <summary>Asks the agent PC for control, as Take control does, and brings the window forward. Ignored once asked or ended.</summary>
+    public void TakeControl()
+    {
+        if (_controlAsked || _finished)
+        {
+            return;
+        }
+
+        _controlAsked = true;
+        ShowMode();
+        TakingControl?.Invoke();
+        Send(new TakeControl());
+        Activate();
     }
 
     /// <summary>
@@ -132,11 +165,11 @@ internal sealed partial class ControlWindow : Window
         // through the UI thread's queue, so the video has stopped by then unless its own thread has yet to run.
         if (_videoRun.IsCompleted)
         {
-            Finish(lost: true, "the connection was lost");
+            Finish(ControlEnd.Lost, "the connection was lost");
         }
         else
         {
-            Finish(lost: false, "ended for a lock, a removal or control of another PC");
+            Finish(ControlEnd.Closed, "ended for a lock, a removal or another PC");
         }
     }
 
@@ -147,7 +180,7 @@ internal sealed partial class ControlWindow : Window
         var stopped = await Task.WhenAny(_videoRun, ReceiveMessagesAsync(_closing.Token));
         if (!_closing.IsCancellationRequested)
         {
-            Finish(lost: true, stopped.Exception is { } failure
+            Finish(ControlEnd.Lost, stopped.Exception is { } failure
                 ? $"the connection was lost ({failure.GetBaseException().GetType().Name})"
                 : "the connection was lost");
         }
@@ -165,11 +198,34 @@ internal sealed partial class ControlWindow : Window
                 case ControlState { Status: ControlStatus.Desktop }:
                     ShowProtectedScreen(false);
                     break;
-                case ClipboardText { Text: var text }:
+                case ClipboardText { Text: var text } when _controlling:
                     PutOnClipboard(text);
                     break;
+                case ControlState { Status: ControlStatus.Started } when !_controlling && !_finished:
+                    Trace.TraceInformation("Controlling {0}.", _pcName);
+                    _controlling = true;
+
+                    // Not awaited: the clipboard read can stall behind another app, and messages must keep coming.
+                    if (_focused)
+                    {
+                        _ = StartInputAsync();
+                    }
+
+                    break;
+                case ControlState { Status: ControlStatus.Refused }:
+                    Finish(ControlEnd.Refused, "control was refused");
+                    return;
             }
         }
+    }
+
+    /// <summary>Sets the buttons, the pointer and the protected-screen text for viewing or for control.</summary>
+    private void ShowMode()
+    {
+        BarTakeControl.Visibility = StripTakeControl.Visibility = _controlAsked ? Visibility.Collapsed : Visibility.Visible;
+        BarStop.Content = StripStop.Content = _controlAsked ? Strings.Control_Stop : Strings.View_Stop;
+        ProtectedText.Text = _controlAsked ? Strings.Control_ProtectedScreen : Strings.View_ProtectedScreen;
+        PointerArea.HidesPointer = _controlAsked;
     }
 
     private void Send(ControlMessage message) => _outbox.Writer.TryWrite(message);
@@ -190,10 +246,10 @@ internal sealed partial class ControlWindow : Window
     }
 
     /// <summary>
-    /// The one way control ends, run at most once: the keys and buttons still down are let go, the window closes once
-    /// the picture is off it, then the session goes and <see cref="Ended"/> is raised, whichever earlier step failed.
+    /// The one way the session ends, run at most once: the keys and buttons still down are let go, the window closes
+    /// once the picture is off it, then the session goes and <see cref="Ended"/> is raised, whichever earlier step failed.
     /// </summary>
-    private async void Finish(bool lost, string why)
+    private async void Finish(ControlEnd how, string why)
     {
         if (_finished)
         {
@@ -236,8 +292,8 @@ internal sealed partial class ControlWindow : Window
             Trace.TraceWarning("Closing the control session of {0} failed: {1}.", _pcName, e.GetType().Name);
         }
 
-        Trace.TraceInformation("Control of {0} ended: {1}.", _pcName, why);
-        Ended?.Invoke(lost);
+        Trace.TraceInformation(_controlling ? "Control of {0} ended: {1}." : "Viewing of {0} ended: {1}.", _pcName, why);
+        Ended?.Invoke(how);
     }
 
     // A step of Finish that fails is logged and the rest still run: the session must be disposed and Ended raised.
@@ -262,12 +318,25 @@ internal sealed partial class ControlWindow : Window
 
         // The window stays until the picture is off it; Finish closes it then, outside this event.
         args.Handled = true;
-        DispatcherQueue.TryEnqueue(() => Finish(lost: false, "the window was closed"));
+        DispatcherQueue.TryEnqueue(() => Finish(ControlEnd.Closed, "the window was closed"));
     }
 
-    private void OnMainWindowDestroying(AppWindow sender, object args) => Finish(lost: false, "the console was closed");
+    private void OnMainWindowDestroying(AppWindow sender, object args) => Finish(ControlEnd.Closed, "the console was closed");
 
-    private void Stop_Click(object sender, RoutedEventArgs e) => Finish(lost: false, "stopped");
+    private void Stop_Click(object sender, RoutedEventArgs e) => Finish(ControlEnd.Closed, "stopped");
+
+    private void TakeControl_Click(object sender, RoutedEventArgs e) => TakeControl();
+
+    // Under control the keyboard hook takes Esc before this does; the check covers an Esc the hook lets through, and
+    // one pressed while the agent PC has yet to answer a request for control.
+    private void Escape_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (!_controlAsked)
+        {
+            args.Handled = true;
+            Finish(ControlEnd.Closed, "stopped");
+        }
+    }
 
     private void InWindow_Click(object sender, RoutedEventArgs e) => ShowFullScreen(false);
 
@@ -375,6 +444,15 @@ internal sealed partial class ControlWindow : Window
             return;
         }
 
+        if (_controlling)
+        {
+            await StartInputAsync();
+        }
+    }
+
+    /// <summary>Starts sending keys, and sends this PC's clipboard text when the other PC has not had it yet.</summary>
+    private async Task StartInputAsync()
+    {
         _keyboard.Start();
         var read = ++_clipboardRead;
         var current = await ClipboardTextAsync();
@@ -387,6 +465,11 @@ internal sealed partial class ControlWindow : Window
     // The event may come on any thread; the clipboard is read, and the relay used, on the UI thread.
     private void OnClipboardChanged(object? sender, object e) => DispatcherQueue.TryEnqueue(async () =>
     {
+        if (!_controlling)
+        {
+            return;
+        }
+
         var read = ++_clipboardRead;
         var copied = await ClipboardTextAsync();
         if (read == _clipboardRead && _clipboard.OnLocalCopy(copied, _focused) is { } text)
@@ -448,6 +531,11 @@ internal sealed partial class ControlWindow : Window
             Tuck(away: false);
         }
 
+        if (!_controlling)
+        {
+            return;
+        }
+
         var at = ToRemote(point.Position);
         if (at is { } remote)
         {
@@ -488,7 +576,7 @@ internal sealed partial class ControlWindow : Window
     private void Picture_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
         var point = e.GetCurrentPoint(Picture);
-        if (ToRemote(point.Position) is not null)
+        if (_controlling && ToRemote(point.Position) is not null)
         {
             Send(new PointerWheel(point.Properties.MouseWheelDelta, point.Properties.IsHorizontalMouseWheel));
         }

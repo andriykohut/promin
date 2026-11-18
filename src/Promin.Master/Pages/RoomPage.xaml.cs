@@ -94,7 +94,14 @@ public sealed partial class RoomPage : Page
         _pulse.Children.Add(fade);
 
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
-        ViewModel.ControlMustEnd += () => _controlWindow?.End();
+        // Let go before it ends: the view model has already forgotten the session, and the window's late Ended must not
+        // end a newer session on the same PC.
+        ViewModel.ControlMustEnd += () =>
+        {
+            var window = _controlWindow;
+            _controlWindow = null;
+            window?.End();
+        };
     }
 
     public RoomWallViewModel ViewModel { get; }
@@ -281,6 +288,7 @@ public sealed partial class RoomPage : Page
             tile.StopSendingRequested += ViewModel.StopSendingTo;
             tile.RenameRequested += Rename;
             tile.RemoveRequested += Remove;
+            tile.ViewRequested += ViewPc;
             tile.ControlRequested += ControlPc;
         }
     }
@@ -293,6 +301,7 @@ public sealed partial class RoomPage : Page
             tile.StopSendingRequested -= ViewModel.StopSendingTo;
             tile.RenameRequested -= Rename;
             tile.RemoveRequested -= Remove;
+            tile.ViewRequested -= ViewPc;
             tile.ControlRequested -= ControlPc;
         }
     }
@@ -313,7 +322,21 @@ public sealed partial class RoomPage : Page
         }
     });
 
-    private async void ControlPc(PcTile tile) => await Guarded(async () =>
+    private void ViewPc(PcTile tile) => OpenSession(tile, viewOnly: true);
+
+    private void ControlPc(PcTile tile)
+    {
+        if (ViewModel.IsViewing(tile))
+        {
+            _controlWindow?.TakeControl();
+        }
+        else
+        {
+            OpenSession(tile, viewOnly: false);
+        }
+    }
+
+    private async void OpenSession(PcTile tile, bool viewOnly) => await Guarded(async () =>
     {
         if (_startingControl)
         {
@@ -324,7 +347,7 @@ public sealed partial class RoomPage : Page
         _startingControl = true;
         try
         {
-            session = await ViewModel.StartControlAsync(tile);
+            session = viewOnly ? await ViewModel.StartViewingAsync(tile) : await ViewModel.StartControlAsync(tile);
         }
         finally
         {
@@ -340,24 +363,31 @@ public sealed partial class RoomPage : Page
         ControlWindow window;
         try
         {
-            window = new ControlWindow(session, tile.Name, AppWindow.GetFromWindowId(XamlRoot.ContentIslandEnvironment.AppWindowId));
+            window = new ControlWindow(session, tile.Name, viewOnly, AppWindow.GetFromWindowId(XamlRoot.ContentIslandEnvironment.AppWindowId));
         }
         catch (Exception e)
         {
             // Without the window nothing would end the session, and the other PC would stay blocked.
             Trace.TraceError("The control window for {0} could not be opened: {1}", tile.Name, e);
             await session.DisposeAsync();
-            ViewModel.ControlEnded(deviceId, lost: false);
+            ViewModel.ControlEnded(deviceId, ControlEnd.Closed);
             return;
         }
 
-        // Only the window in charge reports: a window ended for a later control of the same PC must not end that one.
-        window.Ended += lost =>
+        // Only the window in charge reports: a window ended for a later session on the same PC must not end that one.
+        window.TakingControl += () =>
+        {
+            if (_controlWindow == window)
+            {
+                ViewModel.TakingControl(deviceId);
+            }
+        };
+        window.Ended += how =>
         {
             if (_controlWindow == window)
             {
                 _controlWindow = null;
-                ViewModel.ControlEnded(deviceId, lost);
+                ViewModel.ControlEnded(deviceId, how);
             }
         };
         _controlWindow = window;

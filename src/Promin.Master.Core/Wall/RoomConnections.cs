@@ -26,8 +26,12 @@ public interface IPcConnection : IAsyncDisposable
     /// <summary>Orders the PC to shut down or restart. Opens the lock stream on first use.</summary>
     Task SendPowerAsync(PowerAction action, CancellationToken ct);
 
-    /// <summary>Opens a remote stream and starts controlling the PC. Throws <see cref="ControlRefusedException"/> when the PC refuses and <see cref="TimeoutException"/> when it does not answer within 10 seconds.</summary>
-    Task<IControlSession> StartControlAsync(CancellationToken ct);
+    /// <summary>
+    /// Opens a remote stream and starts viewing the PC; <see cref="TakeControl"/> on the session asks for control. Throws
+    /// <see cref="ControlRefusedException"/> when the PC refuses and <see cref="TimeoutException"/> when it does not
+    /// answer within 10 seconds.
+    /// </summary>
+    Task<IControlSession> StartViewingAsync(CancellationToken ct);
 }
 
 /// <summary>What the wall uses of the room connections.</summary>
@@ -60,8 +64,8 @@ public interface IRoomConnections
     /// <summary>Orders the PC to shut down or restart. Does nothing when the PC has no open connection, and never throws; the answer is <see cref="PowerAnswered"/>.</summary>
     void Power(string deviceId, PowerAction action);
 
-    /// <summary>Starts controlling the PC. Null when the PC has no open connection, refuses, or does not answer; never throws.</summary>
-    Task<IControlSession?> StartControlAsync(string deviceId);
+    /// <summary>Starts viewing the PC. Null when the PC has no open connection, refuses, or does not answer; never throws.</summary>
+    Task<IControlSession?> StartViewingAsync(string deviceId);
 }
 
 /// <summary>
@@ -185,10 +189,10 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
     public void Power(string deviceId, PowerAction action) =>
         _ = SendAsync(deviceId, (connection, ct) => connection.SendPowerAsync(action, ct));
 
-    public async Task<IControlSession?> StartControlAsync(string deviceId)
+    public async Task<IControlSession?> StartViewingAsync(string deviceId)
     {
         IControlSession? session = null;
-        await SendAsync(deviceId, async (connection, ct) => session = await connection.StartControlAsync(ct).ConfigureAwait(false)).ConfigureAwait(false);
+        await SendAsync(deviceId, async (connection, ct) => session = await connection.StartViewingAsync(ct).ConfigureAwait(false)).ConfigureAwait(false);
         return session;
     }
 

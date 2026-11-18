@@ -70,7 +70,7 @@ public sealed class RoomConnectionsTests
             return Task.CompletedTask;
         }
 
-        public Task<IControlSession> StartControlAsync(CancellationToken ct) =>
+        public Task<IControlSession> StartViewingAsync(CancellationToken ct) =>
             RefuseControl ? throw new ControlRefusedException() : Task.FromResult(Session!);
 
         public ValueTask DisposeAsync()
@@ -510,7 +510,7 @@ public sealed class RoomConnectionsTests
         await using var connections = Build();
         await connections.GetAsync(Pc(), CancellationToken.None);
 
-        Assert.Same(session, await connections.StartControlAsync("device-01"));
+        Assert.Same(session, await connections.StartViewingAsync("device-01"));
     }
 
     [Fact]
@@ -520,7 +520,7 @@ public sealed class RoomConnectionsTests
         await using var connections = Build();
         await connections.GetAsync(Pc(), CancellationToken.None);
 
-        Assert.Null(await connections.StartControlAsync("device-01"));
+        Assert.Null(await connections.StartViewingAsync("device-01"));
     }
 
     [Fact]
@@ -528,6 +528,6 @@ public sealed class RoomConnectionsTests
     {
         await using var connections = Build();
 
-        Assert.Null(await connections.StartControlAsync("device-01"));
+        Assert.Null(await connections.StartViewingAsync("device-01"));
     }
 }
