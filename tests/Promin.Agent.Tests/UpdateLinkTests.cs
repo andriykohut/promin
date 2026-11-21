@@ -130,6 +130,20 @@ public sealed class UpdateLinkTests : IDisposable
     }
 
     [Fact]
+    public async Task SavesIntoAFolderOfItsOwn()
+    {
+        // A folder someone made before the install keeps their rights on it: the setup must not land there.
+        Directory.CreateDirectory(UpdateDirectory);
+        File.WriteAllBytes(Path.Combine(UpdateDirectory, "planted.dll"), [1]);
+        var running = RunAsync();
+
+        Assert.Equal(UpdateOutcome.Accepted, await AnswerToAsync(Offer("0.4.0", [1, 2, 3])));
+        await running;
+
+        Assert.Equal([UpdateLink.SetupName, UpdateLink.SetupName + SetupSignature.Extension], Kept().Order());
+    }
+
+    [Fact]
     public async Task RefusesABadSignature()
     {
         var running = RunAsync();
@@ -203,8 +217,9 @@ public sealed class UpdateLinkTests : IDisposable
     [Fact]
     public async Task AnswersFailedWhenTheSetupCannotBeSaved()
     {
-        // A folder where the setup's file goes: the file cannot be created.
-        Directory.CreateDirectory(Path.Combine(UpdateDirectory, UpdateLink.SetupName + ".part"));
+        // A file in the folder still open, as a setup still finishing holds itself: the folder cannot be made afresh.
+        Directory.CreateDirectory(UpdateDirectory);
+        using var held = new FileStream(Path.Combine(UpdateDirectory, "held"), FileMode.Create, FileAccess.Write, FileShare.None);
         var running = RunAsync();
 
         Assert.Equal(UpdateOutcome.Failed, await AnswerToAsync(Offer("0.4.0", [1, 2, 3])));

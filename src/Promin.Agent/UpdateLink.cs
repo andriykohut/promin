@@ -15,7 +15,8 @@ namespace Promin.Agent;
 /// <remarks>
 /// Every byte of an offer is read before it is answered, a refusal's too, so the stream stays in step and the console
 /// never waits on writes nobody reads. <paramref name="updateDirectory"/> lies inside the agent's data folder, which
-/// <c>--install</c> locks to SYSTEM and administrators, so the person at the PC cannot swap the file once checked.
+/// <c>--install</c> locks to SYSTEM and administrators, so the person at the PC cannot swap the file once checked. The
+/// folder is made afresh for each offer, so it takes those rules even when someone made it before the install.
 /// </remarks>
 /// <param name="log">Gets one line per offer: its version and the answer.</param>
 internal sealed class UpdateLink(
@@ -177,9 +178,16 @@ internal sealed class UpdateLink(
         public static SaveOrDiscard Open(string path)
         {
             var target = new SaveOrDiscard();
+            var folder = Path.GetDirectoryName(path)!;
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                // A folder made before --install locked its parent keeps its maker as owner, who can change its rules.
+                if (Directory.Exists(folder))
+                {
+                    Directory.Delete(folder, recursive: true);
+                }
+
+                Directory.CreateDirectory(folder);
                 target._file = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
