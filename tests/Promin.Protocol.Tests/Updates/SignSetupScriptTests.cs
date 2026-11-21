@@ -27,7 +27,7 @@ public sealed class SignSetupScriptTests : IDisposable
         throw new InvalidOperationException("The repository root was not found above the test's folder.");
     }
 
-    private static async Task<int> RunAsync(string? key, params string[] arguments)
+    private static async Task<int> RunAsync(CancellationToken ct, string? key, params string[] arguments)
     {
         var start = new ProcessStartInfo("pwsh") { RedirectStandardError = true, RedirectStandardOutput = true };
         foreach (var argument in (string[])["-NoProfile", "-NonInteractive", "-File", Script(), .. arguments])
@@ -38,7 +38,7 @@ public sealed class SignSetupScriptTests : IDisposable
         start.Environment["PROMIN_SIGNING_KEY"] = key ?? string.Empty;
         using var process = Process.Start(start)!;
         await Task.WhenAll(process.StandardOutput.ReadToEndAsync(), process.StandardError.ReadToEndAsync());
-        await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(ct);
         return process.ExitCode;
     }
 
@@ -49,7 +49,7 @@ public sealed class SignSetupScriptTests : IDisposable
         var setup = Path.Combine(_directory, "Promin-Agent-Setup.exe");
         File.WriteAllBytes(setup, RandomNumberGenerator.GetBytes(4096));
 
-        Assert.Equal(0, await RunAsync(Convert.ToBase64String(key.ExportPkcs8PrivateKey()), "-Version", "0.4.0", "-Setups", setup));
+        Assert.Equal(0, await RunAsync(TestContext.Current.CancellationToken, Convert.ToBase64String(key.ExportPkcs8PrivateKey()), "-Version", "0.4.0", "-Setups", setup));
 
         var sig = SetupSignature.Read(setup + SetupSignature.Extension);
         Assert.NotNull(sig);
@@ -64,7 +64,7 @@ public sealed class SignSetupScriptTests : IDisposable
         var setup = Path.Combine(_directory, "Promin-Agent-Setup.exe");
         File.WriteAllBytes(setup, [1, 2, 3]);
 
-        Assert.NotEqual(0, await RunAsync(null, "-Version", "0.4.0", "-Setups", setup));
+        Assert.NotEqual(0, await RunAsync(TestContext.Current.CancellationToken, null, "-Version", "0.4.0", "-Setups", setup));
         Assert.False(File.Exists(setup + SetupSignature.Extension));
     }
 }
