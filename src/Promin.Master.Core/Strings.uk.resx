@@ -708,4 +708,10 @@
   <data name="Update_FailedText" xml:space="preserve">
     <value>Перевірте підключення цього ПК до інтернету й спробуйте ще раз.</value>
   </data>
+  <data name="Status_Updating" xml:space="preserve">
+    <value>Оновлюється</value>
+  </data>
+  <data name="Tile_OutOfDate" xml:space="preserve">
+    <value>Promin {version}, старіший, ніж на цьому ПК</value>
+  </data>
 </root>

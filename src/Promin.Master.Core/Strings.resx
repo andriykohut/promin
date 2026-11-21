@@ -734,4 +734,10 @@
   <data name="Update_FailedText" xml:space="preserve">
     <value>Check this PC’s internet connection and try again.</value>
   </data>
+  <data name="Status_Updating" xml:space="preserve">
+    <value>Updating</value>
+  </data>
+  <data name="Tile_OutOfDate" xml:space="preserve">
+    <value>Promin {version}, older than this console</value>
+  </data>
 </root>

@@ -23,6 +23,7 @@ public static class WallText
         PcTileState.Reconnecting => Strings.Status_Reconnecting,
         PcTileState.Locked => Strings.Status_Locked,
         PcTileState.Controlled => Strings.Status_Controlled,
+        PcTileState.Updating => Strings.Status_Updating,
         _ => string.Empty,
     };
 

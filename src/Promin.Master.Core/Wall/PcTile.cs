@@ -32,6 +32,8 @@ public sealed class PcTile : INotifyPropertyChanged
     private TileSendMark _sendMark;
     private int _sendPercent;
     private string _sendDetail = string.Empty;
+    private bool _isOutOfDate;
+    private string _outOfDateTip = string.Empty;
 
     public PcTile(RoomMember member, TimeSpan dropWindow)
     {
@@ -57,6 +59,20 @@ public sealed class PcTile : INotifyPropertyChanged
     {
         get => _state;
         internal set => Set(ref _state, value);
+    }
+
+    /// <summary>The PC is connected and its agent is older than this console.</summary>
+    public bool IsOutOfDate
+    {
+        get => _isOutOfDate;
+        internal set => Set(ref _isOutOfDate, value);
+    }
+
+    /// <summary>The out-of-date mark's tooltip, which names the PC's version; empty when it is not out of date.</summary>
+    public string OutOfDateTip
+    {
+        get => _outOfDateTip;
+        internal set => Set(ref _outOfDateTip, value);
     }
 
     /// <summary>What the screen area shows over the state's background.</summary>
