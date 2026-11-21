@@ -26,9 +26,12 @@ public interface IUpdateDownloads
 /// can be updated later without internet; older versions' folders go once a newer one is complete.
 /// </summary>
 /// <remarks>Each file is downloaded beside its final name first: nothing half-written is ever taken for a setup.</remarks>
-public sealed class UpdateCache(string directory, HttpClient http, ReadOnlyMemory<byte> publicKey) : IUpdateDownloads
+/// <param name="idleLimit">How long a download may go without a byte before it is given up; 30 seconds when null.</param>
+public sealed class UpdateCache(string directory, HttpClient http, ReadOnlyMemory<byte> publicKey, TimeSpan? idleLimit = null) : IUpdateDownloads
 {
     private const string PartSuffix = ".part";
+
+    private readonly TimeSpan _idleLimit = idleLimit ?? TimeSpan.FromSeconds(30);
 
     public async Task<UpdateSet?> GetAsync(Release release, bool withConsole, CancellationToken ct)
     {
@@ -74,7 +77,6 @@ public sealed class UpdateCache(string directory, HttpClient http, ReadOnlyMemor
             return kept;
         }
 
-        Directory.CreateDirectory(folder);
         return await DownloadAsync(signatureUri, setup + SetupSignature.Extension, ct).ConfigureAwait(false)
             && await DownloadAsync(setupUri, setup, ct).ConfigureAwait(false)
                 ? Checked(setup, version)
@@ -93,20 +95,30 @@ public sealed class UpdateCache(string directory, HttpClient http, ReadOnlyMemor
     private async Task<bool> DownloadAsync(Uri uri, string path, CancellationToken ct)
     {
         var part = path + PartSuffix;
+        using var idle = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        idle.CancelAfter(_idleLimit);
         try
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.UserAgent.ParseAdd("Promin");
-            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, idle.Token).ConfigureAwait(false);
             if (response.StatusCode != HttpStatusCode.OK)
             {
                 return false;
             }
 
+            var body = await response.Content.ReadAsStreamAsync(idle.Token).ConfigureAwait(false);
             var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None);
             await using (file.ConfigureAwait(false))
             {
-                await response.Content.CopyToAsync(file, ct).ConfigureAwait(false);
+                var buffer = new byte[81920];
+                int read;
+                while ((read = await body.ReadAsync(buffer, idle.Token).ConfigureAwait(false)) > 0)
+                {
+                    await file.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                    idle.CancelAfter(_idleLimit);
+                }
             }
 
             File.Move(part, path, overwrite: true);
@@ -114,6 +126,11 @@ public sealed class UpdateCache(string directory, HttpClient http, ReadOnlyMemor
         }
         catch (Exception e) when (e is HttpRequestException or IOException or UnauthorizedAccessException)
         {
+            return false;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // HttpClient's own Timeout passed, or nothing arrived for the idle limit.
             return false;
         }
         finally

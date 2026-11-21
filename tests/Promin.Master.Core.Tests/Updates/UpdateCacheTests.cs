@@ -40,7 +40,7 @@ public sealed class UpdateCacheTests : IDisposable
         new Uri(Download + "Promin-Console-Setup.exe"),
         new Uri(Download + "Promin-Console-Setup.exe.sig"));
 
-    private UpdateCache Cache() => new(_directory, new HttpClient(_http), _key.ExportSubjectPublicKeyInfo());
+    private UpdateCache Cache() => new(_directory, new HttpClient(_http), _key.ExportSubjectPublicKeyInfo(), idleLimit: TimeSpan.FromMilliseconds(200));
 
     /// <summary>Serves a setup and its .sig, which claims <paramref name="sigVersion"/> and is signed as <paramref name="signedAs"/>.</summary>
     private void Serve(string name, byte[] bytes, string sigVersion = "0.4.0", string signedAs = "0.4.0", string? signedFor = null)
@@ -117,6 +117,23 @@ public sealed class UpdateCacheTests : IDisposable
     {
         _http.Throw = new HttpRequestException("no route to host");
         Assert.Null(await Cache().GetAsync(Release, withConsole: false, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ATimedOutRequest_IsNull()
+    {
+        // What HttpClient throws when its own Timeout passes.
+        _http.Throw = new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout.");
+        Assert.Null(await Cache().GetAsync(Release, withConsole: false, TestContext.Current.CancellationToken));
+    }
+
+    [Fact(Timeout = 20000)]
+    public async Task AStalledDownload_IsGivenUp()
+    {
+        _http.Stalled.Add(Download + "Promin-Agent-Setup.exe");
+
+        Assert.Null(await Cache().GetAsync(Release, withConsole: false, TestContext.Current.CancellationToken));
+        Assert.False(Directory.Exists(Path.Combine(_directory, "0.4.0")));
     }
 
     [Fact]
