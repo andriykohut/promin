@@ -94,6 +94,9 @@ internal sealed record AgentServices(
         Power: windowed ? null : action => WindowsPower.Request(action, log.Write));
 }
 
+/// <summary>What each connection's <see cref="UpdateLink"/> needs: the installed version, where an accepted setup goes, and whom to tell.</summary>
+internal sealed record UpdateSource(ReleaseVersion Installed, string Directory, Action Accepted);
+
 /// <summary>
 /// The agent when it runs: a lock the PC holds, restored before anything else, then its identity, the listener, the
 /// beacon that announces it, and the two loops side by side over one listener (console PCs that are paired, each with
@@ -105,9 +108,6 @@ internal sealed record AgentServices(
 /// <c>ProcessExit</c> handler: it runs after <c>Main</c> has returned and everything it could cancel is already
 /// disposed. The agent is ended by <c>Stop-Process</c> or, in a test, by the token.
 /// </summary>
-/// <summary>What each connection's <see cref="UpdateLink"/> needs: the installed version, where an accepted setup goes, and whom to tell.</summary>
-internal sealed record UpdateSource(ReleaseVersion Installed, string Directory, Action Accepted);
-
 internal static class AgentHost
 {
     private static readonly TimeSpan RestoreEvery = TimeSpan.FromSeconds(5);
