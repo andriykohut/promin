@@ -25,4 +25,7 @@ internal static class ExitCodes
 
     /// <summary>Registering, starting or removing the service or its firewall rule failed; the log or console has the detail.</summary>
     public const int ServiceControlFailed = 7;
+
+    /// <summary>An update was accepted and saved in the update folder; the service checks it again and runs it.</summary>
+    public const int UpdateReady = 8;
 }

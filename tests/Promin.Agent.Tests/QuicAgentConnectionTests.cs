@@ -148,11 +148,13 @@ public class QuicAgentConnectionTests
             _temp.Dispose();
         }
 
-        private async Task OpenStreamAsync(ControlMessage first, CancellationToken ct)
+        /// <summary>Opens a stream from the console PC that begins with <paramref name="first"/>.</summary>
+        public async Task<QuicControlChannel> OpenStreamAsync(ControlMessage first, CancellationToken ct)
         {
             var stream = await _consoleChannel!.OpenControlChannelAsync(ct);
             _consoleStreams.Add(stream);
             await stream.SendAsync(first, ct);
+            return stream;
         }
 
         private PeerCertificateStore Pins(string deviceId, X509Certificate2 certificate)
@@ -163,6 +165,23 @@ public class QuicAgentConnectionTests
             pins.Load(file);
             return pins;
         }
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task TheUpdateStreamIsSorted_AndASecondIsAborted()
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var rig = new Rig();
+        await rig.ConnectAsync(deadline.Token);
+
+        var console = await rig.OpenStreamAsync(new AskVersion(), deadline.Token);
+        var agent = await rig.Connection.AcceptUpdateStreamAsync(deadline.Token);
+        await agent.SendAsync(new AgentVersion("0.3.0"), deadline.Token);
+        Assert.Equal(new AgentVersion("0.3.0"), await console.ReceiveAsync(deadline.Token));
+
+        var second = await rig.OpenStreamAsync(new AskVersion(), deadline.Token);
+        await Assert.ThrowsAnyAsync<Exception>(() => second.ReceiveAsync(deadline.Token));
     }
 
     [Theory]

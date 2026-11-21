@@ -20,6 +20,9 @@ public sealed record AgentPaths(string AgentDirectory, string RoomCodeFile)
 
     public string LogFile => Path.Combine(AgentDirectory, "agent.log");
 
+    /// <summary>Where an accepted update's setup and signature wait for the service to run them.</summary>
+    public string UpdateDirectory => Path.Combine(AgentDirectory, "update");
+
     /// <summary><c>%ProgramData%\Promin\Agent</c> (identity, pins, log) and <c>%ProgramData%\Promin\agent.json</c> (room code).</summary>
     public static AgentPaths ForThisMachine() => new(
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Promin", "Agent"),

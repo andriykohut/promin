@@ -25,6 +25,12 @@ internal interface IAgentConnection
     Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct);
 
     /// <summary>
+    /// The update stream: the one the console PC opens with <see cref="AskVersion"/>, which is read here and not handed
+    /// on. Waits for it; a second such stream on the connection is aborted. Throws when the connection has ended.
+    /// </summary>
+    Task<IByteChannel> AcceptUpdateStreamAsync(CancellationToken ct);
+
+    /// <summary>
     /// The next control message. The first call waits for the console PC to open its control stream, which it does
     /// by sending its first message; a stream whose first message is corrupt, or does not come in time, is aborted
     /// without a word and the wait goes on. Throws when the connection is lost or a later message on the control

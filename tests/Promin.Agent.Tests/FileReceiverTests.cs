@@ -20,6 +20,7 @@ public class FileReceiverTests
 
         public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
         public Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
+        public Task<IByteChannel> AcceptUpdateStreamAsync(CancellationToken ct) => new TaskCompletionSource<IByteChannel>().Task.WaitAsync(ct);
 
         public Task<ControlMessage> ReceiveControlAsync(CancellationToken ct) => throw new NotSupportedException();
 

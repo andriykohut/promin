@@ -21,6 +21,7 @@ public class LockLinkTests
     {
         public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => Task.FromResult<IControlChannel>(channel);
         public Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
+        public Task<IByteChannel> AcceptUpdateStreamAsync(CancellationToken ct) => new TaskCompletionSource<IByteChannel>().Task.WaitAsync(ct);
 
         public Task<IIncomingSend> AcceptSendAsync(CancellationToken ct) => throw new NotSupportedException();
 

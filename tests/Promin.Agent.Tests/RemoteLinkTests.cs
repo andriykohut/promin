@@ -23,6 +23,8 @@ public class RemoteLinkTests
 
         public Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct) => Streams.Reader.ReadAsync(ct).AsTask();
 
+        public Task<IByteChannel> AcceptUpdateStreamAsync(CancellationToken ct) => new TaskCompletionSource<IByteChannel>().Task.WaitAsync(ct);
+
         public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => throw new NotSupportedException();
 
         public Task<IIncomingSend> AcceptSendAsync(CancellationToken ct) => throw new NotSupportedException();

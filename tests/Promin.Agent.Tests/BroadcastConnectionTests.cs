@@ -21,6 +21,7 @@ public class BroadcastConnectionTests
 
         public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
         public Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
+        public Task<IByteChannel> AcceptUpdateStreamAsync(CancellationToken ct) => new TaskCompletionSource<IByteChannel>().Task.WaitAsync(ct);
 
         public ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct) => _video.Reader.ReadAsync(ct);
 
@@ -322,6 +323,7 @@ public class BroadcastConnectionTests
 
         public Task<IControlChannel> AcceptLockStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
         public Task<IControlChannel> AcceptRemoteStreamAsync(CancellationToken ct) => new TaskCompletionSource<IControlChannel>().Task.WaitAsync(ct);
+        public Task<IByteChannel> AcceptUpdateStreamAsync(CancellationToken ct) => new TaskCompletionSource<IByteChannel>().Task.WaitAsync(ct);
 
         public ValueTask<byte[]> ReceiveVideoFrameAsync(CancellationToken ct) => Video.Reader.ReadAsync(ct);
 
