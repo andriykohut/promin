@@ -48,8 +48,11 @@ Name: "{autoprograms}\Promin"; Filename: "{app}\Promin.Master.exe"
 ; deletes the old one first; the delete fails harmlessly when there is none.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Promin console"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Promin console"" dir=in action=allow protocol=UDP localport=17844 program=""{app}\Promin.Master.exe"""; Flags: runhidden
-; The console keeps its data in the signed-in user's %LocalAppData%, so it must not inherit setup's elevation.
+; The console keeps its data in the signed-in user's %LocalAppData%, so it must not inherit setup's elevation. The first
+; entry is the Finished page's checkbox, for a setup run by hand. The second runs only when the console ran this setup
+; silently to update itself: it opens the console again, which goes on to update the agent PCs it noted.
 Filename: "{app}\Promin.Master.exe"; Description: "{cm:LaunchProgram,Promin}"; Flags: postinstall skipifsilent nowait runasoriginaluser
+Filename: "{app}\Promin.Master.exe"; Parameters: "--continue-update"; Flags: postinstall nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Promin console"""; Flags: runhidden; RunOnceId: "DeleteConsoleFirewallRule"

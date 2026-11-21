@@ -153,6 +153,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private bool _canPower;
     private bool _canUpdate;
     private bool _isUpdating;
+    private double _updateProgress;
     private string _shutDownMenuText = string.Empty;
     private string _restartMenuText = string.Empty;
 
@@ -332,6 +333,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     /// <summary>An update is running: the broadcast, lock, power, view and control are unavailable until it is over.</summary>
     public bool IsUpdating => _isUpdating;
+
+    /// <summary>0 to 100 over the PCs being updated, for the bar's progress bar; 0 when no PC is being updated.</summary>
+    public double UpdateProgress => _updateProgress;
 
     /// <summary>The bar's Update button; see <see cref="RoomUpdate.UpdateAsync"/>.</summary>
     public Task UpdateAsync() => _update?.UpdateAsync() ?? Task.CompletedTask;
@@ -1441,6 +1445,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         Set(ref _isUpdating, updating, nameof(IsUpdating));
+        Set(ref _updateProgress, _update?.Progress ?? 0, nameof(UpdateProgress));
         Set(ref _canUpdate, MessageActionUpdates && !updating && selectable && _controlledId is null && _locked.Count == 0, nameof(CanUpdate));
 
         // The rates are the real ones for this PC: its display, scaled to the chosen ceiling.

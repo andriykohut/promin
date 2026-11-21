@@ -94,6 +94,11 @@ public sealed partial class PcTileControl : UserControl
 
     public string PercentText(int percent) => $"{percent}%";
 
+    public string OutOfDateGlyph(bool outOfDate) => outOfDate ? "\u2009\uE898" : string.Empty;
+
+    // An empty string would still open an empty tooltip.
+    public object? TipOrNothing(string tip) => string.IsNullOrEmpty(tip) ? null : tip;
+
     private static Timeline Animate(DependencyObject target, string property, double from, double to)
     {
         var animation = new DoubleAnimation

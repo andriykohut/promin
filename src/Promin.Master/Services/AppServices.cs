@@ -5,8 +5,10 @@ using Promin.Master.Core;
 using Promin.Master.Core.Rooms;
 using Promin.Master.Core.Sending;
 using Promin.Master.Core.Setup;
+using Promin.Master.Core.Updates;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Transport;
+using Promin.Protocol.Updates;
 using Microsoft.UI.Dispatching;
 
 namespace Promin.Master.Services;
@@ -14,8 +16,9 @@ namespace Promin.Master.Services;
 /// <summary>
 /// Everything the console owns for its whole life, built once in <c>App.OnLaunched</c>: the
 /// paths under <c>%LocalAppData%\Promin\</c>, this PC's identity, the one QUIC connector, the
-/// trust store, the room store, the two adapters the setup screen talks to, and the room
-/// connections, broadcast controller, file sender and wall settings the room wall talks to.
+/// trust store, the room store, the two adapters the setup screen talks to, the room
+/// connections, broadcast controller, file sender and wall settings the room wall talks to, and
+/// the room's update.
 /// </summary>
 /// <remarks>
 /// The paths are per Windows account because the identity is: its private key lives in the key
@@ -25,6 +28,7 @@ public sealed class AppServices : IDisposable
 {
     private readonly BroadcastController _broadcast;
     private readonly RoomConnections<QuicPcConnection> _connections;
+    private readonly HttpClient _http = new();
 
     private AppServices(string rootDirectory)
     {
@@ -85,7 +89,28 @@ public sealed class AppServices : IDisposable
     /// <summary>Sends files and folders to one PC over its standing connection.</summary>
     public IFileSender Files { get; private set; }
 
+    /// <summary>Learns of new releases and updates the room; see <see cref="CreateUpdates"/>.</summary>
+    public RoomUpdate Updates { get; private set; } = null!;
+
     public static AppServices Create() => new(RootDirectory);
+
+    /// <summary>
+    /// Builds <see cref="Updates"/> for this console's version, over whichever connections the room uses. Once, on the
+    /// UI thread, before any page exists.
+    /// </summary>
+    public void CreateUpdates(Action<Action> runOnUiThread)
+    {
+        var updates = Path.Combine(RootDirectory, "Updates");
+        Updates = new RoomUpdate(
+            ReleaseVersion.Of(typeof(AppServices).Assembly),
+            new GitHubReleases(_http),
+            new UpdateCache(updates, _http, UpdateSignature.ProjectPublicKey),
+            Connections,
+            new SelfUpdate(),
+            Path.Combine(updates, "pending.json"),
+            () => DateTimeOffset.Now,
+            runOnUiThread);
+    }
 
 #if DEBUG
     /// <summary>
@@ -163,6 +188,7 @@ public sealed class AppServices : IDisposable
         _connections.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2));
         Discovery.Stop();
         Identity.Dispose();
+        _http.Dispose();
     }
 
     private static readonly TimeSpan DialTimeout = TimeSpan.FromSeconds(5);

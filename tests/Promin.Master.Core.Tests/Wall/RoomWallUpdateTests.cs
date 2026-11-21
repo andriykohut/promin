@@ -179,6 +179,22 @@ public sealed class RoomWallUpdateTests : IDisposable
     }
 
     [Fact]
+    public async Task TheBar_ShowsHowManyPcsAreDone()
+    {
+        _downloads.Cached[V("0.4.0")] = new UpdateFile("cached.exe", V("0.4.0"), [9]);
+        var (vm, _) = await WallAsync("0.4.0", "0.4.0", 1, 2, 3);
+        _connections.RaiseVersion(Id(1), "0.3.0");
+        _connections.RaiseVersion(Id(2), "0.3.0");
+        await vm.UpdateAsync();
+        Assert.Equal(0, vm.UpdateProgress);
+
+        _connections.RaiseVersion(Id(1), "0.4.0");
+
+        Assert.Equal(50, vm.UpdateProgress);
+        Assert.Equal("1 of 2 PCs done.", vm.MessageText);
+    }
+
+    [Fact]
     public async Task AnOutOfDatePc_IsMarked()
     {
         var (vm, _) = await WallAsync("0.4.0", "0.4.0", 1, 2, 3);
