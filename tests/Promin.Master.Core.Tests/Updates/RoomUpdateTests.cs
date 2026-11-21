@@ -15,7 +15,6 @@ public sealed class RoomUpdateTests : IDisposable
     private readonly FakeRoomConnections _connections = new();
     private readonly FakeSelfUpdate _self = new();
     private DateTimeOffset _now = new(2026, 11, 21, 10, 0, 0, TimeSpan.Zero);
-    private int _exits;
 
     public void Dispose() => Directory.Delete(_directory, recursive: true);
 
@@ -37,7 +36,6 @@ public sealed class RoomUpdateTests : IDisposable
     {
         _releases.Latest = latest is null ? null : Published(latest);
         var update = new RoomUpdate(V(own), _releases, _downloads, _connections, _self, PendingPath, () => _now, a => a());
-        update.ExitRequested += () => _exits++;
         await update.CheckAsync(named: null);
         return update;
     }
@@ -129,16 +127,17 @@ public sealed class RoomUpdateTests : IDisposable
     }
 
     [Fact]
-    public async Task Update_NotesThePcs_StartsTheConsolesSetupFirst_AndAsksToClose()
+    public async Task Update_NotesThePcs_AndRunsTheConsolesSetupFirst_WhileTheRoomWaits()
     {
         var update = await ConsoleAsync("0.3.0", "0.4.0");
         _connections.RaiseVersion("device-01", "0.3.0");
         _connections.RaiseVersion("device-02", "0.4.0");
 
-        await update.UpdateAsync();
+        // The setup closes this console before it installs, so this never ends.
+        _ = update.UpdateAsync();
 
         Assert.Equal(["console.exe"], _self.Started);
-        Assert.Equal(1, _exits);
+        Assert.True(update.IsRunning);
         Assert.Empty(_connections.UpdatesSent);
         var pending = PendingUpdate.Read(PendingPath);
         Assert.Equal("0.4.0", pending?.Version);
@@ -169,15 +168,16 @@ public sealed class RoomUpdateTests : IDisposable
     }
 
     [Fact]
-    public async Task RefusedPermission_ChangesNothing()
+    public async Task ASetupThatEndsWithTheConsoleOpen_ChangesNothing()
     {
-        _self.Answer = false;
+        // Refused permission, or a setup that failed before it installed.
+        _self.Ending = Task.CompletedTask;
         var update = await ConsoleAsync("0.3.0", "0.4.0");
         _connections.RaiseVersion("device-01", "0.3.0");
 
         await update.UpdateAsync();
 
-        Assert.Equal(0, _exits);
+        Assert.Equal(["console.exe"], _self.Started);
         Assert.False(File.Exists(PendingPath));
         Assert.False(update.IsRunning);
         Assert.False(update.IsUpdating("device-01"));
@@ -201,7 +201,7 @@ public sealed class RoomUpdateTests : IDisposable
         Assert.Empty(_self.Started);
 
         _downloads.Get = new FakeUpdateDownloads().Get;
-        await update.UpdateAsync();
+        _ = update.UpdateAsync();
         Assert.Single(_self.Started);
     }
 

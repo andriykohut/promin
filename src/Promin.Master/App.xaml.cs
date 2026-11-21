@@ -73,7 +73,6 @@ public partial class App : Application
         }
 
         var window = new MainWindow(Services.Health);
-        Services.Updates.ExitRequested += window.Close;
         window.Closed += (_, _) =>
         {
             Services.Dispose();

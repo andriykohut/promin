@@ -70,4 +70,15 @@ begin
       Result := True;
 end;
 
+// The console that ran this setup waits for it, so that a refused permission or an earlier failure leaves it open. It
+// is closed here, once nothing is left to stop the install: running files cannot be replaced.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  if IsProminUpdate() then
+    Exec(ExpandConstant('{sys}	askkill.exe'), '/F /IM Promin.Master.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;
+
 #include "smart-app-control.iss"

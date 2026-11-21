@@ -13,9 +13,10 @@ namespace Promin.Master.Core.Updates;
 /// <remarks>
 /// <para>
 /// <b>The target</b> is the newer of GitHub's latest release and this console's own version. When the target is
-/// newer, the click downloads both setups and runs this console's first, elevated: Windows asks for permission, and a
-/// refusal changes nothing. The PCs that were connected and behind are noted in the pending file; the console's setup
-/// relaunches it with <c>--continue-update</c>, and <see cref="Continue"/> then updates each noted PC as it connects.
+/// newer, the click downloads both setups and runs this console's first, which asks Windows for permission. A refusal,
+/// or a setup that fails before it installs, leaves this console open and changes nothing. The PCs that were connected
+/// and behind are noted in the pending file; the console's setup closes this console, relaunches it with
+/// <c>--continue-update</c>, and <see cref="Continue"/> then updates each noted PC as it connects.
 /// When the console is the target already, the click sends its own version's agent setup to the PCs behind it.
 /// </para>
 /// <para>
@@ -89,9 +90,6 @@ public sealed class RoomUpdate
 
     /// <summary>Raised on the UI thread whenever anything this says has changed.</summary>
     public event Action? Changed;
-
-    /// <summary>Raised when this console's setup is running: the console closes, and the setup opens it again.</summary>
-    public event Action? ExitRequested;
 
     /// <summary>True from the click until every PC being updated is updated or not, or the update is given up.</summary>
     public bool IsRunning => _phase != Phase.Idle;
@@ -246,7 +244,7 @@ public sealed class RoomUpdate
 
         if (target > _own)
         {
-            StartSelf(files.Console!, target, noted);
+            await UpdateSelfAsync(files.Console!, target, noted);
             return;
         }
 
@@ -297,7 +295,7 @@ public sealed class RoomUpdate
             : null;
     }
 
-    private void StartSelf(UpdateFile console, ReleaseVersion target, List<string> noted)
+    private async Task UpdateSelfAsync(UpdateFile console, ReleaseVersion target, List<string> noted)
     {
         try
         {
@@ -311,12 +309,9 @@ public sealed class RoomUpdate
 
         _phase = Phase.StartingSelf;
         Changed?.Invoke();
-        if (_self.Start(console.SetupPath))
-        {
-            ExitRequested?.Invoke();
-            return;
-        }
+        await _self.RunAsync(console.SetupPath);
 
+        // Still open, so this PC was not updated.
         PendingUpdate.Delete(_pendingPath);
         EndRun();
     }

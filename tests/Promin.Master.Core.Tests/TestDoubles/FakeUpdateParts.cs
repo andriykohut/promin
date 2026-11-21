@@ -43,13 +43,14 @@ public sealed class FakeUpdateDownloads : IUpdateDownloads
 
 public sealed class FakeSelfUpdate : ISelfUpdate
 {
-    public bool Answer { get; set; } = true;
+    /// <summary>What a run returns. By default it never ends, as a setup that installs closes the console first.</summary>
+    public Task Ending { get; set; } = new TaskCompletionSource().Task;
 
     public List<string> Started { get; } = [];
 
-    public bool Start(string consoleSetupPath)
+    public Task RunAsync(string consoleSetupPath)
     {
         Started.Add(consoleSetupPath);
-        return Answer;
+        return Ending;
     }
 }

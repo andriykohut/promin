@@ -5,32 +5,27 @@ using Promin.Master.Core.Updates;
 namespace Promin.Master.Services;
 
 /// <summary>
-/// Runs the console's setup elevated, so Windows asks for permission. It shows its progress but asks nothing, closes
-/// this console through Restart Manager if it is still open, and, told by <c>/PROMINUPDATE</c> that this console ran it,
-/// opens it again with <c>--continue-update</c> (see <c>installer/console.iss</c>).
+/// Runs the console's setup as this console runs, without elevation. The setup asks Windows for permission itself and
+/// keeps a part that is not elevated, which opens the console again as the person who clicked Update: not elevated, and
+/// not as an administrator who typed their own password. Told by <c>/PROMINUPDATE</c> that this console ran it, the
+/// setup closes this console before it installs and opens it again with <c>--continue-update</c> (see
+/// <c>installer/console.iss</c>). It shows its progress but asks nothing.
 /// </summary>
 public sealed class SelfUpdate : ISelfUpdate
 {
-    private const string Arguments = "/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /PROMINUPDATE";
+    private const string Arguments = "/SILENT /SUPPRESSMSGBOXES /NORESTART /PROMINUPDATE";
 
-    // ERROR_CANCELLED: the person said no to Windows' permission prompt.
-    private const int Cancelled = 1223;
-
-    public bool Start(string consoleSetupPath)
+    public async Task RunAsync(string consoleSetupPath)
     {
         try
         {
-            using var started = Process.Start(new ProcessStartInfo(consoleSetupPath, Arguments) { UseShellExecute = true, Verb = "runas" });
-            return started is not null;
+            using var setup = Process.Start(new ProcessStartInfo(consoleSetupPath, Arguments) { UseShellExecute = false })!;
+            await setup.WaitForExitAsync().ConfigureAwait(false);
+            Trace.TraceInformation("This PC's setup ended with {0} and did not update it.", setup.ExitCode);
         }
-        catch (Win32Exception e)
+        catch (Exception e) when (e is Win32Exception or InvalidOperationException)
         {
-            if (e.NativeErrorCode != Cancelled)
-            {
-                Trace.TraceWarning("This PC's setup could not be started: {0}", e.Message);
-            }
-
-            return false;
+            Trace.TraceWarning("This PC's setup could not be started: {0}", e.Message);
         }
     }
 }
