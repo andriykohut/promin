@@ -14,19 +14,24 @@ public static class UpdateSignature
     // TODO(#37): the owner's key goes here; until then nothing verifies.
     public static ReadOnlyMemory<byte> ProjectPublicKey { get; } = Array.Empty<byte>();
 
-    /// <summary>What is signed: UTF-8 <c>promin-setup\n{version}\n{sha256 as lowercase hex}</c>.</summary>
-    public static byte[] SignedBytes(ReleaseVersion version, ReadOnlySpan<byte> sha256)
+    /// <summary>
+    /// What is signed: UTF-8 <c>promin-setup\n{setup name}\n{version}\n{sha256 as lowercase hex}</c>, the setup
+    /// name being the release asset's file name, so a signature on one setup does not hold for the other.
+    /// </summary>
+    public static byte[] SignedBytes(string setupName, ReleaseVersion version, ReadOnlySpan<byte> sha256)
     {
+        ArgumentNullException.ThrowIfNull(setupName);
         ArgumentNullException.ThrowIfNull(version);
-        return Encoding.UTF8.GetBytes($"promin-setup\n{version}\n{Convert.ToHexStringLower(sha256)}");
+        return Encoding.UTF8.GetBytes($"promin-setup\n{setupName}\n{version}\n{Convert.ToHexStringLower(sha256)}");
     }
 
     /// <summary>
     /// True when <paramref name="signature"/> is <paramref name="publicKey"/>'s signature on the file at
-    /// <paramref name="setupPath"/> as <paramref name="version"/>. False for a missing or unreadable file, and for a
-    /// malformed key or signature.
+    /// <paramref name="setupPath"/> as the setup named <paramref name="setupName"/> at <paramref name="version"/>. False
+    /// for a missing or unreadable file, and for a malformed key or signature.
     /// </summary>
-    public static bool HoldsFor(string setupPath, ReleaseVersion version, ReadOnlySpan<byte> signature, ReadOnlySpan<byte> publicKey)
+    public static bool HoldsFor(
+        string setupPath, string setupName, ReleaseVersion version, ReadOnlySpan<byte> signature, ReadOnlySpan<byte> publicKey)
     {
         ArgumentNullException.ThrowIfNull(setupPath);
         ArgumentNullException.ThrowIfNull(version);
@@ -46,7 +51,7 @@ public static class UpdateSignature
         {
             using var key = ECDsa.Create();
             key.ImportSubjectPublicKeyInfo(publicKey, out _);
-            return key.VerifyData(SignedBytes(version, sha256), signature, HashAlgorithmName.SHA256);
+            return key.VerifyData(SignedBytes(setupName, version, sha256), signature, HashAlgorithmName.SHA256);
         }
         catch (CryptographicException)
         {

@@ -43,10 +43,10 @@ public sealed class UpdateCacheTests : IDisposable
     private UpdateCache Cache() => new(_directory, new HttpClient(_http), _key.ExportSubjectPublicKeyInfo());
 
     /// <summary>Serves a setup and its .sig, which claims <paramref name="sigVersion"/> and is signed as <paramref name="signedAs"/>.</summary>
-    private void Serve(string name, byte[] bytes, string sigVersion = "0.4.0", string signedAs = "0.4.0")
+    private void Serve(string name, byte[] bytes, string sigVersion = "0.4.0", string signedAs = "0.4.0", string? signedFor = null)
     {
         _http.Serve(Download + name, bytes);
-        var signature = _key.SignData(UpdateSignature.SignedBytes(Parse(signedAs), SHA256.HashData(bytes)), HashAlgorithmName.SHA256);
+        var signature = _key.SignData(UpdateSignature.SignedBytes(signedFor ?? name, Parse(signedAs), SHA256.HashData(bytes)), HashAlgorithmName.SHA256);
         _http.Serve(Download + name + ".sig", JsonSerializer.SerializeToUtf8Bytes(new SetupSignature(sigVersion, signature)));
     }
 
@@ -62,7 +62,7 @@ public sealed class UpdateCacheTests : IDisposable
         Assert.Equal(_console, File.ReadAllBytes(set.Console!.SetupPath));
         Assert.Equal(Parse("0.4.0"), set.Agent.Version);
         Assert.StartsWith(Path.Combine(_directory, "0.4.0"), set.Agent.SetupPath, StringComparison.OrdinalIgnoreCase);
-        Assert.True(UpdateSignature.HoldsFor(set.Agent.SetupPath, set.Agent.Version, set.Agent.Signature, _key.ExportSubjectPublicKeyInfo()));
+        Assert.True(UpdateSignature.HoldsFor(set.Agent.SetupPath, ReleaseJson.AgentSetupName, set.Agent.Version, set.Agent.Signature, _key.ExportSubjectPublicKeyInfo()));
         Assert.All(_http.Requests, r => Assert.Equal("Promin", r.Headers.UserAgent.ToString()));
     }
 
@@ -80,6 +80,15 @@ public sealed class UpdateCacheTests : IDisposable
     public async Task ABadSignature_LeavesNothing()
     {
         Serve("Promin-Agent-Setup.exe", _agent, signedAs: "0.4.1");
+
+        Assert.Null(await Cache().GetAsync(Release, withConsole: false, TestContext.Current.CancellationToken));
+        Assert.False(Directory.Exists(Path.Combine(_directory, "0.4.0")));
+    }
+
+    [Fact]
+    public async Task TheConsoleSetupServedAsTheAgentSetup_LeavesNothing()
+    {
+        Serve("Promin-Agent-Setup.exe", _console, signedFor: "Promin-Console-Setup.exe");
 
         Assert.Null(await Cache().GetAsync(Release, withConsole: false, TestContext.Current.CancellationToken));
         Assert.False(Directory.Exists(Path.Combine(_directory, "0.4.0")));

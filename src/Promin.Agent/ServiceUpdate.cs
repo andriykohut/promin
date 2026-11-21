@@ -25,7 +25,7 @@ internal static class ServiceUpdate
         if (sig is null
             || !ReleaseVersion.TryParse(sig.Version, out var version)
             || version <= installed
-            || !UpdateSignature.HoldsFor(setup, version, sig.Signature, publicKey))
+            || !UpdateSignature.HoldsFor(setup, UpdateLink.SetupName, version, sig.Signature, publicKey))
         {
             log("The update the agent left is not a newer setup signed by the project; it was removed.");
             UpdateLink.ClearLeftovers(updateDirectory, log);

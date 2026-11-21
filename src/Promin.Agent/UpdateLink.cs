@@ -114,7 +114,7 @@ internal sealed class UpdateLink(
                 }
             }
 
-            if (!UpdateSignature.HoldsFor(part, version, offer.Signature, publicKey.Span))
+            if (!UpdateSignature.HoldsFor(part, SetupName, version, offer.Signature, publicKey.Span))
             {
                 return UpdateOutcome.BadSignature;
             }

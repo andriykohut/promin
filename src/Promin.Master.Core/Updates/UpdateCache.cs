@@ -86,7 +86,7 @@ public sealed class UpdateCache(string directory, HttpClient http, ReadOnlyMemor
         SetupSignature.Read(setup + SetupSignature.Extension) is { } sig
         && ReleaseVersion.TryParse(sig.Version, out var signedFor)
         && signedFor == version
-        && UpdateSignature.HoldsFor(setup, version, sig.Signature, publicKey.Span)
+        && UpdateSignature.HoldsFor(setup, Path.GetFileName(setup), version, sig.Signature, publicKey.Span)
             ? new UpdateFile(setup, version, sig.Signature)
             : null;
 

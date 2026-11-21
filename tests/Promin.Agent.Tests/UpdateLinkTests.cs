@@ -82,11 +82,11 @@ public sealed class UpdateLinkTests : IDisposable
         new UpdateLink(Parse(installed), UpdateDirectory, _key.ExportSubjectPublicKeyInfo(), () => _accepted++, _log.Add)
             .RunAsync(new FakeConnection(_stream), _stop.Token);
 
-    private OfferUpdate Offer(string version, byte[] bytes, string? signedAs = null)
+    private OfferUpdate Offer(string version, byte[] bytes, string? signedAs = null, string signedFor = UpdateLink.SetupName)
     {
         _stream.Bytes = bytes;
         var signature = _key.SignData(
-            UpdateSignature.SignedBytes(Parse(signedAs ?? version), SHA256.HashData(bytes)), HashAlgorithmName.SHA256);
+            UpdateSignature.SignedBytes(signedFor, Parse(signedAs ?? version), SHA256.HashData(bytes)), HashAlgorithmName.SHA256);
         return new OfferUpdate(version, bytes.Length, signature);
     }
 
@@ -134,6 +134,18 @@ public sealed class UpdateLinkTests : IDisposable
     {
         var running = RunAsync();
         Assert.Equal(UpdateOutcome.BadSignature, await AnswerToAsync(Offer("0.4.0", [1, 2, 3], signedAs: "0.5.0")));
+        Assert.Empty(Kept());
+        Assert.Equal(0, _accepted);
+        await _stop.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task RefusesTheConsoleSetup()
+    {
+        var running = RunAsync();
+        var offer = Offer("0.4.0", [1, 2, 3], signedFor: "Promin-Console-Setup.exe");
+        Assert.Equal(UpdateOutcome.BadSignature, await AnswerToAsync(offer));
         Assert.Empty(Kept());
         Assert.Equal(0, _accepted);
         await _stop.CancelAsync();

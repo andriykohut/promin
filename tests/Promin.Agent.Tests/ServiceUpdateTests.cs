@@ -25,13 +25,13 @@ public sealed class ServiceUpdateTests : IDisposable
         ReleaseVersion.TryParse(text, out var version) ? version : throw new FormatException(text);
 
     /// <summary>Puts a setup in the folder with a .sig for <paramref name="version"/>, signed as <paramref name="signedAs"/>.</summary>
-    private void Accepted(string version, string? signedAs = null)
+    private void Accepted(string version, string? signedAs = null, string signedFor = UpdateLink.SetupName)
     {
         Directory.CreateDirectory(Folder);
         byte[] bytes = [1, 2, 3, 4];
         File.WriteAllBytes(Setup, bytes);
         var signature = _key.SignData(
-            UpdateSignature.SignedBytes(Parse(signedAs ?? version), SHA256.HashData(bytes)), HashAlgorithmName.SHA256);
+            UpdateSignature.SignedBytes(signedFor, Parse(signedAs ?? version), SHA256.HashData(bytes)), HashAlgorithmName.SHA256);
         new SetupSignature(version, signature).Write(Setup + SetupSignature.Extension);
     }
 
@@ -50,6 +50,15 @@ public sealed class ServiceUpdateTests : IDisposable
     public void RefusesABadSignature_AndClearsTheFolder()
     {
         Accepted("0.4.0", signedAs: "0.4.1");
+        Assert.False(TryStart());
+        Assert.Empty(_started);
+        Assert.Empty(Directory.GetFileSystemEntries(Folder));
+    }
+
+    [Fact]
+    public void RefusesTheConsoleSetup_AndClearsTheFolder()
+    {
+        Accepted("0.4.0", signedFor: "Promin-Console-Setup.exe");
         Assert.False(TryStart());
         Assert.Empty(_started);
         Assert.Empty(Directory.GetFileSystemEntries(Folder));

@@ -19,7 +19,8 @@ try {
 
     foreach ($setup in $Setups) {
         $sha256 = [System.Security.Cryptography.SHA256]::HashData([System.IO.File]::ReadAllBytes($setup))
-        $signed = [System.Text.Encoding]::UTF8.GetBytes("promin-setup`n$Version`n$([Convert]::ToHexStringLower($sha256))")
+        $name = Split-Path -Leaf $setup
+        $signed = [System.Text.Encoding]::UTF8.GetBytes("promin-setup`n$name`n$Version`n$([Convert]::ToHexStringLower($sha256))")
         $signature = $key.SignData($signed, [System.Security.Cryptography.HashAlgorithmName]::SHA256)
         [ordered]@{ version = $Version; signature = [Convert]::ToBase64String($signature) } |
             ConvertTo-Json -Compress |

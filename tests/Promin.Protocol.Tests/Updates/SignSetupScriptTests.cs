@@ -55,7 +55,22 @@ public sealed class SignSetupScriptTests : IDisposable
         Assert.NotNull(sig);
         Assert.Equal("0.4.0", sig.Version);
         Assert.True(ReleaseVersion.TryParse(sig.Version, out var version));
-        Assert.True(UpdateSignature.HoldsFor(setup, version, sig.Signature, key.ExportSubjectPublicKeyInfo()));
+        Assert.True(UpdateSignature.HoldsFor(setup, "Promin-Agent-Setup.exe", version, sig.Signature, key.ExportSubjectPublicKeyInfo()));
+    }
+
+    [Fact(Timeout = 60000)]
+    public async Task SignsEachSetupForItsOwnName()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var setup = Path.Combine(_directory, "Promin-Console-Setup.exe");
+        File.WriteAllBytes(setup, [1, 2, 3]);
+
+        Assert.Equal(0, await RunAsync(TestContext.Current.CancellationToken, Convert.ToBase64String(key.ExportPkcs8PrivateKey()), "-Version", "0.4.0", "-Setups", setup));
+
+        var sig = SetupSignature.Read(setup + SetupSignature.Extension)!;
+        Assert.True(ReleaseVersion.TryParse(sig.Version, out var version));
+        Assert.True(UpdateSignature.HoldsFor(setup, "Promin-Console-Setup.exe", version, sig.Signature, key.ExportSubjectPublicKeyInfo()));
+        Assert.False(UpdateSignature.HoldsFor(setup, "Promin-Agent-Setup.exe", version, sig.Signature, key.ExportSubjectPublicKeyInfo()));
     }
 
     [Fact(Timeout = 60000)]

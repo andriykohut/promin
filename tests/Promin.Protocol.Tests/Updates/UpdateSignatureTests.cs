@@ -26,8 +26,10 @@ public sealed class UpdateSignatureTests : IDisposable
         return path;
     }
 
-    private byte[] Sign(string path, string version) =>
-        _key.SignData(UpdateSignature.SignedBytes(Parse(version), SHA256.HashData(File.ReadAllBytes(path))), HashAlgorithmName.SHA256);
+    private const string Agent = "Promin-Agent-Setup.exe";
+
+    private byte[] Sign(string path, string version, string setupName = Agent) =>
+        _key.SignData(UpdateSignature.SignedBytes(setupName, Parse(version), SHA256.HashData(File.ReadAllBytes(path))), HashAlgorithmName.SHA256);
 
     private byte[] PublicKey => _key.ExportSubjectPublicKeyInfo();
 
@@ -35,7 +37,7 @@ public sealed class UpdateSignatureTests : IDisposable
     public void HoldsForTheFileItSigned()
     {
         var setup = Setup(1, 2, 3);
-        Assert.True(UpdateSignature.HoldsFor(setup, Parse("0.4.0"), Sign(setup, "0.4.0"), PublicKey));
+        Assert.True(UpdateSignature.HoldsFor(setup, Agent, Parse("0.4.0"), Sign(setup, "0.4.0"), PublicKey));
     }
 
     [Fact]
@@ -44,14 +46,21 @@ public sealed class UpdateSignatureTests : IDisposable
         var setup = Setup(1, 2, 3);
         var signature = Sign(setup, "0.4.0");
         File.WriteAllBytes(setup, [1, 2, 4]);
-        Assert.False(UpdateSignature.HoldsFor(setup, Parse("0.4.0"), signature, PublicKey));
+        Assert.False(UpdateSignature.HoldsFor(setup, Agent, Parse("0.4.0"), signature, PublicKey));
     }
 
     [Fact]
     public void FailsForAnotherVersion()
     {
         var setup = Setup(1, 2, 3);
-        Assert.False(UpdateSignature.HoldsFor(setup, Parse("0.4.1"), Sign(setup, "0.4.0"), PublicKey));
+        Assert.False(UpdateSignature.HoldsFor(setup, Agent, Parse("0.4.1"), Sign(setup, "0.4.0"), PublicKey));
+    }
+
+    [Fact]
+    public void FailsForAnotherSetup()
+    {
+        var setup = Setup(1, 2, 3);
+        Assert.False(UpdateSignature.HoldsFor(setup, Agent, Parse("0.4.0"), Sign(setup, "0.4.0", "Promin-Console-Setup.exe"), PublicKey));
     }
 
     [Fact]
@@ -59,16 +68,16 @@ public sealed class UpdateSignatureTests : IDisposable
     {
         var setup = Setup(1, 2, 3);
         using var other = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        Assert.False(UpdateSignature.HoldsFor(setup, Parse("0.4.0"), Sign(setup, "0.4.0"), other.ExportSubjectPublicKeyInfo()));
+        Assert.False(UpdateSignature.HoldsFor(setup, Agent, Parse("0.4.0"), Sign(setup, "0.4.0"), other.ExportSubjectPublicKeyInfo()));
     }
 
     [Fact]
     public void FailsForGarbage()
     {
         var setup = Setup(1, 2, 3);
-        Assert.False(UpdateSignature.HoldsFor(setup, Parse("0.4.0"), [1, 2, 3], PublicKey));
-        Assert.False(UpdateSignature.HoldsFor(setup, Parse("0.4.0"), Sign(setup, "0.4.0"), []));
-        Assert.False(UpdateSignature.HoldsFor(setup, Parse("0.4.0"), Sign(setup, "0.4.0"), [1, 2, 3]));
+        Assert.False(UpdateSignature.HoldsFor(setup, Agent, Parse("0.4.0"), [1, 2, 3], PublicKey));
+        Assert.False(UpdateSignature.HoldsFor(setup, Agent, Parse("0.4.0"), Sign(setup, "0.4.0"), []));
+        Assert.False(UpdateSignature.HoldsFor(setup, Agent, Parse("0.4.0"), Sign(setup, "0.4.0"), [1, 2, 3]));
     }
 
     [Fact]
@@ -77,14 +86,14 @@ public sealed class UpdateSignatureTests : IDisposable
         var setup = Setup(1, 2, 3);
         var signature = Sign(setup, "0.4.0");
         File.Delete(setup);
-        Assert.False(UpdateSignature.HoldsFor(setup, Parse("0.4.0"), signature, PublicKey));
+        Assert.False(UpdateSignature.HoldsFor(setup, Agent, Parse("0.4.0"), signature, PublicKey));
     }
 
     [Fact]
     public void SignedBytesAreTheDocumentedText()
     {
-        var text = Encoding.UTF8.GetString(UpdateSignature.SignedBytes(Parse("0.4.0"), Enumerable.Repeat((byte)0xAA, 32).ToArray()));
-        Assert.Equal("promin-setup\n0.4.0\n" + string.Concat(Enumerable.Repeat("aa", 32)), text);
+        var text = Encoding.UTF8.GetString(UpdateSignature.SignedBytes(Agent, Parse("0.4.0"), Enumerable.Repeat((byte)0xAA, 32).ToArray()));
+        Assert.Equal("promin-setup\nPromin-Agent-Setup.exe\n0.4.0\n" + string.Concat(Enumerable.Repeat("aa", 32)), text);
     }
 
     [Fact]
