@@ -8,6 +8,9 @@ internal interface IAgentProcess : IDisposable
 
     /// <summary>Ends the process now if it is still running. Never throws.</summary>
     void Kill();
+
+    /// <summary>What the process exited with; read only once <see cref="WaitForExitAsync"/> has completed.</summary>
+    int ExitCode { get; }
 }
 
 /// <summary>Starts the agent in a Windows session.</summary>

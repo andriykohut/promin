@@ -8,7 +8,8 @@ public class AgentSupervisorTests
     {
         private readonly TaskCompletionSource _exited = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool Killed { get; private set; }
-        public void ExitNow() => _exited.TrySetResult();
+        public int ExitCode { get; private set; }
+        public void ExitNow(int code = 0) { ExitCode = code; _exited.TrySetResult(); }
         public void Kill() { Killed = true; _exited.TrySetResult(); }
         public Task WaitForExitAsync(CancellationToken ct) => _exited.Task.WaitAsync(ct);
         public void Dispose() { }
@@ -45,6 +46,77 @@ public class AgentSupervisorTests
         for (var i = 0; i < 10; i++) await Task.Yield();
         await Task.Delay(25);
         for (var i = 0; i < 10; i++) await Task.Yield();
+    }
+
+    /// <summary>Signed in to session 1, with an agent that exits with <paramref name="exitCode"/> once it has started.</summary>
+    private static async Task<(FakeLauncher Launcher, ManualTimeProvider Clock, Task Run)> ExitsWithAsync(
+        int exitCode, Func<bool> startUpdate, CancellationToken stop)
+    {
+        var launcher = new FakeLauncher();
+        var sessions = new FakeSessions();
+        sessions.Set(1);
+        var clock = new ManualTimeProvider();
+        var run = new AgentSupervisor(launcher, sessions, new RestartBackoff(), clock, _ => { }, startUpdate).RunAsync(stop);
+        await PumpAsync();
+        launcher.Processes[0].ExitNow(exitCode);
+        await PumpAsync();
+        return (launcher, clock, run);
+    }
+
+    [Fact]
+    public async Task UpdateReady_StartsTheUpdate_AndWaitsForItsSetupBeforeRelaunching()
+    {
+        var starts = 0;
+        using var stop = new CancellationTokenSource();
+        var (launcher, clock, run) = await ExitsWithAsync(ExitCodes.UpdateReady, () => { starts++; return true; }, stop.Token);
+
+        Assert.Equal(1, starts);
+        clock.Advance(AgentSupervisor.SetupGrace - TimeSpan.FromSeconds(1));
+        await PumpAsync();
+        Assert.Single(launcher.Launched);
+
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await PumpAsync();
+        Assert.Equal(2, launcher.Launched.Count);
+        Assert.Equal(1, starts);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task AnUpdateThatCannotStart_RelaunchesAfterTheUsualBackoff()
+    {
+        using var stop = new CancellationTokenSource();
+        var (launcher, clock, run) = await ExitsWithAsync(ExitCodes.UpdateReady, () => false, stop.Token);
+
+        clock.Advance(RestartBackoff.First);
+        await PumpAsync();
+        Assert.Equal(2, launcher.Launched.Count);
+        await stop.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task StoppedDuringTheSetupsGrace_LaunchesNothingMore()
+    {
+        using var stop = new CancellationTokenSource();
+        var (launcher, _, run) = await ExitsWithAsync(ExitCodes.UpdateReady, () => true, stop.Token);
+
+        await stop.CancelAsync();
+        await run;
+        Assert.Single(launcher.Launched);
+    }
+
+    [Fact]
+    public async Task AnyOtherExitCode_NeverStartsAnUpdate()
+    {
+        var starts = 0;
+        using var stop = new CancellationTokenSource();
+        var (_, _, run) = await ExitsWithAsync(ExitCodes.Unexpected, () => { starts++; return true; }, stop.Token);
+
+        Assert.Equal(0, starts);
+        await stop.CancelAsync();
+        await run;
     }
 
     [Fact]

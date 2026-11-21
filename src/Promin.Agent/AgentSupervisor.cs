@@ -4,11 +4,19 @@ namespace Promin.Agent;
 /// Keeps one agent running in whichever session is on the console. It launches the agent, and on each of the
 /// agent exiting, the session ending or a user switching, or being told to stop, it does the one right thing:
 /// restart with a growing delay, idle until the next sign-in, follow the switch, or end the agent. The agent
-/// itself is unchanged and does not know a service started it.
+/// itself is unchanged and does not know a service started it. An agent that exits with
+/// <see cref="ExitCodes.UpdateReady"/> has saved an accepted update: <paramref name="startUpdate"/> checks it and starts
+/// its setup, which stops this service, so the agent is started again only if the setup has not done so within
+/// <see cref="SetupGrace"/>.
 /// </summary>
+/// <param name="startUpdate">True when an accepted update's setup has started. Never throws; null starts none.</param>
 internal sealed class AgentSupervisor(
-    ISessionLauncher launcher, IConsoleSessions sessions, RestartBackoff backoff, TimeProvider time, Action<string> log)
+    ISessionLauncher launcher, IConsoleSessions sessions, RestartBackoff backoff, TimeProvider time, Action<string> log,
+    Func<bool>? startUpdate = null)
 {
+    /// <summary>How long a started setup has to stop the service before the agent is started again anyway.</summary>
+    public static readonly TimeSpan SetupGrace = TimeSpan.FromMinutes(2);
+
     // The agent must stay up at least this long for the next exit to count as a fresh problem rather than a continuing one.
     private static readonly TimeSpan Stable = RestartBackoff.Longest;
 
@@ -30,18 +38,28 @@ internal sealed class AgentSupervisor(
                 continue;
             }
 
-            var exitedOnItsOwn = await RunOneAsync(session.Value, changed, iteration, stop).ConfigureAwait(false);
-            if (exitedOnItsOwn && !stop.IsCancellationRequested && sessions.ActiveSession == session)
+            var exit = await RunOneAsync(session.Value, changed, iteration, stop).ConfigureAwait(false);
+            if (exit is not { } code || stop.IsCancellationRequested)
+            {
+                continue;
+            }
+
+            if (code == ExitCodes.UpdateReady && startUpdate?.Invoke() == true)
+            {
+                log("The agent accepted an update; its setup is running.");
+                await Swallow(Task.Delay(SetupGrace, time, stop)).ConfigureAwait(false);
+            }
+            else if (sessions.ActiveSession == session)
             {
                 await Swallow(Task.Delay(backoff.NextDelay(), time, stop)).ConfigureAwait(false);
             }
         }
     }
 
-    // true  → the agent is gone on its own (it exited/crashed, or could not be launched): the caller may back off
-    //         and relaunch the same session. false → it was ended deliberately (stop, sign-out or a switch): the
-    //         caller loops and re-evaluates the session with no backoff.
-    private async Task<bool> RunOneAsync(uint session, Task changed, CancellationTokenSource iteration, CancellationToken stop)
+    // An exit code → the agent is gone on its own (it exited or crashed; a launch that failed counts as Unexpected): the
+    //         caller may back off and relaunch the same session. null → it was ended deliberately (stop, sign-out or a
+    //         switch): the caller loops and re-evaluates the session with no backoff.
+    private async Task<int?> RunOneAsync(uint session, Task changed, CancellationTokenSource iteration, CancellationToken stop)
     {
         IAgentProcess process;
         try
@@ -53,7 +71,7 @@ internal sealed class AgentSupervisor(
             log($"The agent could not be started in session {session}: {e.Message}");
             await iteration.CancelAsync().ConfigureAwait(false);
             await Swallow(changed).ConfigureAwait(false); // the armed wait is ours to observe even when the launch failed
-            return true;
+            return ExitCodes.Unexpected;
         }
 
         using (process)
@@ -68,7 +86,7 @@ internal sealed class AgentSupervisor(
             if (stop.IsCancellationRequested)
             {
                 process.Kill();
-                return false;
+                return null;
             }
 
             // Decide by whether the process actually exited, never by the session value: a flip away and back to the
@@ -82,13 +100,13 @@ internal sealed class AgentSupervisor(
                     backoff.Reset();
                 }
 
-                log($"The agent in session {session} exited; it will be started again.");
-                return true;
+                log($"The agent in session {session} exited with {process.ExitCode}.");
+                return process.ExitCode;
             }
 
             // The change-wait won while the agent is still alive: end it, and let the caller re-read the session.
             process.Kill();
-            return false;
+            return null;
         }
     }
 
