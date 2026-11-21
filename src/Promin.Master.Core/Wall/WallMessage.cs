@@ -10,7 +10,8 @@ public enum WallMessageKind
 }
 
 /// <summary>The one bar above the wall.</summary>
-public sealed record WallMessage(WallMessageKind Kind, string Title, string Text, string? ActionLabel = null)
+/// <param name="ActionUpdates">True when the action button starts the update; otherwise it opens Set up devices.</param>
+public sealed record WallMessage(WallMessageKind Kind, string Title, string Text, string? ActionLabel = null, bool ActionUpdates = false)
 {
     /// <summary>The picture source failed on air, or could not be started. Stays until the next start.</summary>
     public static WallMessage BroadcastStopped { get; } = new(
