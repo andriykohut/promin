@@ -232,7 +232,7 @@ public sealed class RoomUpdateTests : IDisposable
         await update.UpdateAsync();
 
         Assert.Equal([V("0.4.0")], _releases.AskedFor);
-        Assert.Equal(false, Assert.Single(_downloads.Gets).WithConsole);
+        Assert.False(Assert.Single(_downloads.Gets).WithConsole);
         Assert.Single(_connections.UpdatesSent);
     }
 
