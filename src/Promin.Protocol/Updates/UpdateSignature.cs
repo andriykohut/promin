@@ -11,8 +11,9 @@ namespace Promin.Protocol.Updates;
 public static class UpdateSignature
 {
     /// <summary>The project's public key (SubjectPublicKeyInfo, DER), as <c>installer/new-signing-key.ps1</c> prints it.</summary>
-    // TODO(#37): the owner's key goes here; until then nothing verifies.
-    public static ReadOnlyMemory<byte> ProjectPublicKey { get; } = Array.Empty<byte>();
+    // installer/sign-setup.ps1 reads this literal and refuses to sign with any other key.
+    public static ReadOnlyMemory<byte> ProjectPublicKey { get; } =
+        Convert.FromBase64String("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEznBc57Uopapy3FXBzp1OARWd2FQjyXdT9chvqk+p4TiDs709F5a5uq5o2N8DaRuDudWOphsEmsBrVzsS7BHuNg==");
 
     /// <summary>
     /// What is signed: UTF-8 <c>promin-setup\n{setup name}\n{version}\n{sha256 as lowercase hex}</c>, the setup
