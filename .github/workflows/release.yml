@@ -17,8 +17,16 @@ jobs:
           dotnet-version: 10.0.x
       - run: ./installer/build.ps1 -Version $env:GITHUB_REF_NAME.TrimStart('v')
         shell: pwsh
-      # --generate-notes appends the change list after --notes.
-      - run: gh release create $env:GITHUB_REF_NAME (Get-Item 'artifacts/setup/*.exe') --generate-notes --notes "**Before installing:** Smart App Control has to be off on every PC. [Українською](https://andriykohut.github.io/promin/ua/docs/smart-app-control/) · [English](https://andriykohut.github.io/promin/docs/smart-app-control/)"
+      # Fails without the secret, so no release goes out that the agents would refuse.
+      - run: ./installer/sign-setup.ps1 -Version $env:GITHUB_REF_NAME.TrimStart('v') -Setups (Get-Item 'artifacts/setup/*.exe').FullName
+        shell: pwsh
+        env:
+          PROMIN_SIGNING_KEY: ${{ secrets.PROMIN_SIGNING_KEY }}
+      # --generate-notes appends the change list after --notes. A tag with a pre-release part (v0.4.0-beta.1) is marked
+      # pre-release, so that GitHub's latest release, which every console checks, is never a beta.
+      - run: |
+          $preRelease = if ($env:GITHUB_REF_NAME.Contains('-')) { '--prerelease' } else { @() }
+          gh release create $env:GITHUB_REF_NAME (Get-Item 'artifacts/setup/*') $preRelease --generate-notes --notes "**Before installing:** Smart App Control has to be off on every PC. [Українською](https://andriykohut.github.io/promin/ua/docs/smart-app-control/) · [English](https://andriykohut.github.io/promin/docs/smart-app-control/)"
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
