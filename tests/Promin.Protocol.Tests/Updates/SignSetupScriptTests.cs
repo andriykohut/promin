@@ -27,6 +27,16 @@ public sealed class SignSetupScriptTests : IDisposable
         throw new InvalidOperationException("The repository root was not found above the test's folder.");
     }
 
+    /// <summary>A stand-in for UpdateSignature.cs holding <paramref name="key"/>'s public half, or no key when null.</summary>
+    private string KeySource(ECDsa? key)
+    {
+        var path = Path.Combine(_directory, "UpdateSignature.cs");
+        File.WriteAllText(path, key is null
+            ? "public static ReadOnlyMemory<byte> ProjectPublicKey { get; } = Array.Empty<byte>();"
+            : $"public static ReadOnlyMemory<byte> ProjectPublicKey {{ get; }} =\n        Convert.FromBase64String(\"{Convert.ToBase64String(key.ExportSubjectPublicKeyInfo())}\");");
+        return path;
+    }
+
     private static async Task<int> RunAsync(CancellationToken ct, string? key, params string[] arguments)
     {
         var start = new ProcessStartInfo("pwsh") { RedirectStandardError = true, RedirectStandardOutput = true };
@@ -49,7 +59,7 @@ public sealed class SignSetupScriptTests : IDisposable
         var setup = Path.Combine(_directory, "Promin-Agent-Setup.exe");
         File.WriteAllBytes(setup, RandomNumberGenerator.GetBytes(4096));
 
-        Assert.Equal(0, await RunAsync(TestContext.Current.CancellationToken, Convert.ToBase64String(key.ExportPkcs8PrivateKey()), "-Version", "0.4.0", "-Setups", setup));
+        Assert.Equal(0, await RunAsync(TestContext.Current.CancellationToken, Convert.ToBase64String(key.ExportPkcs8PrivateKey()), "-Version", "0.4.0", "-Setups", setup, "-KeySource", KeySource(key)));
 
         var sig = SetupSignature.Read(setup + SetupSignature.Extension);
         Assert.NotNull(sig);
@@ -65,12 +75,35 @@ public sealed class SignSetupScriptTests : IDisposable
         var setup = Path.Combine(_directory, "Promin-Console-Setup.exe");
         File.WriteAllBytes(setup, [1, 2, 3]);
 
-        Assert.Equal(0, await RunAsync(TestContext.Current.CancellationToken, Convert.ToBase64String(key.ExportPkcs8PrivateKey()), "-Version", "0.4.0", "-Setups", setup));
+        Assert.Equal(0, await RunAsync(TestContext.Current.CancellationToken, Convert.ToBase64String(key.ExportPkcs8PrivateKey()), "-Version", "0.4.0", "-Setups", setup, "-KeySource", KeySource(key)));
 
         var sig = SetupSignature.Read(setup + SetupSignature.Extension)!;
         Assert.True(ReleaseVersion.TryParse(sig.Version, out var version));
         Assert.True(UpdateSignature.HoldsFor(setup, "Promin-Console-Setup.exe", version, sig.Signature, key.ExportSubjectPublicKeyInfo()));
         Assert.False(UpdateSignature.HoldsFor(setup, "Promin-Agent-Setup.exe", version, sig.Signature, key.ExportSubjectPublicKeyInfo()));
+    }
+
+    [Fact(Timeout = 60000)]
+    public async Task RefusesAKeyTheAgentsDoNotCheckWith()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var other = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var setup = Path.Combine(_directory, "Promin-Agent-Setup.exe");
+        File.WriteAllBytes(setup, [1, 2, 3]);
+
+        Assert.NotEqual(0, await RunAsync(TestContext.Current.CancellationToken, Convert.ToBase64String(key.ExportPkcs8PrivateKey()), "-Version", "0.4.0", "-Setups", setup, "-KeySource", KeySource(other)));
+        Assert.False(File.Exists(setup + SetupSignature.Extension));
+    }
+
+    [Fact(Timeout = 60000)]
+    public async Task RefusesWhileTheAgentsHaveNoKey()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var setup = Path.Combine(_directory, "Promin-Agent-Setup.exe");
+        File.WriteAllBytes(setup, [1, 2, 3]);
+
+        Assert.NotEqual(0, await RunAsync(TestContext.Current.CancellationToken, Convert.ToBase64String(key.ExportPkcs8PrivateKey()), "-Version", "0.4.0", "-Setups", setup, "-KeySource", KeySource(null)));
+        Assert.False(File.Exists(setup + SetupSignature.Extension));
     }
 
     [Fact(Timeout = 60000)]
