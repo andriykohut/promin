@@ -3,8 +3,10 @@ using System.Threading.Channels;
 using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
 using Promin.Master.Core.Tests.TestDoubles;
+using Promin.Master.Core.Updates;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Messages;
+using Promin.Protocol.Updates;
 
 namespace Promin.Master.Core.Tests.Wall;
 
@@ -23,6 +25,13 @@ public sealed class RoomConnectionsTests
         public List<PowerAction> Powers { get; } = [];
         public IControlSession? Session { get; init; }
         public bool RefuseControl { get; init; }
+
+        /// <summary>What the agent answers to the version question; null for a version that does not read.</summary>
+        public string? Version { get; init; } = "0.3.0";
+
+        public UpdateOutcome UpdateAnswer { get; init; } = UpdateOutcome.Accepted;
+        public bool FailUpdate { get; init; }
+        public List<UpdateFile> Updates { get; } = [];
 
         public void Send(byte[] picture) => _pictures.Writer.TryWrite(picture);
 
@@ -73,6 +82,20 @@ public sealed class RoomConnectionsTests
         public Task<IControlSession> StartViewingAsync(CancellationToken ct) =>
             RefuseControl ? throw new ControlRefusedException() : Task.FromResult(Session!);
 
+        public Task<ReleaseVersion?> AskVersionAsync(CancellationToken ct) =>
+            Task.FromResult(ReleaseVersion.TryParse(Version, out var version) ? version : null);
+
+        public Task<UpdateOutcome> SendUpdateAsync(UpdateFile file, CancellationToken ct)
+        {
+            if (FailUpdate)
+            {
+                throw new IOException("stream reset");
+            }
+
+            Updates.Add(file);
+            return Task.FromResult(UpdateAnswer);
+        }
+
         public ValueTask DisposeAsync()
         {
             Disposed = true;
@@ -89,6 +112,7 @@ public sealed class RoomConnectionsTests
     private readonly List<(string Id, byte[] Picture)> _pictures = [];
     private readonly List<(string Id, bool Locked)> _lockReports = [];
     private readonly List<(string Id, bool Accepted)> _powerAnswers = [];
+    private readonly List<(string Id, ReleaseVersion Version)> _versions = [];
     private Func<RoomMember, Task<FakeConnection>> _answer = _ => Task.FromResult(new FakeConnection());
 
     private RoomConnections<FakeConnection> Build()
@@ -133,6 +157,13 @@ public sealed class RoomConnectionsTests
                 _powerAnswers.Add((id, accepted));
             }
         };
+        connections.VersionReported += (id, version) =>
+        {
+            lock (_versions)
+            {
+                _versions.Add((id, version));
+            }
+        };
         return connections;
     }
 
@@ -151,6 +182,60 @@ public sealed class RoomConnectionsTests
 
             await Task.Delay(1);
         }
+    }
+
+    private static UpdateFile Setup() =>
+        new("Promin-Agent-Setup.exe", ReleaseVersion.TryParse("0.4.0", out var v) ? v : throw new FormatException(), [1, 2, 3]);
+
+    [Fact]
+    public async Task TheVersion_IsReportedOnceAfterConnecting()
+    {
+        await using var connections = Build();
+        connections.Want(Pc());
+
+        await Eventually(() => _versions.Count == 1, "the version report");
+        Assert.Equal(("device-01", "0.3.0"), (_versions[0].Id, _versions[0].Version.ToString()));
+    }
+
+    [Fact]
+    public async Task AnUnreadableVersion_IsNotReported()
+    {
+        _answer = _ => Task.FromResult(new FakeConnection { Version = "garbage" });
+        await using var connections = Build();
+        connections.Want(Pc());
+        await connections.GetAsync(Pc(), TestContext.Current.CancellationToken);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        Assert.Empty(_versions);
+    }
+
+    [Fact]
+    public async Task AnUpdate_GoesToTheOpenConnection_AndReturnsItsAnswer()
+    {
+        var connection = new FakeConnection { UpdateAnswer = UpdateOutcome.NotNewer };
+        _answer = _ => Task.FromResult(connection);
+        await using var connections = Build();
+        await connections.GetAsync(Pc(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(UpdateOutcome.NotNewer, await connections.UpdateAsync("device-01", Setup()));
+        Assert.Single(connection.Updates);
+    }
+
+    [Fact]
+    public async Task AnUpdate_ToAPcWithNoConnection_IsNull()
+    {
+        await using var connections = Build();
+        Assert.Null(await connections.UpdateAsync("device-01", Setup()));
+    }
+
+    [Fact]
+    public async Task AnUpdate_WhoseConnectionEnds_IsNull()
+    {
+        _answer = _ => Task.FromResult(new FakeConnection { FailUpdate = true });
+        await using var connections = Build();
+        await connections.GetAsync(Pc(), TestContext.Current.CancellationToken);
+
+        Assert.Null(await connections.UpdateAsync("device-01", Setup()));
     }
 
     [Fact]

@@ -70,7 +70,8 @@ public sealed partial class RoomPage : Page
             services.WallSettings,
             () => DateTimeOffset.Now,
             action => DispatcherQueue.TryEnqueue(() => action()),
-            address => IPAddress.TryParse(address, out var ip) && ConsoleOnThisPc.Is(ip, OwnAddresses()));
+            address => IPAddress.TryParse(address, out var ip) && ConsoleOnThisPc.Is(ip, OwnAddresses()),
+            services.Updates);
         Sending = new RoomSend(
             services.Files,
             deviceId => ViewModel.Tiles.FirstOrDefault(t => t.DeviceId == deviceId),
@@ -86,6 +87,7 @@ public sealed partial class RoomPage : Page
         {
             ViewModel.Tick();
             Sending.Tick();
+            services.Updates.Tick();
         };
 
         var fade = new DoubleAnimation { From = 1, To = 0.3, Duration = new Duration(TimeSpan.FromMilliseconds(900)) };
@@ -142,7 +144,15 @@ public sealed partial class RoomPage : Page
         _ => InfoBarSeverity.Informational,
     };
 
-    public bool CanSendFiles(bool sending, bool emptyRoom) => !sending && !emptyRoom;
+    public bool CanSendFiles(bool sending, bool emptyRoom, bool updating) => !sending && !emptyRoom && !updating;
+
+    /// <summary>The strip's button: Stop sending is always available; Send again, which starts a send, not during an update.</summary>
+    public bool CanStripAction(bool sending, bool updating) => sending || !updating;
+
+    /// <summary>The bar's button: Set up devices is always available; Update only when the room is idle and no files are going out.</summary>
+    public bool CanMessageAction(bool updates, bool canUpdate, bool sending) => !updates || (canUpdate && !sending);
+
+    public Visibility Showing(double progress) => progress > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public Visibility NotEmpty(string value) => string.IsNullOrEmpty(value) ? Visibility.Collapsed : Visibility.Visible;
 
@@ -181,6 +191,18 @@ public sealed partial class RoomPage : Page
     // No slide: the design allows no decorative animation on these screens.
     private void SetUpDevices_Click(object sender, RoutedEventArgs e) =>
         Frame.Navigate(typeof(SetupPage), null, new SuppressNavigationTransitionInfo());
+
+    private async void MessageAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.MessageActionUpdates)
+        {
+            await Guarded(ViewModel.UpdateAsync);
+        }
+        else
+        {
+            SetUpDevices_Click(sender, e);
+        }
+    }
 
     private async void Start_Click(object sender, RoutedEventArgs e) => await Guarded(ViewModel.StartAsync);
 

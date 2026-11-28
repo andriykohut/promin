@@ -25,7 +25,7 @@ namespace Promin.Protocol.Transport;
 /// that the receiver reads with <see cref="ReceiveBytesAsync"/>. The raw bytes are unframed, so
 /// the messages around them say how many to expect.
 /// </remarks>
-public sealed class QuicControlChannel : IControlChannel, IAsyncDisposable
+public sealed class QuicControlChannel : IByteChannel, IAsyncDisposable
 {
     /// <summary>Application error code used when this stream is abandoned as corrupt.</summary>
     public const long CorruptFrameErrorCode = 0x2;

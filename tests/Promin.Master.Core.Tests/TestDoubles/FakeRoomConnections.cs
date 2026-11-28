@@ -1,7 +1,9 @@
 using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
+using Promin.Master.Core.Updates;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Messages;
+using Promin.Protocol.Updates;
 
 namespace Promin.Master.Core.Tests.TestDoubles;
 
@@ -14,6 +16,13 @@ public sealed class FakeRoomConnections : IRoomConnections
     public event Action<string, bool>? LockReported;
 
     public event Action<string, bool>? PowerAnswered;
+
+    public event Action<string, ReleaseVersion>? VersionReported;
+
+    public List<(string Id, UpdateFile File)> UpdatesSent { get; } = [];
+
+    /// <summary>What <see cref="UpdateAsync"/> answers for a PC; Accepted unless set.</summary>
+    public Func<string, UpdateOutcome?> UpdateAnswer { get; set; } = _ => UpdateOutcome.Accepted;
 
     public List<RoomMember> Wanted { get; } = [];
 
@@ -61,6 +70,15 @@ public sealed class FakeRoomConnections : IRoomConnections
         SessionStarts.Add(deviceId);
         return NextStart ?? Task.FromResult(NextSession);
     }
+
+    public Task<UpdateOutcome?> UpdateAsync(string deviceId, UpdateFile file)
+    {
+        UpdatesSent.Add((deviceId, file));
+        return Task.FromResult(UpdateAnswer(deviceId));
+    }
+
+    public void RaiseVersion(string deviceId, string version) =>
+        VersionReported?.Invoke(deviceId, ReleaseVersion.TryParse(version, out var parsed) ? parsed : throw new FormatException(version));
 
     public void RaiseLock(string deviceId, bool locked) => LockReported?.Invoke(deviceId, locked);
 

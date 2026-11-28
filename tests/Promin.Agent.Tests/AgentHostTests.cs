@@ -216,6 +216,24 @@ public class AgentHostTests
     }
 
     [Fact]
+    public async Task WhatAnUpdateLeftBehind_IsClearedAtStart()
+    {
+        using var rig = new Rig();
+        Directory.CreateDirectory(rig.Paths.UpdateDirectory);
+        File.WriteAllBytes(Path.Combine(rig.Paths.UpdateDirectory, UpdateLink.SetupName), [1, 2, 3]);
+
+        var running = rig.RunAsync();
+        for (var i = 0; i < 400 && !rig.LogText.Contains("Announcing"); i++)
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+
+        Assert.Empty(Directory.GetFileSystemEntries(rig.Paths.UpdateDirectory));
+        await rig.Stop.CancelAsync();
+        await running.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task WhenItIsToldToStop_ItReturnsZero_AndReleasesTheListenerAndTheBeacon()
     {
         using var rig = new Rig();

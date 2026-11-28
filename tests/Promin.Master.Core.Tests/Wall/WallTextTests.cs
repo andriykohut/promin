@@ -10,6 +10,7 @@ public class WallTextTests
     [Theory]
     [InlineData(PcTileState.Ready, 0, "Ready")]
     [InlineData(PcTileState.Offline, 0, "Offline")]
+    [InlineData(PcTileState.Updating, 0, "Updating")]
     [InlineData(PcTileState.Receiving, 5, "Receiving")]
     [InlineData(PcTileState.Reconnecting, 5, "Reconnecting")]
     [InlineData(PcTileState.Locked, 0, "Locked")]

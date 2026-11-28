@@ -146,6 +146,8 @@ internal sealed class WindowsSessionLauncher(string executablePath, Action<strin
                 TaskScheduler.Default).Unwrap();
         }
 
+        public int ExitCode => GetExitCodeProcess(process, out var code) ? unchecked((int)code) : ExitCodes.Unexpected;
+
         public void Kill()
         {
             try

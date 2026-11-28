@@ -19,6 +19,7 @@ order: 4
 - Only the paired console can unlock a PC.
 - Only the paired console can shut down or restart a PC, and never the console's own PC. Unsaved work on it is lost.
 - Only the paired console can view a PC's screen, and never the console's own PC. Nothing shows on the PC while it is viewed; the agent's log on it records each viewing.
+- Only the paired console can update a PC, and only to a newer Promin release signed by the project. The agent checks the signature itself before it installs anything.
 - Only the paired console can take control of a PC, and never the console's own PC. The PC shows a tab for as long as it is controlled. Keys pressed and clipboard text are never written to any log.
 
 ## The clipboard while you control a PC

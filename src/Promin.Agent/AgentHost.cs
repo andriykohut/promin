@@ -7,6 +7,7 @@ using Promin.Protocol.Discovery;
 using Promin.Protocol.Messages;
 using Promin.Protocol.Pairing;
 using Promin.Protocol.Transport;
+using Promin.Protocol.Updates;
 
 namespace Promin.Agent;
 
@@ -93,6 +94,9 @@ internal sealed record AgentServices(
         Power: windowed ? null : action => WindowsPower.Request(action, log.Write));
 }
 
+/// <summary>What each connection's <see cref="UpdateLink"/> needs: the installed version, where an accepted setup goes, and whom to tell.</summary>
+internal sealed record UpdateSource(ReleaseVersion Installed, string Directory, Action Accepted);
+
 /// <summary>
 /// The agent when it runs: a lock the PC holds, restored before anything else, then its identity, the listener, the
 /// beacon that announces it, and the two loops side by side over one listener (console PCs that are paired, each with
@@ -142,7 +146,7 @@ internal static class AgentHost
             exitCode = ExitCodes.Unexpected;
         }
 
-        if (exitCode != ExitCodes.Success && screenLock?.IsLocked == true)
+        if (exitCode is not (ExitCodes.Success or ExitCodes.UpdateReady) && screenLock?.IsLocked == true)
         {
             // Exiting now would leave the PC free for the whole backoff, every time. A run this long counts as healthy, so
             // the service starts the agent again in 2 s: locked but for that, and a passing failure heals by itself.
@@ -157,6 +161,8 @@ internal static class AgentHost
     private static async Task<int> RunCoreAsync(
         AgentCommandLine command, AgentPaths paths, AgentLog log, AgentServices services, ScreenLock? screenLock, CancellationToken stop)
     {
+        UpdateLink.ClearLeftovers(paths.UpdateDirectory, log.Write);
+
         try
         {
             services.EnsureQuicSupported();
@@ -245,16 +251,18 @@ internal static class AgentHost
                 TimeProvider.System);
 
             var connections = new NewestConnectionWins();
+            var updateReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var updates = new UpdateSource(ReleaseVersion.Of(typeof(AgentHost).Assembly), paths.UpdateDirectory, () => updateReady.TrySetResult());
 
             var pairingLoop = pairing.RunAsync(shutdown.Token);
             var acceptLoop = AcceptConsolePcsAsync(
-                listener, connections, command.Windowed, services.OpenScreenPictures, services.Person, services.Remote, screenLock, services.Power, log, shutdown.Token);
+                listener, connections, command.Windowed, services.OpenScreenPictures, services.Person, services.Remote, screenLock, services.Power, updates, log, shutdown.Token);
             var restoreLoop = screenLock is null
                 ? Task.CompletedTask
                 : RestoreLockAsync(screenLock, services.Time ?? TimeProvider.System, shutdown.Token);
 
             // Neither the pairing loop nor the accept loop ends by itself; one that does has failed.
-            var ended = await Task.WhenAny(pairingLoop, acceptLoop).ConfigureAwait(false);
+            var ended = await Task.WhenAny(pairingLoop, acceptLoop, updateReady.Task).ConfigureAwait(false);
             await shutdown.CancelAsync().ConfigureAwait(false);
             await connections.StopAsync().ConfigureAwait(false);
 
@@ -264,6 +272,12 @@ internal static class AgentHost
             {
                 log.Write($"The agent stopped because a loop failed: {ended.Exception}");
                 return ExitCodes.Unexpected;
+            }
+
+            if (ended == updateReady.Task)
+            {
+                log.Write("An update was accepted; the service installs it.");
+                return ExitCodes.UpdateReady;
             }
 
             log.Write("Promin agent stopping.");
@@ -299,6 +313,7 @@ internal static class AgentHost
         RemoteParts? remote,
         ScreenLock? screenLock,
         Func<PowerAction, bool>? power,
+        UpdateSource updates,
         AgentLog log,
         CancellationToken ct)
     {
@@ -338,6 +353,9 @@ internal static class AgentHost
                     var lockLink = screenLock is null
                         ? Task.CompletedTask
                         : new LockLink(screenLock, mayLock: !onThisPc, power ?? (_ => false), log.Write).RunAsync(connection, stopLockLink.Token);
+                    using var stopUpdate = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    var updateLink = new UpdateLink(updates.Installed, updates.Directory, UpdateSignature.ProjectPublicKey, updates.Accepted, log.Write)
+                        .RunAsync(connection, stopUpdate.Token);
                     using var stopRemote = CancellationTokenSource.CreateLinkedTokenSource(token);
                     var remoteLink = new RemoteLink(remote, screenLock, previews, mayControl: !onThisPc, log.Write)
                         .RunAsync(connection, (frame, sendCt) => channel.SendVideoFrameAsync(frame, sendCt), stopRemote.Token);
@@ -376,6 +394,8 @@ internal static class AgentHost
 
                         await StepAsync(stopLockLink.CancelAsync).ConfigureAwait(false);
                         await StepAsync(() => lockLink).ConfigureAwait(false);
+                        await StepAsync(stopUpdate.CancelAsync).ConfigureAwait(false);
+                        await StepAsync(() => updateLink).ConfigureAwait(false);
                         await StepAsync(() => connection.DisposeAsync().AsTask()).ConfigureAwait(false);
                         log.Write($"The connection from console PC {consolePc} is closed.");
                     }

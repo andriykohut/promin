@@ -1,14 +1,17 @@
 using Promin.Master.Core.Control;
+using Promin.Master.Core.Updates;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Broadcast;
 using Promin.Protocol.Messages;
 using Promin.Protocol.Transport;
+using Promin.Protocol.Updates;
 
 namespace Promin.Master.Services;
 
 /// <summary>
 /// One agent PC's standing connection: its screen pictures, the control stream a broadcast opens on first use and
-/// keeps for the connection's life, and the lock stream opened the same way by the first lock or power message or report.
+/// keeps for the connection's life, the lock stream opened the same way by the first lock or power message or report,
+/// and the update stream opened by the version question right after connecting.
 /// </summary>
 public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
 {
@@ -17,6 +20,7 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
     private readonly CancellationTokenSource _closing = new();
     private Task<ConsoleControl>? _control;
     private Task<QuicControlChannel>? _lock;
+    private QuicControlChannel? _update;
 
     public QuicChannel Channel => channel;
 
@@ -101,14 +105,47 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
         }
     }
 
+    public async Task<ReleaseVersion?> AskVersionAsync(CancellationToken ct)
+    {
+        var stream = await channel.OpenControlChannelAsync(ct).ConfigureAwait(false);
+        lock (_gate)
+        {
+            if (_update is not null)
+            {
+                throw new InvalidOperationException("The update stream is open already; the version is asked once per connection.");
+            }
+
+            _update = stream;
+        }
+
+        return await UpdateExchange.AskVersionAsync(stream, ct).ConfigureAwait(false);
+    }
+
+    // The agent keeps one update stream per connection: one that broke stays broken until the PC connects again.
+    public Task<UpdateOutcome> SendUpdateAsync(UpdateFile file, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        QuicControlChannel? stream;
+        lock (_gate)
+        {
+            stream = _update;
+        }
+
+        return stream is null
+            ? throw new InvalidOperationException("The update stream is not open: the version was never asked.")
+            : UpdateExchange.SendAsync(stream, file.SetupPath, file.Version, file.Signature, ct);
+    }
+
     public async ValueTask DisposeAsync()
     {
         Task<ConsoleControl>? control;
         Task<QuicControlChannel>? lockStream;
+        QuicControlChannel? update;
         lock (_gate)
         {
             control = _control;
             lockStream = _lock;
+            update = _update;
         }
 
         await _closing.CancelAsync().ConfigureAwait(false);
@@ -125,6 +162,11 @@ public sealed class QuicPcConnection(QuicChannel channel) : IPcConnection
             if (control is { IsCompletedSuccessfully: true })
             {
                 await control.Result.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (update is not null)
+            {
+                await update.DisposeAsync().ConfigureAwait(false);
             }
         }
         finally

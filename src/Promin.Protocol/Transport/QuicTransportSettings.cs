@@ -82,11 +82,12 @@ public static class QuicTransportSettings
 
     /// <summary>
     /// Bidirectional credit the <b>agent</b> grants the master, which is the side that opens the
-    /// control stream, the lock stream, the remote stream and every file send. Five is one of each
-    /// of the first three, a send, and one spare for a reconnect whose replacement stream overlaps
-    /// the old one briefly, without ever granting enough credit for a peer to open streams as a DoS.
+    /// control stream, the lock stream, the update stream, the remote stream and every file send.
+    /// Six is one of each of the first four, a send, and one spare for a reconnect whose replacement
+    /// stream overlaps the old one briefly, without ever granting enough credit for a peer to open
+    /// streams as a DoS.
     /// </summary>
-    public const int MaxInboundBidirectionalStreams = 5;
+    public const int MaxInboundBidirectionalStreams = 6;
 
     /// <summary>
     /// Bidirectional credit the <b>master</b> grants an agent: none. The master opens the control

@@ -687,4 +687,57 @@
     <value>{count} PCs did not restart</value>
     <comment>count is 2 or more.</comment>
   </data>
+  <data name="Update_Button" xml:space="preserve">
+    <value>Update</value>
+  </data>
+  <data name="Update_OutTitle" xml:space="preserve">
+    <value>Promin {version} is out</value>
+  </data>
+  <data name="Update_OutText" xml:space="preserve">
+    <value>{count, plural, =0 {This PC has {own}.} one {This PC has {own}. # other PC will update too. Each PC drops off for about a minute while it updates.} other {This PC has {own}. # other PCs will update too. Each PC drops off for about a minute while it updates.}}</value>
+    <comment>count is the connected PCs that update with this one.</comment>
+  </data>
+  <data name="Update_BehindTitleOne" xml:space="preserve">
+    <value>{name} has an older Promin</value>
+  </data>
+  <data name="Update_BehindTitleTwo" xml:space="preserve">
+    <value>{first} and {second} have an older Promin</value>
+  </data>
+  <data name="Update_BehindTitleMany" xml:space="preserve">
+    <value>{first}, {second} and {count, plural, one {# other} other {# others}} have an older Promin</value>
+    <comment>count is the PCs not named, 1 or more.</comment>
+  </data>
+  <data name="Update_BehindTextOne" xml:space="preserve">
+    <value>This PC has {own} and {name} has {theirs}. It drops off for about a minute while it updates.</value>
+  </data>
+  <data name="Update_BehindTextMany" xml:space="preserve">
+    <value>This PC has {own}. Each PC drops off for about a minute while it updates.</value>
+  </data>
+  <data name="Update_RunTitle" xml:space="preserve">
+    <value>Updating to Promin {version}</value>
+  </data>
+  <data name="Update_DownloadingText" xml:space="preserve">
+    <value>Downloading the update.</value>
+  </data>
+  <data name="Update_SelfTitle" xml:space="preserve">
+    <value>Updating this PC</value>
+  </data>
+  <data name="Update_SelfText" xml:space="preserve">
+    <value>Windows will ask for permission. Promin opens again when it is done and goes on to the other PCs.</value>
+  </data>
+  <data name="Update_PcsText" xml:space="preserve">
+    <value>{done} of {count} PCs done.</value>
+  </data>
+  <data name="Update_FailedTitle" xml:space="preserve">
+    <value>The update could not be downloaded</value>
+  </data>
+  <data name="Update_FailedText" xml:space="preserve">
+    <value>Check this PC’s internet connection and try again.</value>
+  </data>
+  <data name="Status_Updating" xml:space="preserve">
+    <value>Updating</value>
+  </data>
+  <data name="Tile_OutOfDate" xml:space="preserve">
+    <value>Promin {version}, older than this console</value>
+  </data>
 </root>

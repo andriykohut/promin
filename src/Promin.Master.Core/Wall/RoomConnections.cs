@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
+using Promin.Master.Core.Updates;
 using Promin.Protocol.Messages;
+using Promin.Protocol.Updates;
 
 namespace Promin.Master.Core.Wall;
 
@@ -32,6 +34,15 @@ public interface IPcConnection : IAsyncDisposable
     /// answer within 10 seconds.
     /// </summary>
     Task<IControlSession> StartViewingAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Opens the update stream and returns the agent's version; null when the version it gives does not read. Asked once,
+    /// right after connecting. Throws once the stream or the connection has ended.
+    /// </summary>
+    Task<ReleaseVersion?> AskVersionAsync(CancellationToken ct);
+
+    /// <summary>Offers <paramref name="file"/> on the update stream and returns the agent's answer. Throws once the stream or the connection has ended.</summary>
+    Task<UpdateOutcome> SendUpdateAsync(UpdateFile file, CancellationToken ct);
 }
 
 /// <summary>What the wall uses of the room connections.</summary>
@@ -48,6 +59,9 @@ public interface IRoomConnections
 
     /// <summary>Raised on any thread with a PC's id and its answer to <see cref="Power"/>: true when Windows took the order.</summary>
     event Action<string, bool>? PowerAnswered;
+
+    /// <summary>Raised on any thread with a PC's id and the version its agent reported, once per connection, right after it connected.</summary>
+    event Action<string, ReleaseVersion>? VersionReported;
 
     /// <summary>The PC is online at this address: dial it, unless it is connected, being dialled, or was tried less than five seconds ago.</summary>
     void Want(RoomMember pc);
@@ -66,6 +80,9 @@ public interface IRoomConnections
 
     /// <summary>Starts viewing the PC. Null when the PC has no open connection, refuses, or does not answer; never throws.</summary>
     Task<IControlSession?> StartViewingAsync(string deviceId);
+
+    /// <summary>Offers the PC an agent setup. Null when it has no open connection or the connection ended before it answered; never throws.</summary>
+    Task<UpdateOutcome?> UpdateAsync(string deviceId, UpdateFile file);
 }
 
 /// <summary>
@@ -110,6 +127,8 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
     public event Action<string, bool>? LockReported;
 
     public event Action<string, bool>? PowerAnswered;
+
+    public event Action<string, ReleaseVersion>? VersionReported;
 
     public void Want(RoomMember pc)
     {
@@ -196,6 +215,13 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
         return session;
     }
 
+    public async Task<UpdateOutcome?> UpdateAsync(string deviceId, UpdateFile file)
+    {
+        UpdateOutcome? outcome = null;
+        await SendAsync(deviceId, async (connection, ct) => outcome = await connection.SendUpdateAsync(file, ct).ConfigureAwait(false)).ConfigureAwait(false);
+        return outcome;
+    }
+
     public async ValueTask DisposeAsync()
     {
         List<Entry> all;
@@ -280,6 +306,7 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
             {
                 _ = Task.Run(() => ReadAsync(pc.DeviceId, entry, connection));
                 _ = Task.Run(() => ReadLockAsync(pc.DeviceId, entry, connection));
+                _ = Task.Run(() => ReadVersionAsync(pc.DeviceId, entry, connection));
             }
         }
         finally
@@ -341,6 +368,22 @@ public sealed class RoomConnections<TConnection> : IRoomConnections, IAsyncDispo
         catch (Exception)
         {
             // The lock stream or the connection ended, or was dropped: no more reports.
+        }
+    }
+
+    // A failure ends only the version report: the pictures decide whether the connection is over.
+    private async Task ReadVersionAsync(string deviceId, Entry entry, TConnection connection)
+    {
+        try
+        {
+            if (await connection.AskVersionAsync(entry.Cts.Token).ConfigureAwait(false) is { } version)
+            {
+                VersionReported?.Invoke(deviceId, version);
+            }
+        }
+        catch (Exception e)
+        {
+            Trace.TraceInformation("PC {0} did not say its version: {1}", deviceId, e.Message);
         }
     }
 

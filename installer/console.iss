@@ -48,10 +48,37 @@ Name: "{autoprograms}\Promin"; Filename: "{app}\Promin.Master.exe"
 ; deletes the old one first; the delete fails harmlessly when there is none.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Promin console"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Promin console"" dir=in action=allow protocol=UDP localport=17844 program=""{app}\Promin.Master.exe"""; Flags: runhidden
-; The console keeps its data in the signed-in user's %LocalAppData%, so it must not inherit setup's elevation.
+; The console keeps its data in the signed-in user's %LocalAppData%, so it must not inherit setup's elevation. The first
+; entry is the Finished page's checkbox, for a setup run by hand. The second runs only when the console ran this setup
+; to update itself: it opens the console again, which goes on to update the agent PCs it noted.
 Filename: "{app}\Promin.Master.exe"; Description: "{cm:LaunchProgram,Promin}"; Flags: postinstall skipifsilent nowait runasoriginaluser
+Filename: "{app}\Promin.Master.exe"; Parameters: "--continue-update"; Flags: postinstall nowait runasoriginaluser; Check: IsProminUpdate
 
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Promin console"""; Flags: runhidden; RunOnceId: "DeleteConsoleFirewallRule"
+
+[Code]
+// True when the console ran this setup to update itself, passing /PROMINUPDATE. A silent install by an IT tool, often
+// as SYSTEM, must not open a console.
+function IsProminUpdate(): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/PROMINUPDATE') = 0 then
+      Result := True;
+end;
+
+// The console that ran this setup waits for it, so that a refused permission or an earlier failure leaves it open. It
+// is closed here, once nothing is left to stop the install: running files cannot be replaced.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  if IsProminUpdate() then
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM Promin.Master.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;
 
 #include "smart-app-control.iss"

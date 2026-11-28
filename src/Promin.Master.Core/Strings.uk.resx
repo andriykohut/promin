@@ -663,4 +663,55 @@
   <data name="Power_DidNotRestartMany" xml:space="preserve">
     <value>{count} ПК не вдалося перезавантажити</value>
   </data>
+  <data name="Update_Button" xml:space="preserve">
+    <value>Оновити</value>
+  </data>
+  <data name="Update_OutTitle" xml:space="preserve">
+    <value>Вийшов Promin {version}</value>
+  </data>
+  <data name="Update_OutText" xml:space="preserve">
+    <value>{count, plural, =0 {На цьому ПК стоїть {own}.} one {На цьому ПК стоїть {own}. Ще # ПК теж оновиться. Кожен ПК зникне приблизно на хвилину, поки оновлюється.} other {На цьому ПК стоїть {own}. Ще # ПК теж оновляться. Кожен ПК зникне приблизно на хвилину, поки оновлюється.}}</value>
+  </data>
+  <data name="Update_BehindTitleOne" xml:space="preserve">
+    <value>На {name} старіший Promin</value>
+  </data>
+  <data name="Update_BehindTitleTwo" xml:space="preserve">
+    <value>На {first} і {second} старіший Promin</value>
+  </data>
+  <data name="Update_BehindTitleMany" xml:space="preserve">
+    <value>На {first}, {second} та ще {count} ПК старіший Promin</value>
+  </data>
+  <data name="Update_BehindTextOne" xml:space="preserve">
+    <value>На цьому ПК стоїть {own}, а на {name} — {theirs}. Він зникне приблизно на хвилину, поки оновлюється.</value>
+  </data>
+  <data name="Update_BehindTextMany" xml:space="preserve">
+    <value>На цьому ПК стоїть {own}. Кожен ПК зникне приблизно на хвилину, поки оновлюється.</value>
+  </data>
+  <data name="Update_RunTitle" xml:space="preserve">
+    <value>Оновлення до Promin {version}</value>
+  </data>
+  <data name="Update_DownloadingText" xml:space="preserve">
+    <value>Завантажується оновлення.</value>
+  </data>
+  <data name="Update_SelfTitle" xml:space="preserve">
+    <value>Оновлюється цей ПК</value>
+  </data>
+  <data name="Update_SelfText" xml:space="preserve">
+    <value>Windows попросить дозволу. Коли все буде готово, Promin відкриється знову й оновить інші ПК.</value>
+  </data>
+  <data name="Update_PcsText" xml:space="preserve">
+    <value>Готово {done} з {count} ПК.</value>
+  </data>
+  <data name="Update_FailedTitle" xml:space="preserve">
+    <value>Не вдалося завантажити оновлення</value>
+  </data>
+  <data name="Update_FailedText" xml:space="preserve">
+    <value>Перевірте підключення цього ПК до інтернету й спробуйте ще раз.</value>
+  </data>
+  <data name="Status_Updating" xml:space="preserve">
+    <value>Оновлюється</value>
+  </data>
+  <data name="Tile_OutOfDate" xml:space="preserve">
+    <value>Promin {version}, старіший, ніж на цьому ПК</value>
+  </data>
 </root>

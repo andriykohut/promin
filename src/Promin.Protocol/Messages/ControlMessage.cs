@@ -31,6 +31,10 @@ namespace Promin.Protocol.Messages;
 [JsonDerivedType(typeof(KeyInput), "keyInput")]
 [JsonDerivedType(typeof(ClipboardText), "clipboardText")]
 [JsonDerivedType(typeof(RequestKeyframe), "requestKeyframe")]
+[JsonDerivedType(typeof(AskVersion), "askVersion")]
+[JsonDerivedType(typeof(AgentVersion), "agentVersion")]
+[JsonDerivedType(typeof(OfferUpdate), "offerUpdate")]
+[JsonDerivedType(typeof(UpdateAnswer), "updateAnswer")]
 public abstract record ControlMessage;
 
 /// <summary>
@@ -197,3 +201,23 @@ public sealed record ClipboardText(string Text) : ControlMessage;
 
 /// <summary>The console PC asks the agent PC's encoder for a key frame, after it has seen a gap in the control video.</summary>
 public sealed record RequestKeyframe : ControlMessage;
+
+/// <summary>
+/// The console PC's first message on the update stream, which it opens right after connecting. The agent PC answers
+/// with <see cref="AgentVersion"/>; later the console may offer a setup on the same stream. The update stream's
+/// messages, their JSON names and fields, are fixed: any newer console must be able to update any agent that has them.
+/// </summary>
+public sealed record AskVersion : ControlMessage;
+
+/// <summary>The agent PC's installed release version, such as <c>0.4.0</c> or <c>0.4.0-beta.1</c>.</summary>
+public sealed record AgentVersion(string Version) : ControlMessage;
+
+/// <summary>
+/// A signed agent setup for <paramref name="Version"/>: <paramref name="Length"/> raw bytes follow this message at once.
+/// <paramref name="Signature"/> is the project's signature on it (see <c>UpdateSignature</c>). Answered by one
+/// <see cref="UpdateAnswer"/>.
+/// </summary>
+public sealed record OfferUpdate(string Version, long Length, byte[] Signature) : ControlMessage;
+
+/// <summary>The agent PC's one answer to an <see cref="OfferUpdate"/>.</summary>
+public sealed record UpdateAnswer(UpdateOutcome Outcome) : ControlMessage;

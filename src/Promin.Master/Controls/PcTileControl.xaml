@@ -99,6 +99,13 @@
                         <Setter Target="Status.Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
                     </VisualState.Setters>
                 </VisualState>
+                <VisualState x:Name="Updating">
+                    <VisualState.Setters>
+                        <Setter Target="UpdatingLayer.Visibility" Value="Visible" />
+                        <Setter Target="UpdatingRing.IsActive" Value="True" />
+                        <Setter Target="Dot.Fill" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
             </VisualStateGroup>
             <VisualStateGroup x:Name="Selection">
                 <VisualState x:Name="Unselected" />
@@ -222,6 +229,22 @@
                 </Border>
             </Border>
 
+            <!-- An update of this PC: the last picture dims under a spinning ring until the PC is back. -->
+            <Border
+                x:Name="UpdatingLayer"
+                Background="#73000000"
+                CornerRadius="5"
+                Visibility="Collapsed">
+                <ProgressRing
+                    x:Name="UpdatingRing"
+                    Width="44"
+                    Height="44"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    IsActive="False"
+                    IsIndeterminate="True" />
+            </Border>
+
             <!-- A send to this PC: the picture dims under a ring with the percentage; then a tick, or a "!" when it did not get it. -->
             <Border
                 Background="#73000000"
@@ -305,11 +328,21 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
+            <!-- An agent older than this console: an arrow after the name, whose tooltip names the version. -->
             <TextBlock
                 VerticalAlignment="Center"
+                AutomationProperties.HelpText="{x:Bind Tile.OutOfDateTip, Mode=OneWay}"
                 Style="{StaticResource BodyStrongTextBlockStyle}"
-                Text="{x:Bind Tile.Name, Mode=OneWay}"
-                TextTrimming="CharacterEllipsis" />
+                TextTrimming="CharacterEllipsis"
+                ToolTipService.ToolTip="{x:Bind TipOrNothing(Tile.OutOfDateTip), Mode=OneWay}">
+                <Run Text="{x:Bind Tile.Name, Mode=OneWay}" />
+                <Run
+                    FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets"
+                    FontSize="13"
+                    FontWeight="Normal"
+                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                    Text="{x:Bind OutOfDateGlyph(Tile.IsOutOfDate), Mode=OneWay}" />
+            </TextBlock>
             <Button
                 x:Name="More"
                 Grid.Column="1"

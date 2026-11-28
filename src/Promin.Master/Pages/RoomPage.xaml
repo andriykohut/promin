@@ -122,10 +122,15 @@
             Title="{x:Bind ViewModel.MessageTitle, Mode=OneWay}">
             <InfoBar.ActionButton>
                 <Button
-                    Click="SetUpDevices_Click"
+                    Click="MessageAction_Click"
                     Content="{x:Bind ViewModel.MessageActionLabel, Mode=OneWay}"
+                    IsEnabled="{x:Bind CanMessageAction(ViewModel.MessageActionUpdates, ViewModel.CanUpdate, Sending.IsRunning), Mode=OneWay}"
                     Visibility="{x:Bind ViewModel.HasMessageAction, Mode=OneWay}" />
             </InfoBar.ActionButton>
+            <ProgressBar
+                Margin="0,0,0,4"
+                Visibility="{x:Bind Showing(ViewModel.UpdateProgress), Mode=OneWay}"
+                Value="{x:Bind ViewModel.UpdateProgress, Mode=OneWay}" />
         </InfoBar>
 
         <!-- 3. The wall: a tile per PC, five per row at the default width, wrapping and scrolling. -->
@@ -210,6 +215,7 @@
                 <Button
                     Click="StripAction_Click"
                     Content="{x:Bind Sending.StripActionLabel, Mode=OneWay}"
+                    IsEnabled="{x:Bind CanStripAction(Sending.IsRunning, ViewModel.IsUpdating), Mode=OneWay}"
                     Visibility="{x:Bind Sending.HasStripAction, Mode=OneWay}" />
             </InfoBar.ActionButton>
             <ProgressBar
@@ -410,7 +416,7 @@
                 FontSize="15"
                 FontWeight="SemiBold"
                 Click="SendFiles_Click"
-                IsEnabled="{x:Bind CanSendFiles(Sending.IsRunning, ViewModel.IsEmptyRoom), Mode=OneWay}">
+                IsEnabled="{x:Bind CanSendFiles(Sending.IsRunning, ViewModel.IsEmptyRoom, ViewModel.IsUpdating), Mode=OneWay}">
                 <StackPanel Orientation="Horizontal" Spacing="9">
                     <FontIcon FontSize="14" Glyph="&#xE8A5;" />
                     <TextBlock Text="{x:Bind core:Strings.Send_Title}" />

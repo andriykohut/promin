@@ -3,8 +3,10 @@ using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
 using Promin.Master.Core.Sending;
 using Promin.Master.Core.Setup;
+using Promin.Master.Core.Updates;
 using Promin.Master.Core.Wall;
 using Promin.Protocol.Messages;
+using Promin.Protocol.Updates;
 using Promin.Protocol.Video;
 
 namespace Promin.Master.Demo;
@@ -129,6 +131,9 @@ internal sealed class DemoRoom
 
         public event Action<string, bool>? PowerAnswered;
 
+        // The made-up PCs report no version, so the demo room never shows an update.
+        public event Action<string, ReleaseVersion>? VersionReported { add { } remove { } }
+
         public void Want(RoomMember pc)
         {
             var id = pc.DeviceId;
@@ -182,6 +187,8 @@ internal sealed class DemoRoom
         }
 
         public Task<IControlSession?> StartViewingAsync(string deviceId) => Task.FromResult<IControlSession?>(null);
+
+        public Task<UpdateOutcome?> UpdateAsync(string deviceId, UpdateFile file) => Task.FromResult<UpdateOutcome?>(null);
 
         private byte[] PictureOf(string deviceId) => receiving.ContainsKey(deviceId) ? broadcastScreen : screens[deviceId];
 

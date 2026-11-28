@@ -9,4 +9,7 @@ public enum PcTileState
     Reconnecting,
     Locked,
     Controlled,
+
+    /// <summary>Being updated, from the click until it is back on the new version or counted as not updated.</summary>
+    Updating,
 }

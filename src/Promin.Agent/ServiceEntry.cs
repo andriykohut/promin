@@ -1,4 +1,5 @@
 using System.ServiceProcess;
+using Promin.Protocol.Updates;
 
 namespace Promin.Agent;
 
@@ -56,7 +57,14 @@ internal sealed class AgentService : ServiceBase
         AgentHost.LogWhatNobodyCatches(_log);
         _sessions = new ServiceSessions(WindowsSessionLauncher.ActiveConsoleSessionOrNull);
         var launcher = new WindowsSessionLauncher(ExecutablePath(), _log.Write);
-        var supervisor = new AgentSupervisor(launcher, _sessions, new RestartBackoff(), TimeProvider.System, _log.Write);
+        var installed = ReleaseVersion.Of(typeof(AgentService).Assembly);
+        var supervisor = new AgentSupervisor(
+            launcher,
+            _sessions,
+            new RestartBackoff(),
+            TimeProvider.System,
+            _log.Write,
+            () => ServiceUpdate.TryStart(_paths.UpdateDirectory, installed, UpdateSignature.ProjectPublicKey.Span, ServiceUpdate.StartSetup, _log.Write));
         _stop = new CancellationTokenSource();
         _run = Task.Run(() => supervisor.RunAsync(_stop.Token));
         _log.Write($"Promin Agent service started (process {Environment.ProcessId}).");

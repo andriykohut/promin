@@ -2,6 +2,8 @@ using System.Diagnostics;
 using Promin.Master.Core;
 using Promin.Master.Core.Wall;
 using Promin.Master.Services;
+using Promin.Protocol.Updates;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 
 namespace Promin.Master;
@@ -35,20 +37,40 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += (_, e) =>
             Trace.TraceError("A task failed and nobody was waiting for it: {0}", e.Exception);
 
-        Trace.TraceInformation("Promin console {0} started.", typeof(App).Assembly.GetName().Version);
+        Trace.TraceInformation("Promin console {0} started.", ReleaseVersion.Of(typeof(App).Assembly));
 
         // Before anything builds a text: the language holds for the whole run.
         AppLanguage.Apply(new JsonWallSettings(AppServices.SettingsPath).Language);
 
         Services = AppServices.Create();
+        var arguments = Environment.GetCommandLineArgs();
         var restartArguments = string.Empty;
+        var demo = false;
+        ReleaseVersion? named = null;
 #if DEBUG
-        if (Environment.GetCommandLineArgs().Contains("--demo"))
+        if (arguments.Contains("--demo"))
         {
             Services.UseDemoRoom();
             restartArguments = "--demo";
+            demo = true;
+        }
+
+        // For hand tests before a release exists: treats the named release, a beta included, as the latest.
+        var from = Array.IndexOf(arguments, "--update-from");
+        if (from >= 0 && from + 1 < arguments.Length && ReleaseVersion.TryParse(arguments[from + 1], out var version))
+        {
+            named = version;
         }
 #endif
+
+        var ui = DispatcherQueue.GetForCurrentThread();
+        Services.CreateUpdates(action => ui.TryEnqueue(() => action()));
+
+        // The console's setup relaunches it with this once it has updated this PC: the noted PCs come next.
+        if (arguments.Contains("--continue-update"))
+        {
+            Services.Updates.Continue();
+        }
 
         var window = new MainWindow(Services.Health);
         window.Closed += (_, _) =>
@@ -63,5 +85,11 @@ public partial class App : Application
         _window.Activate();
 
         _ = Services.CheckCertificateAsync(_window.DispatcherQueue);
+
+        // The made-up room is for screenshots: it shows no update.
+        if (!demo)
+        {
+            _ = Services.Updates.CheckAsync(named);
+        }
     }
 }

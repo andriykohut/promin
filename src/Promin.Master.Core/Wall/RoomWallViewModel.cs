@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using Promin.Master.Core.Control;
 using Promin.Master.Core.Rooms;
+using Promin.Master.Core.Updates;
 using Promin.Master.Core.Sending;
 using Promin.Master.Core.Setup;
 using Promin.Protocol.Messages;
@@ -63,6 +64,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private readonly IRoomConnections _connections;
     private readonly IPairingClient _pairing;
     private readonly IWallSettings _settings;
+    private readonly RoomUpdate? _update;
     private readonly Func<DateTimeOffset> _now;
     private readonly Action<Action> _runOnUiThread;
     private readonly Func<string, bool> _isThisPc;
@@ -149,6 +151,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     private string _lockPanelTitle = string.Empty;
     private string _lockPanelOfflineLine = string.Empty;
     private bool _canPower;
+    private bool _canUpdate;
+    private bool _isUpdating;
+    private double _updateProgress;
     private string _shutDownMenuText = string.Empty;
     private string _restartMenuText = string.Empty;
 
@@ -161,7 +166,8 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         IWallSettings settings,
         Func<DateTimeOffset> now,
         Action<Action> runOnUiThread,
-        Func<string, bool>? isThisPc = null)
+        Func<string, bool>? isThisPc = null,
+        RoomUpdate? update = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(discovery);
@@ -181,6 +187,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         _now = now;
         _runOnUiThread = runOnUiThread;
         _isThisPc = isThisPc ?? (_ => false);
+        _update = update;
 
         _selectedPreset = QualityPreset.All.FirstOrDefault(p => p.Label == settings.QualityLabel) ?? QualityPreset.Default;
         _sharpness = Enum.TryParse<Sharpness>(settings.SharpnessName, out var remembered) && Enum.IsDefined(remembered)
@@ -315,6 +322,24 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     /// <summary><see cref="WallMessageKind.Info"/> when there is no message.</summary>
     public WallMessageKind MessageKind => _message?.Kind ?? WallMessageKind.Info;
 
+    /// <summary>True when the bar's button starts the update rather than opening Set up devices.</summary>
+    public bool MessageActionUpdates => _message?.ActionUpdates == true;
+
+    /// <summary>
+    /// The bar offers an update and the room is idle: off air, nothing viewed or controlled, no PC locked, no update
+    /// running. The page also keeps it unavailable while files are being sent.
+    /// </summary>
+    public bool CanUpdate => _canUpdate;
+
+    /// <summary>An update is running: the broadcast, lock, power, view and control are unavailable until it is over.</summary>
+    public bool IsUpdating => _isUpdating;
+
+    /// <summary>0 to 100 over the PCs being updated, for the bar's progress bar; 0 when no PC is being updated.</summary>
+    public double UpdateProgress => _updateProgress;
+
+    /// <summary>The bar's Update button; see <see cref="RoomUpdate.UpdateAsync"/>.</summary>
+    public Task UpdateAsync() => _update?.UpdateAsync() ?? Task.CompletedTask;
+
     /// <summary>Page shown: start listening, read the room. Never throws.</summary>
     public void Activate()
     {
@@ -328,6 +353,10 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             _connections.Ended += OnEndedAnyThread;
             _connections.LockReported += OnLockReportedAnyThread;
             _connections.PowerAnswered += OnPowerAnsweredAnyThread;
+            if (_update is not null)
+            {
+                _update.Changed += Refresh;
+            }
         }
 
         try
@@ -993,8 +1022,13 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
     {
         _locked.Remove(deviceId);
         _lockAsked.Remove(deviceId);
-        _pictures.Remove(deviceId);
-        Tiles.FirstOrDefault(t => t.DeviceId == deviceId)?.ClearPicture();
+
+        // A PC being updated drops off while its agent restarts; its tile keeps the last picture under the Updating ring.
+        if (_update?.IsUpdating(deviceId) != true)
+        {
+            _pictures.Remove(deviceId);
+            Tiles.FirstOrDefault(t => t.DeviceId == deviceId)?.ClearPicture();
+        }
         if (deviceId == _controlledId)
         {
             // Set here, not left to ControlEnded: the window cannot always tell a lost connection from an end it was asked for.
@@ -1222,6 +1256,11 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
     private PcTileState StateOf(RoomMember member, PcTile tile, bool online, DateTimeOffset now)
     {
+        if (_update?.IsUpdating(member.DeviceId) == true)
+        {
+            return PcTileState.Updating;
+        }
+
         if (_onAir)
         {
             if (_sendingTo.Contains(member.DeviceId))
@@ -1259,6 +1298,7 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
         }
 
         var selectable = !_onAir && !_starting;
+        var updating = _update?.IsRunning == true;
         var ready = 0;
         var offline = 0;
         var receiving = 0;
@@ -1313,7 +1353,10 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             tile.StatusText = WallText.Status(state, tile.FramesDropped);
             tile.DetailSentence = WallText.DetailSentence(state, tile.SendDetail);
             tile.CanSelect = selectable && online;
-            tile.CanControl = online && selectable && !_isThisPc(AsDialled(member).LastAddress);
+            tile.CanControl = online && selectable && !updating && !_isThisPc(AsDialled(member).LastAddress);
+            var outOfDate = _update?.OutOfDate(tile.DeviceId);
+            tile.IsOutOfDate = outOfDate is not null;
+            tile.OutOfDateTip = outOfDate is null ? string.Empty : Phrase.Format(Strings.Tile_OutOfDate, ("version", outOfDate.ToString()));
             tile.IsSelected = tile.CanSelect && member.Selected;
             tile.IsOnAir = _onAir;
             tile.ReceivingForText = _onAir ? WallText.Elapsed(now - _startedAt) : string.Empty;
@@ -1365,9 +1408,9 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             ? WallText.EmptyRoomLine2
             : _onAir ? WallText.OnAirLine(receiving, droppingNames, reconnectingNames) : OffAirLine2(offlineNames), nameof(BarLine2));
         Set(ref _elapsedText, _onAir ? WallText.Elapsed(now - _startedAt) : string.Empty, nameof(ElapsedText));
-        Set(ref _canStart, selectable && !_roomUnreadable && selectedAndOnline > 0 && _controlledId is null, nameof(CanStart));
+        Set(ref _canStart, selectable && !updating && !_roomUnreadable && selectedAndOnline > 0 && _controlledId is null, nameof(CanStart));
         Set(ref _canChooseQuality, selectable && hardware, nameof(CanChooseQuality));
-        Set(ref _canLock, selectable && tickedOnline > 0, nameof(CanLock));
+        Set(ref _canLock, selectable && !updating && tickedOnline > 0, nameof(CanLock));
         if (Set(ref _lockButtonUnlocks, _canLock && tickedNotLocked == 0, nameof(LockButtonUnlocks)))
         {
             Raise(nameof(LockButtonText));
@@ -1375,14 +1418,18 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
 
         Set(ref _lockPanelTitle, WallText.LockPanelTitle(tickedNotLocked), nameof(LockPanelTitle));
         Set(ref _lockPanelOfflineLine, WallText.LockOfflineLine(offlineNames), nameof(LockPanelOfflineLine));
-        Set(ref _canPower, selectable && tickedOnline > 0, nameof(CanPower));
+        Set(ref _canPower, selectable && !updating && tickedOnline > 0, nameof(CanPower));
         Set(ref _shutDownMenuText, WallText.ShutDownMenu(tickedOnline), nameof(ShutDownMenuText));
         Set(ref _restartMenuText, WallText.RestartMenu(tickedOnline), nameof(RestartMenuText));
         Set(ref _onAirShown, _onAir, nameof(IsOnAir));
 
-        if (Set(ref _message, _roomUnreadable ? WallMessage.RoomUnreadable
+        // The update's line comes before "No PCs can be reached": a console away from the room can still update itself.
+        var updateMessage = _update?.Message(id => MemberOf(id)?.DisplayName);
+        if (Set(ref _message, updating ? updateMessage
+            : _roomUnreadable ? WallMessage.RoomUnreadable
             : _broadcastStopped ? WallMessage.BroadcastStopped
             : _saveFailed ? WallMessage.RoomNotSaved
+            : updateMessage is not null ? updateMessage
             : !empty && !anyOnline ? WallMessage.NoPcReachable
             : _backId is not null && _sendingTo.Contains(_backId) && now < _backUntil ? _backMessage
             : !hardware ? WallMessage.SoftwareEncoding
@@ -1394,7 +1441,12 @@ public sealed class RoomWallViewModel : INotifyPropertyChanged
             Raise(nameof(MessageActionLabel));
             Raise(nameof(HasMessageAction));
             Raise(nameof(MessageKind));
+            Raise(nameof(MessageActionUpdates));
         }
+
+        Set(ref _isUpdating, updating, nameof(IsUpdating));
+        Set(ref _updateProgress, _update?.Progress ?? 0, nameof(UpdateProgress));
+        Set(ref _canUpdate, MessageActionUpdates && !updating && selectable && _controlledId is null && _locked.Count == 0, nameof(CanUpdate));
 
         // The rates are the real ones for this PC: its display, scaled to the chosen ceiling.
         var display = _broadcast.DisplaySize;
