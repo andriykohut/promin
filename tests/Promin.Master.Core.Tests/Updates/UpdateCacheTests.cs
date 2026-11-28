@@ -136,6 +136,18 @@ public sealed class UpdateCacheTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(_directory, "0.4.0")));
     }
 
+    [Fact(Timeout = 20000)]
+    public async Task ADownloadLongerThanTheIdleLimit_ThatKeepsComing_IsKept()
+    {
+        // 10 pieces 100 ms apart: about a second in all, against an idle limit of 200 ms.
+        _http.Trickled.Add(Download + "Promin-Agent-Setup.exe");
+
+        var set = await Cache().GetAsync(Release, withConsole: false, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(set);
+        Assert.Equal(_agent, File.ReadAllBytes(set.Agent.SetupPath));
+    }
+
     [Fact]
     public async Task CheckedFiles_AreReused()
     {
