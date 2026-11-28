@@ -40,7 +40,8 @@ public sealed class UpdateCacheTests : IDisposable
         new Uri(Download + "Promin-Console-Setup.exe"),
         new Uri(Download + "Promin-Console-Setup.exe.sig"));
 
-    private UpdateCache Cache() => new(_directory, new HttpClient(_http), _key.ExportSubjectPublicKeyInfo(), idleLimit: TimeSpan.FromMilliseconds(200));
+    // The real idle limit unless a test is about it: a cold test runner can take longer than a short one to answer.
+    private UpdateCache Cache(TimeSpan? idleLimit = null) => new(_directory, new HttpClient(_http), _key.ExportSubjectPublicKeyInfo(), idleLimit);
 
     /// <summary>Serves a setup and its .sig, which claims <paramref name="sigVersion"/> and is signed as <paramref name="signedAs"/>.</summary>
     private void Serve(string name, byte[] bytes, string sigVersion = "0.4.0", string signedAs = "0.4.0", string? signedFor = null)
@@ -132,20 +133,22 @@ public sealed class UpdateCacheTests : IDisposable
     {
         _http.Stalled.Add(Download + "Promin-Agent-Setup.exe");
 
-        Assert.Null(await Cache().GetAsync(Release, withConsole: false, TestContext.Current.CancellationToken));
+        Assert.Null(await Cache(TimeSpan.FromMilliseconds(200)).GetAsync(Release, withConsole: false, TestContext.Current.CancellationToken));
         Assert.False(Directory.Exists(Path.Combine(_directory, "0.4.0")));
     }
 
     [Fact(Timeout = 20000)]
     public async Task ADownloadLongerThanTheIdleLimit_ThatKeepsComing_IsKept()
     {
-        // 10 pieces 100 ms apart: about a second in all, against an idle limit of 200 ms.
+        // 30 pieces 100 ms apart: about 3 s in all, against an idle limit of 1 s, ten times any one pause.
+        var agent = RandomNumberGenerator.GetBytes(15_000);
+        Serve("Promin-Agent-Setup.exe", agent);
         _http.Trickled.Add(Download + "Promin-Agent-Setup.exe");
 
-        var set = await Cache().GetAsync(Release, withConsole: false, TestContext.Current.CancellationToken);
+        var set = await Cache(TimeSpan.FromSeconds(1)).GetAsync(Release, withConsole: false, TestContext.Current.CancellationToken);
 
         Assert.NotNull(set);
-        Assert.Equal(_agent, File.ReadAllBytes(set.Agent.SetupPath));
+        Assert.Equal(agent, File.ReadAllBytes(set.Agent.SetupPath));
     }
 
     [Fact]
