@@ -77,7 +77,7 @@ var
   ResultCode: Integer;
 begin
   if IsProminUpdate() then
-    Exec(ExpandConstant('{sys}	askkill.exe'), '/F /IM Promin.Master.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM Promin.Master.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := '';
 end;
 
