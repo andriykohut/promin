@@ -215,6 +215,7 @@
                 <Button
                     Click="StripAction_Click"
                     Content="{x:Bind Sending.StripActionLabel, Mode=OneWay}"
+                    IsEnabled="{x:Bind CanStripAction(Sending.IsRunning, ViewModel.IsUpdating), Mode=OneWay}"
                     Visibility="{x:Bind Sending.HasStripAction, Mode=OneWay}" />
             </InfoBar.ActionButton>
             <ProgressBar

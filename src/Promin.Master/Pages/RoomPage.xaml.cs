@@ -146,6 +146,9 @@ public sealed partial class RoomPage : Page
 
     public bool CanSendFiles(bool sending, bool emptyRoom, bool updating) => !sending && !emptyRoom && !updating;
 
+    /// <summary>The strip's button: Stop sending is always available; Send again, which starts a send, not during an update.</summary>
+    public bool CanStripAction(bool sending, bool updating) => sending || !updating;
+
     /// <summary>The bar's button: Set up devices is always available; Update only when the room is idle and no files are going out.</summary>
     public bool CanMessageAction(bool updates, bool canUpdate, bool sending) => !updates || (canUpdate && !sending);
 
