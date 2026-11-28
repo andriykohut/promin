@@ -181,7 +181,8 @@ public class QuicAgentConnectionTests
         Assert.Equal(new AgentVersion("0.3.0"), await console.ReceiveAsync(deadline.Token));
 
         var second = await rig.OpenStreamAsync(new AskVersion(), deadline.Token);
-        await Assert.ThrowsAnyAsync<Exception>(() => second.ReceiveAsync(deadline.Token));
+        var ended = await Assert.ThrowsAnyAsync<Exception>(() => second.ReceiveAsync(deadline.Token));
+        Assert.IsNotAssignableFrom<OperationCanceledException>(ended);
     }
 
     [Theory]
