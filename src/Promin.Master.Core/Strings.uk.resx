@@ -670,7 +670,7 @@
     <value>Вийшов Promin {version}</value>
   </data>
   <data name="Update_OutText" xml:space="preserve">
-    <value>{count, plural, =0 {На цьому ПК стоїть {own}.} other {На цьому та ще # ПК стоїть {own}. Кожен ПК зникне приблизно на хвилину, поки оновлюється.}}</value>
+    <value>{count, plural, =0 {На цьому ПК стоїть {own}.} one {На цьому ПК стоїть {own}. Ще # ПК теж оновиться. Кожен ПК зникне приблизно на хвилину, поки оновлюється.} other {На цьому ПК стоїть {own}. Ще # ПК теж оновляться. Кожен ПК зникне приблизно на хвилину, поки оновлюється.}}</value>
   </data>
   <data name="Update_BehindTitleOne" xml:space="preserve">
     <value>На {name} старіший Promin</value>

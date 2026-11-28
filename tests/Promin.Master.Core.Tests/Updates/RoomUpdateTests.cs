@@ -64,15 +64,23 @@ public sealed class RoomUpdateTests : IDisposable
     {
         var update = await ConsoleAsync("0.3.0", "0.4.0");
         _connections.RaiseVersion("device-01", "0.3.0");
-        _connections.RaiseVersion("device-02", "0.3.0");
+        _connections.RaiseVersion("device-02", "0.2.0");
         _connections.RaiseVersion("device-03", "0.4.0");
 
         var message = Message(update)!;
         Assert.Equal(WallMessageKind.Info, message.Kind);
         Assert.Equal("Promin 0.4.0 is out", message.Title);
-        Assert.Equal("This PC and 2 others have 0.3.0. Each PC drops off for about a minute while it updates.", message.Text);
+        Assert.Equal("This PC has 0.3.0. 2 other PCs will update too. Each PC drops off for about a minute while it updates.", message.Text);
         Assert.Equal("Update", message.ActionLabel);
         Assert.True(message.ActionUpdates);
+    }
+
+    [Fact]
+    public async Task ANewerRelease_WithOnePcBehind_SaysOnePc()
+    {
+        var update = await ConsoleAsync("0.3.0", "0.4.0");
+        _connections.RaiseVersion("device-01", "0.3.0");
+        Assert.Equal("This PC has 0.3.0. 1 other PC will update too. Each PC drops off for about a minute while it updates.", Message(update)!.Text);
     }
 
     [Fact]

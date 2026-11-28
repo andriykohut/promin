@@ -694,7 +694,7 @@
     <value>Promin {version} is out</value>
   </data>
   <data name="Update_OutText" xml:space="preserve">
-    <value>{count, plural, =0 {This PC has {own}.} one {This PC and # other have {own}. Each PC drops off for about a minute while it updates.} other {This PC and # others have {own}. Each PC drops off for about a minute while it updates.}}</value>
+    <value>{count, plural, =0 {This PC has {own}.} one {This PC has {own}. # other PC will update too. Each PC drops off for about a minute while it updates.} other {This PC has {own}. # other PCs will update too. Each PC drops off for about a minute while it updates.}}</value>
     <comment>count is the connected PCs that update with this one.</comment>
   </data>
   <data name="Update_BehindTitleOne" xml:space="preserve">

@@ -104,6 +104,16 @@ public sealed class StringsTests
     public void UkrainianNotSent_ReadsTheSameForAnyCount(int items, string expected) =>
         Assert.Equal(expected, In(Ukrainian, () => Phrase.Format(Strings.SendStrip_NotSent, ("what", items == 1 ? "quiz-chapter-3.html" : "3 елементи"), ("items", items))));
 
+    [Theory]
+    [InlineData(1, "Ще 1 ПК теж оновиться.")]
+    [InlineData(2, "Ще 2 ПК теж оновляться.")]
+    [InlineData(5, "Ще 5 ПК теж оновляться.")]
+    [InlineData(21, "Ще 21 ПК теж оновиться.")]
+    public void UkrainianUpdateOffer_AgreesWithTheCount(int pcs, string expected) =>
+        Assert.Equal(
+            $"На цьому ПК стоїть 0.3.0. {expected} Кожен ПК зникне приблизно на хвилину, поки оновлюється.",
+            In(Ukrainian, () => Phrase.Format(Strings.Update_OutText, ("count", pcs), ("own", "0.3.0"))));
+
     [Fact]
     public void ANameWithBracesOrAnApostrophe_IsShownAsTyped() =>
         Assert.Equal("{PC}'s is back.", WallMessage.IsBack("{PC}'s").Title);
